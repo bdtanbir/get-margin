@@ -9,4 +9,11 @@ export default defineWorkspace([
       testTimeout: 30_000,
     },
   },
+  {
+    test: {
+      name: 'transform',
+      root: './packages/transform',
+      environment: 'node',
+    },
+  },
 ])
