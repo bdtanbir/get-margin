@@ -51,7 +51,8 @@ async function offsetCropBox(outDir: string): Promise<void> {
   const page = doc.addPage([612, 792])
   page.drawText('cropbox offset', { x: 100, y: 700, size: 18, font })
   // Non-zero origin AND smaller than MediaBox — the case that breaks naive coordinate code.
-  page.setCropBox(50, 80, 400, 500)
+  // pdf-lib takes (x, y, width, height) but PDF stores [x0, y0, x1, y1], so these args produce the raw rect [50, 80, 400, 500].
+  page.setCropBox(50, 80, 350, 420)
   await save(doc, outDir, 'offset-cropbox')
 }
 
