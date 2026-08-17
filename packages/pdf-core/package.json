@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "fixtures": "tsx test/fixtures/cli.ts"
+  },
   "dependencies": {
     "mupdf": "^1.26.0"
   },
