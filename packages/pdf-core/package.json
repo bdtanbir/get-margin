@@ -1,0 +1,16 @@
+{
+  "name": "@margin/pdf-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "mupdf": "^1.26.0"
+  },
+  "devDependencies": {
+    "pdf-lib": "^1.17.1",
+    "pngjs": "^7.0.0",
+    "pixelmatch": "^6.0.0",
+    "@types/pngjs": "^6.0.5"
+  }
+}
