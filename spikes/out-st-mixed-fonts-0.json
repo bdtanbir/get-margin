@@ -1,0 +1,190 @@
+{
+  "blocks": [
+    {
+      "type": "text",
+      "bbox": {
+        "x": 72,
+        "y": 56,
+        "w": 160,
+        "h": 19
+      },
+      "lines": [
+        {
+          "wmode": 0,
+          "bbox": {
+            "x": 72,
+            "y": 56,
+            "w": 160,
+            "h": 19,
+            "flags": 0
+          },
+          "font": {
+            "name": "Helvetica",
+            "family": "sans-serif",
+            "weight": "normal",
+            "style": "normal",
+            "size": 14
+          },
+          "x": 72,
+          "y": 72,
+          "text": "Helvetica sample text 123"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "bbox": {
+        "x": 72,
+        "y": 87,
+        "w": 205,
+        "h": 19
+      },
+      "lines": [
+        {
+          "wmode": 0,
+          "bbox": {
+            "x": 72,
+            "y": 87,
+            "w": 205,
+            "h": 19,
+            "flags": 0
+          },
+          "font": {
+            "name": "Helvetica-Bold",
+            "family": "sans-serif",
+            "weight": "bold",
+            "style": "normal",
+            "size": 14
+          },
+          "x": 72,
+          "y": 102,
+          "text": "Helvetica-Bold sample text 123"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "bbox": {
+        "x": 72,
+        "y": 117,
+        "w": 213,
+        "h": 18
+      },
+      "lines": [
+        {
+          "wmode": 0,
+          "bbox": {
+            "x": 72,
+            "y": 117,
+            "w": 213,
+            "h": 18,
+            "flags": 0
+          },
+          "font": {
+            "name": "Helvetica-Oblique",
+            "family": "sans-serif",
+            "weight": "normal",
+            "style": "italic",
+            "size": 14
+          },
+          "x": 72,
+          "y": 132,
+          "text": "Helvetica-Oblique sample text 123"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "bbox": {
+        "x": 72,
+        "y": 147,
+        "w": 172,
+        "h": 18
+      },
+      "lines": [
+        {
+          "wmode": 0,
+          "bbox": {
+            "x": 72,
+            "y": 147,
+            "w": 172,
+            "h": 18,
+            "flags": 0
+          },
+          "font": {
+            "name": "Times-Roman",
+            "family": "serif",
+            "weight": "normal",
+            "style": "normal",
+            "size": 14
+          },
+          "x": 72,
+          "y": 162,
+          "text": "Times-Roman sample text 123"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "bbox": {
+        "x": 72,
+        "y": 178,
+        "w": 159,
+        "h": 17
+      },
+      "lines": [
+        {
+          "wmode": 0,
+          "bbox": {
+            "x": 72,
+            "y": 178,
+            "w": 159,
+            "h": 17,
+            "flags": 0
+          },
+          "font": {
+            "name": "Times-Italic",
+            "family": "serif",
+            "weight": "normal",
+            "style": "italic",
+            "size": 14
+          },
+          "x": 72,
+          "y": 192,
+          "text": "Times-Italic sample text 123"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "bbox": {
+        "x": 72,
+        "y": 208,
+        "w": 193,
+        "h": 17
+      },
+      "lines": [
+        {
+          "wmode": 0,
+          "bbox": {
+            "x": 72,
+            "y": 208,
+            "w": 193,
+            "h": 17,
+            "flags": 0
+          },
+          "font": {
+            "name": "Courier",
+            "family": "monospace",
+            "weight": "normal",
+            "style": "normal",
+            "size": 14
+          },
+          "x": 72,
+          "y": 222,
+          "text": "Courier sample text 123"
+        }
+      ]
+    }
+  ]
+}

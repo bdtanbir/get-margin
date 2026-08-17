@@ -1,0 +1,66 @@
+{
+  "blocks": [
+    {
+      "type": "text",
+      "bbox": {
+        "x": 72,
+        "y": 66,
+        "w": 134,
+        "h": 32
+      },
+      "lines": [
+        {
+          "wmode": 0,
+          "bbox": {
+            "x": 72,
+            "y": 66,
+            "w": 134,
+            "h": 32,
+            "flags": 0
+          },
+          "font": {
+            "name": "Helvetica",
+            "family": "sans-serif",
+            "weight": "normal",
+            "style": "normal",
+            "size": 24
+          },
+          "x": 72,
+          "y": 92,
+          "text": "Hello margin"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "bbox": {
+        "x": 72,
+        "y": 120,
+        "w": 214,
+        "h": 15
+      },
+      "lines": [
+        {
+          "wmode": 0,
+          "bbox": {
+            "x": 72,
+            "y": 120,
+            "w": 214,
+            "h": 15,
+            "flags": 0
+          },
+          "font": {
+            "name": "Helvetica",
+            "family": "sans-serif",
+            "weight": "normal",
+            "style": "normal",
+            "size": 11
+          },
+          "x": 72,
+          "y": 132,
+          "text": "Second line of body text for span extraction."
+        }
+      ]
+    }
+  ]
+}
