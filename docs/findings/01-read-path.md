@@ -40,7 +40,9 @@ Measured for `simple-text` page 0 (612×792) at scale 2: pixmap 1224×1584, 5,81
 | 1.0× | 12ms | 0.4s | 827.9 pg/s |
 | 2.0× | 3ms | 0.4s | 687.4 pg/s |
 
-Caveat: "first page" timings are noisy at this scale (sub-20ms, single-digit-ms resolution, JIT/cache warm from the prior loop) — treat them as "render is fast, sub-frame-budget" rather than precise numbers. Steady-state throughput (600+ pages/sec) is well above what any interactive UI needs; document-open time was not isolated from the timing loop (loading `large-300p.pdf`, 651KB/300 pages, happens once before either loop starts).
+Caveat: "first page" timings are noisy at this scale (sub-20ms, single-digit-ms resolution, JIT/cache warm from the prior loop) — treat them as "render is fast, sub-frame-budget" rather than precise numbers. Steady-state throughput (600+ pages/sec) is well above what any interactive UI needs; `bigDoc = mupdf.Document.openDocument(...)` for `large-300p.pdf` (651KB, 300 pages) happens once before `t0` is taken for either scale's loop, so document-open time is excluded from both timed regions — it is not folded into the per-page rate.
+
+This is real rasterization work being timed, not a deferred/lazy operation the loop merely schedules. Two things establish that: (1) `Page.toPixmap()`'s shipped type signature returns `Pixmap` synchronously, not `Promise<Pixmap>` — in a single-threaded WASM binding there is nowhere for rasterization to happen "later" once that synchronous call returns, so by the time `pm.getPixels()` runs on the next line, the pixels already exist. (2) Q1 confirms this isn't just a type-level claim: `pix.getPixels()` on the 1224×1584 scale-2 pixmap returned exactly 5,816,448 bytes = 1224 × 1584 × 3 (width × height × bytes-per-pixel, RGB, no alpha) — an exact match, not a placeholder or zero-length stub. A lazily-populated or deferred buffer would not reliably produce a fully-sized, correctly-dimensioned array on synchronous read. 300 pages at 2× implies roughly 4GB/s of aggregate pixel production (687 pg/s × 5,816,448 bytes/page ≈ 4.0GB/s), which sounds high enough to invite doubt on its own — but each page is a mostly-blank text page with sparse glyph coverage, so the raster work is dominated by a cheap uniform background fill rather than per-pixel compositing across the whole buffer; a single-threaded WASM memory fill plus a light glyph pass hitting multiple GB/s on modern hardware (M1 Pro, this measurement) is not implausible.
 
 ## Q3 — Memory
 
@@ -83,10 +85,21 @@ Real span object (from `spikes/out-st-mixed-fonts-0.json`):
 }
 ```
 
-**However — per-character data does exist, via a different API entirely**: `StructuredText.walk({ onChar(c, origin, font, size, quad, color, bidi) {...} })`. Verified on `mixed-fonts` page 0 (166 characters walked): each call gives the character string, its origin point, a real `Font` object (with `.getName()`, `.isBold()`, `.isItalic()`, `.isSerif()`, `.isMono()`), size, a `quad` (an 8-number quadrilateral `[x0,y0,x1,y1,x2,y2,x3,y3]`, not an axis-aligned rect — needed for rotated/skewed glyph runs), fill color, and bidi level. Sample record:
+**However — per-character data does exist, via a different API entirely**: `StructuredText.walk({ onChar(c, origin, font, size, quad, color, bidi) {...} })`. Verified on `mixed-fonts` page 0 (166 characters walked): each call gives the character string, its origin point, a real `Font` object, size, a `quad` (an 8-number quadrilateral `[x0,y0,x1,y1,x2,y2,x3,y3]`, not an axis-aligned rect — needed for rotated/skewed glyph runs), fill color, and bidi level. Sample record:
 ```json
 { "c": "H", "origin": [72,72], "fontName": "Helvetica", "size": 14,
   "quad": [72,56.95,82.108,56.95,72,76.186,82.108,76.186], "color": [0,0,0], "bidi": 0 }
+```
+
+The `Font` object's `.getName()`/`.isMono()`/`.isSerif()`/`.isBold()`/`.isItalic()` methods are runtime-verified, not just read off the `.d.ts` — `spikes/03-probe-walk.ts` calls all four predicates once per distinct font name encountered while walking `mixed-fonts` page 0, and the real results correctly discriminate every font in the fixture:
+
+```
+Helvetica:          {"mono":false,"serif":false,"bold":false,"italic":false}
+Helvetica-Bold:      {"mono":false,"serif":false,"bold":true, "italic":false}
+Helvetica-Oblique:   {"mono":false,"serif":false,"bold":false,"italic":true}
+Times-Roman:         {"mono":false,"serif":true, "bold":false,"italic":false}
+Times-Italic:        {"mono":false,"serif":true, "bold":false,"italic":true}
+Courier:             {"mono":true, "serif":false,"bold":false,"italic":false}
 ```
 
 IMPACT ON SPEC §2.4: Font metadata is present, so span-level (and even character-level) text patching is achievable — this is good news, not a blocker. But **the brief's assumed code path is wrong**: there is no `line.spans[]` array and no per-character bboxes in `asJSON()`. Task 10 (`text.ts`) needs two different calls depending on granularity: `toStructuredText().asJSON()` for span/line-level text+font (sufficient for whole-run replace or font-swap operations), and `StructuredText.walk({onChar})` for character-level quads (needed for precise markup-quad computation per spec §2.1, or sub-span edits). Planning a single `asJSON()`-only implementation, as the brief's probe code implies, would silently omit character-level positioning — this needs to be corrected before Task 10 starts, not discovered mid-implementation.
