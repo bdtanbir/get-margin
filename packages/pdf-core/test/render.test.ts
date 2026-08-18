@@ -93,6 +93,75 @@ describe('renderPage', () => {
     }
   })
 
+  // --- Review finding (Important): pin the premultiplied-over-white formula
+  // At a=0 and a=255, premultiplied-over-white (`src + (255-a)`) and straight
+  // alpha-over-white (`src*a/255 + (255-a)`) are numerically identical, so no
+  // test that only samples fully-opaque/fully-transparent pixels (as the
+  // other tests here do) can tell the two formulas apart. This test fabricates
+  // a partial-alpha pixel — the regime real anti-aliased glyph edges live in —
+  // via a mocked getPixels(), with component/alpha values chosen so the two
+  // formulas diverge by an exact, rounding-free amount.
+  it('composites a partial-alpha pixel as premultiplied-over-white, not straight alpha', () => {
+    const doc = PdfDocument.open(bytes('simple-text'))
+    const width = 612, height = 792
+    // R=50 G=100 B=150 A=204. a/255 = 0.8 exactly, so both formulas below
+    // resolve to exact integers with no rounding ambiguity:
+    //   premultiplied-over-white: src + (255-a)      -> 101, 151, 201
+    //   straight alpha-over-white: src*a/255 + (255-a) -> 91, 131, 171
+    const fabricated = new Uint8ClampedArray(width * height * 4)
+    for (let p = 0; p < fabricated.length; p += 4) {
+      fabricated[p] = 50
+      fabricated[p + 1] = 100
+      fabricated[p + 2] = 150
+      fabricated[p + 3] = 204
+    }
+    const pixelsSpy = vi.spyOn(mupdf.Pixmap.prototype, 'getPixels').mockReturnValue(fabricated)
+    try {
+      const r = renderPage(doc, 0, 1)
+      expect(r.rgba[0]).toBe(101)
+      expect(r.rgba[1]).toBe(151)
+      expect(r.rgba[2]).toBe(201)
+      expect(r.rgba[3]).toBe(255)
+      // Explicitly rule out the straight-alpha form so a regression to it
+      // cannot slip through by coincidence.
+      expect(r.rgba[0]).not.toBe(91)
+      expect(r.rgba[1]).not.toBe(131)
+      expect(r.rgba[2]).not.toBe(171)
+    } finally {
+      pixelsSpy.mockRestore()
+      doc.close()
+    }
+  })
+
+  // --- Review finding (Minor): cover the 3-byte RGB fallback branch --------
+  it('expands a 3-byte-per-pixel RGB fallback to opaque RGBA', () => {
+    const doc = PdfDocument.open(bytes('simple-text'))
+    const width = 612, height = 792
+    const fabricated = new Uint8ClampedArray(width * height * 3)
+    for (let p = 0; p < fabricated.length; p += 3) {
+      fabricated[p] = 10
+      fabricated[p + 1] = 20
+      fabricated[p + 2] = 30
+    }
+    const pixelsSpy = vi.spyOn(mupdf.Pixmap.prototype, 'getPixels').mockReturnValue(fabricated)
+    // The real pixmap's stride reflects its true 4-byte layout; override it
+    // to match the fabricated 3-byte buffer so the stride guard (correctly)
+    // stays out of this test's way.
+    const strideSpy = vi.spyOn(mupdf.Pixmap.prototype, 'getStride').mockReturnValue(width * 3)
+    try {
+      const r = renderPage(doc, 0, 1)
+      expect(r.rgba.length).toBe(width * height * 4)
+      expect(r.rgba[0]).toBe(10)
+      expect(r.rgba[1]).toBe(20)
+      expect(r.rgba[2]).toBe(30)
+      expect(r.rgba[3]).toBe(255)
+    } finally {
+      strideSpy.mockRestore()
+      pixelsSpy.mockRestore()
+      doc.close()
+    }
+  })
+
   // --- Amendment 4 (primary, required): deterministic disposal check ------
   // An RSS-based memory test can fail to detect a missing destroy() at all
   // (see the previous task's precedent) — this spy asserts the fact directly
