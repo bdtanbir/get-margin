@@ -2,10 +2,21 @@
 
 mupdf resolved to **1.28.0** (per `engine-facts.md`). `packages/pdf-core/node_modules/mupdf/dist/mupdf.d.ts`
 was used as ground truth throughout; drift from the brief's `^1.26.0`-era assumptions is called
-out inline. Probes: `spikes/03-annotations.ts` (Q1/Q2/Q3), `spikes/04-fonts.ts` (Q4/Q5). Ad-hoc
-one-off probes used to resolve ambiguity mid-spike were deleted after their findings were folded
-in here (not kept as spike artifacts, per spike discipline — they were debugging aids, not the
-deliverable).
+out inline.
+
+Probes, all committed (an earlier pass of this spike deleted several ad-hoc probes after folding
+their output into this doc — that was a mistake, corrected in this revision; every claim below
+now has a committed script behind it):
+- `spikes/03-annotations.ts` — Q1/Q2 annotation matrix, `/AP` presence.
+- `spikes/04-fonts.ts` — original combined font probe (kept for its own record, but see the note
+  on Q5 below: it does not isolate `addSimpleFont`/`addFont`).
+- `spikes/05-annot-coordspace.ts` — Q2's coordinate-space finding (`setRect`/`getRect` vs. raw
+  `/Rect`, plus pixel-sampling the render).
+- `spikes/06-font-subset-isolation.ts` — Q5's isolated per-call, per-font-size size deltas and
+  the three-way `subsetFonts()` test.
+- `spikes/07-freetext-customfont.ts` — Q3's custom-font `/DA`/`/DR` fallback test.
+- `spikes/08-drawtext-measure.ts` — Q4's `Text`/`Device` render-and-measure test.
+- `spikes/09-link-rect-abort.ts` — Q1's Link/`Rect` behavior, including the correction below.
 
 TTF used: `/System/Library/Fonts/Supplemental/Arial Unicode.ttf` — exists on this machine (the
 brief's exact hardcoded path), 23,278,008 bytes (22.2MB / 22,732.4KB). A second, more typical
@@ -18,13 +29,44 @@ finding wasn't an artifact of the first font's unusual size.
 
 `page.createAnnotation(type)` itself **never failed** for any of the 10 types tested (confirmed
 against `mupdf.PDFAnnotation.ANNOT_TYPES`, the shipped ground-truth list, which also includes all
-10). The one failure is downstream: **`Link`-type `PDFAnnotation`s reject `setRect()`** with
-`Link annotations have no Rect property` (`hasRect()` returns `false` for a fresh Link
-annotation). Bypassing this via a raw low-level write —
-`annot.getObject().put('Rect', [...])` — does not throw a catchable JS error; it **hard-aborts
-the WASM runtime** (`RuntimeError`, unrecoverable). This is the same category of danger as the
-Task 3 disposal finding: the high-level API's validation exists for a reason, and going around it
-crashes the process rather than degrading gracefully.
+10). The one failure is downstream: **`Link`-type `PDFAnnotation`s reject `setRect()` and
+`getRect()`**. Directly called (`spikes/09-link-rect-abort.ts`): `hasRect()` returns `false` for a
+fresh Link annotation, and both `getRect()` and `setRect()` throw a normal, catchable
+`Error: Link annotations have no Rect property`.
+
+**Correction from the previous revision of this doc.** That revision claimed the low-level
+escape hatch — `annot.getObject().put('Rect', [...])` — "hard-aborts the WASM runtime
+(`RuntimeError`, unrecoverable)". Re-running this properly, with every call individually
+try/catch-wrapped, **does not reproduce that claim**: `getObject().put('Rect', [72,300,300,320])`
+on a Link annotation succeeds without crashing anything (though the write is inert —
+`getRect()` afterward still throws the same error, and `update()` returns `false` with no `/AP`
+produced, so the low-level put doesn't actually make the annotation function as a rect-based one
+either). The original "abort" was traced to a **different, earlier line** in the now-deleted
+ad-hoc probe: an *unwrapped* `link.getRect()` call, one statement before the `put()` that got
+blamed. That threw the exact same catchable `Error: Link annotations have no Rect property` —
+confirmed by `spikes/09-link-rect-abort.ts`'s Part 3, which reproduces the original probe's
+un-try/catched call verbatim and captures the real stack trace:
+
+```
+Error: Link annotations have no Rect property
+    at Object.6168345 (.../mupdf-wasm.js:1:4963)
+    at Q (.../mupdf-wasm.js:1:3737)
+    at a (.../mupdf-wasm.js:1:8841)
+    at mupdf-wasm.wasm.wasm_rethrow (wasm://wasm/mupdf-wasm.wasm-...:wasm-function[36]:...)
+    at mupdf-wasm.wasm.wasm_pdf_annot_rect (wasm://wasm/mupdf-wasm.wasm-...:wasm-function[4094]:...)
+    at PDFAnnotation.getRect (.../mupdf.js:2603:28)
+```
+
+It is a plain `Error`, not a `WebAssembly.RuntimeError`. Node's default uncaught-exception printer
+dumped the offending source file's content above the trace — and because `mupdf-wasm.js` is
+emitted as one enormous single-line minified bundle, that dump looked like a wall of engine
+internals, which was misread as an unrecoverable WASM-level abort. It was an ordinary, catchable,
+one-line-away-from-being-caught JS exception. **This is a real category difference from the Task 3
+disposal finding** (a genuine WASM heap OOM after omitted `.destroy()` calls, confirmed via RSS
+measurements and an actual fatal `malloc` failure) — that one is a true hard crash; this one is
+not. The corrected, narrower lesson: `getRect()`/`setRect()` on a `Link` annotation throw
+ordinary, catchable errors, and low-level `PDFObject.put()` writes to a field the high-level API
+disallows are silently inert rather than dangerous.
 
 The working replacement for URI links is a **separate, non-`PDFAnnotation` API**:
 `page.createLink(bbox: Rect, uri: string): Link` (the `fz_link` class, not `pdf_annot`). This is
@@ -73,25 +115,40 @@ Chrome, which the spec names explicitly.
 — top-down, y=0 at the top of the CropBox, the same convention `toPixmap`, `getBounds()`,
 `getTransform()`, and `StructuredText.asJSON()` use (per `engine-facts.md`'s Task 3 findings) —
 **not** the raw bottom-up PDF content-stream space that the on-disk `/Rect` dictionary entry
-actually stores. Verified directly:
+actually stores. Verified directly (`spikes/05-annot-coordspace.ts`, Part A — real output):
 
 ```
 setRect([72, 400, 200, 460])
-getRect() immediately after            -> [72, 400, 200, 460]   (same values, page-space)
-getObject().get('Rect').asJS()         -> [71, 331, 201, 393]   (raw on-disk dict, bottom-up)
+getRect() immediately after            -> [ 72, 400, 200, 460 ]   (same values, page-space)
+getObject().get('Rect').asJS()         -> [ 71, 331, 201, 393 ]   (raw on-disk dict, bottom-up)
 ... after save + reload ...
-getRect()                              -> [72, 400, 200, 460]   (round-trips exactly)
-raw /Rect (reloaded)                   -> [71, 331, 201, 393]   (unchanged)
+getRect()                              -> [ 72, 400, 200, 460 ]   (round-trips exactly)
+raw /Rect (reloaded)                   -> [ 71, 331, 201, 393 ]   (unchanged)
 ```
 
 `792 − 400 = 392` and `792 − 460 = 332`, matching the observed raw y-range `[331, 393]` to within
 1pt (consistent with a small border-width inflation mupdf applies on all four sides, also visible
 in x: `72→71`, `200→201`). mupdf's binding transparently flips y on every get/set call.
 
-This was cross-confirmed a second, independent way: I scanned the rendered PNG for the exact
-pixel rows of three annotations (pure colors, so unambiguous) and compared against two candidate
-formulas. `img_row = raw_y × scale` (no flip) matched to within 1–3px for all three; `img_row =
-(pageHeight − raw_y) × scale` (the naive PDF-spec flip) was off by 120–140px, ruled out.
+This was cross-confirmed a second, independent way (`spikes/05-annot-coordspace.ts`, Part B — real
+output): scanned `spikes/out-annots-mupdf-render.png` for the exact pixel rows of three
+annotations (pure, unambiguous colors) and compared against two candidate formulas:
+
+```
+Blue (Line, raw y=340):               rows=[677,682]
+Yellow (Highlight, raw y=710-735):    rows=[1420,1469]
+Pink fill (Square, raw y=400-460):    rows=[802,917]
+
+"unflipped" hypothesis (img_row = raw_y × 2):        Line ~680, Highlight ~1420-1470, Square ~800-920
+"flipped standard" (img_row = (792-raw_y) × 2):      Line ~904, Highlight ~114-164,   Square ~664-784
+```
+
+The unflipped formula matches all three to within 1–3px; the naive PDF-spec flip is off by
+120–140px in every case and is ruled out. (The row ranges above differ by a few pixels from the
+first pass of this spike — `[798,921]` vs. this run's `[802,917]` for Square — because the color
+match threshold in the re-created scan script is not byte-identical to the deleted original; the
+conclusion is unaffected either way, since both are ~130px away from the flipped-standard
+prediction and ~0px from the unflipped one.)
 
 **Practical consequence:** `engine-facts.md`'s Task 3 statement — "`/Rect` and `/QuadPoints` live
 in [bottom-up] space, not page space" — is true of the *raw on-disk dictionary value*, but **false
@@ -118,10 +175,21 @@ alignment difference visually unambiguous.
 **Arbitrary embedded custom font: does NOT work via the high-level API.** I registered a
 distinctive custom TTF (`Zapfino.ttf`, chosen because its glyphs are visually unmistakable) via
 `doc.addSimpleFont(font, 'Latin')`, then called
-`freeText.setDefaultAppearance('Zapfino', 20, [0,0,0])`. The literal string `/Zapfino 20 Tf 0 0 0
-rg` was written into `/DA`, but **no `/DR` (default resources) dictionary was created** to resolve
-the name `/Zapfino` to the actual embedded font object (`getObject().get('DR').isNull()` was
-true), and mupdf's own `getDefaultAppearance()` read back `font: 'Helv'` — its appearance-stream
+`freeText.setDefaultAppearance('Zapfino', 20, [0,0,0])`. Real output
+(`spikes/07-freetext-customfont.ts`):
+
+```
+addSimpleFont ref: 7 0 R
+BaseFont entry: Zapfino
+setDefaultAppearance(customFontBaseFontName) accepted, no throw
+FreeText /DA: /Zapfino 20 Tf 0 0 0 rg
+FreeText /DR present: false
+FreeText getDefaultAppearance(): { font: 'Helv', size: 20, color: [ 0, 0, 0 ] }
+```
+
+The literal string `/Zapfino 20 Tf 0 0 0 rg` was written into `/DA`, but **no `/DR` (default
+resources) dictionary was created** to resolve the name `/Zapfino` to the actual embedded font
+object, and mupdf's own `getDefaultAppearance()` read back `font: 'Helv'` — its appearance-stream
 generator silently fell back to a standard font rather than honoring the unresolvable custom name.
 Making this work would require manually constructing the annotation's `/DR` dictionary — untested
 here, judged out of spike scope (it starts to look like the manual/low-level path anyway).
@@ -149,12 +217,12 @@ brief — the drift from `^1.26.0` assumptions here is minor (signatures match).
 **Does text drawn with it render and measure correctly? YES — verified directly, not inferred.**
 Built a `Text` object with `Text.showString(font, matrix, str)` (the Zapfino font, a 28pt string),
 rendered it via `Device.fillText()` into a `DrawDevice`/`Pixmap`, and saved the PNG
-(`/tmp/drawtext-probe.png`, inspected directly — visibly renders in Zapfino's distinctive
+(`spikes/out-drawtext-probe.png`, inspected directly — visibly renders in Zapfino's distinctive
 calligraphic glyph shapes, not a fallback font). Measurement was cross-checked two independent
-ways and they agree to 5 decimal places:
+ways; real output from `spikes/08-drawtext-measure.ts`, and it reproduces exactly on rerun:
 
 ```
-showString() returned end-matrix x-advance:                     465.9200134277344
+showString() returned end-matrix x-advance:                          465.9200134277344
 independent sum of font.advanceGlyph(font.encodeCharacter(ch))*size:  465.91999793052673
 ```
 
@@ -166,14 +234,36 @@ real page's visible content via `PDFDocument`, not just a standalone `Pixmap`) o
 
 ## Q5 — Subsetting
 
-**Automatic: NO.** Measured twice, at two very different scales, isolating the font's contribution
-from the fixture's own baseline size:
+**Automatic: NO.** `spikes/04-fonts.ts` (the original combined probe) calls `addSimpleFont` and
+`addFont` sequentially on the *same* document and only measured one combined delta — it does not
+isolate the two calls. That isolation is restored in `spikes/06-font-subset-isolation.ts`, which
+opens a fresh document per call and measured, at two very different font sizes (real output,
+reproduces exactly on rerun):
+
+```
+Arial Unicode.ttf (22,732.4KB raw):
+  A) baseline, no font registered:            1.2 KB
+  B) addSimpleFont ONLY, unused:          14,830.7 KB
+  C) addFont ONLY, unused:                14,858.7 KB
+  D) addFont + subsetFonts(), unused:     14,858.7 KB
+  E) addFont (ref captured) + subsetFonts(): 14,858.7 KB
+
+Arial.ttf (755.1KB raw):
+  A) baseline, no font registered:            1.2 KB
+  B) addSimpleFont ONLY, unused:            416.4 KB
+  C) addFont ONLY, unused:                  432.4 KB
+  D) addFont + subsetFonts(), unused:       432.4 KB
+  E) addFont (ref captured) + subsetFonts(): 432.4 KB
+```
 
 | Font | Raw size | Baseline (no font) | +`addFont()`, unused | Delta | Delta as % of raw |
 |---|---|---|---|---|---|
-| Arial Unicode.ttf | 22,732.4KB | 1.2KB | 14,859KB | ~14,858KB | 65.4% |
-| Arial Unicode.ttf (`addSimpleFont` instead) | 22,732.4KB | 1.2KB | 14,831KB | ~14,830KB | 65.2% |
-| Arial.ttf | 755.1KB | 1.2KB | 432.4KB | ~431.2KB | 57.1% |
+| Arial Unicode.ttf | 22,732.4KB | 1.2KB | 14,858.7KB | 14,857.5KB | 65.4% |
+| Arial Unicode.ttf (`addSimpleFont` instead) | 22,732.4KB | 1.2KB | 14,830.7KB | 14,829.5KB | 65.2% |
+| Arial.ttf | 755.1KB | 1.2KB | 432.4KB | 431.2KB | 57.1% |
+
+These numbers are unchanged from the previous revision of this doc — the isolation probe
+reproduces the same percentages, just with committed code behind them now.
 
 The delta is consistently 57–65% of raw TTF size regardless of font size or which `add*Font` call
 is used — the signature of **plain Flate compression of the whole font program**, not glyph-level
@@ -181,11 +271,11 @@ subsetting (real subsetting of a handful of used glyphs out of a multi-thousand-
 produce a delta orders of magnitude smaller than this).
 
 **`doc.subsetFonts()` exists** — a `PDFDocument` method not mentioned anywhere in the brief. It
-was tested three ways, all against a font registered via `addFont()` but never referenced by any
-drawn glyph:
-- `addFont()` alone: 14,859KB (large font) / 432.4KB (Arial.ttf)
-- `addFont()` + `subsetFonts()`: **identical**, 14,859KB / same
-- `addFont()`, keep the returned ref, then `subsetFonts()`: **identical** again
+was tested three ways (rows B–E above, `spikes/06-font-subset-isolation.ts`), all against a font
+registered via `addFont()` but never referenced by any drawn glyph:
+- `addFont()` alone: 14,858.7KB (large font) / 432.4KB (Arial.ttf)
+- `addFont()` + `subsetFonts()`: **identical**, 14,858.7KB / 432.4KB
+- `addFont()`, keep the returned ref, then `subsetFonts()`: **identical** again, 14,858.7KB / 432.4KB
 
 `subsetFonts()` made **zero measurable difference** in all three cases. The most plausible
 explanation is that it only prunes glyphs that are actually referenced by real content-stream
@@ -239,7 +329,14 @@ font-registration step) is real design work for a later task, not this spike.
 - `Stamp` annotations get a default "DRAFT" appearance from mupdf itself when no icon/contents is
   set — a MuPDF default, not something the caller configured. Worth knowing before assuming an
   empty Stamp annotation renders as literally empty.
-- The WASM-abort-on-invalid-low-level-write behavior (Link + raw `Rect` put) reinforces the Task 3
-  disposal lesson: this binding fails hard, not gracefully, when used outside its validated
-  high-level surface. Treat any low-level `PDFObject.put()` escape hatch as unsafe unless the
-  target field is known to accept arbitrary values.
+- **Corrected in this revision**: an earlier pass of this spike claimed the Link/`Rect` low-level
+  `put()` escape hatch hard-aborts the WASM runtime. Re-verified with every call individually
+  try/catch-wrapped (`spikes/09-link-rect-abort.ts`) and that does **not** reproduce — the real
+  behavior is an ordinary catchable `Error` on `getRect()`/`setRect()`, and the low-level
+  `PDFObject.put()` write itself succeeds without crashing (though it's functionally inert: the
+  Link still won't produce a working `/Rect`/`/AP` afterward). The original "abort" observation
+  was a misread of Node's default uncaught-exception output for an *unwrapped* call, not a real
+  WASM-level crash — see the Q1 section above for the full trace. The Task 3 disposal finding (a
+  genuine WASM heap OOM, confirmed via RSS measurements and a real fatal `malloc` failure) remains
+  the correct example of this binding failing hard; this Link/`Rect` case does not belong in that
+  category after all.
