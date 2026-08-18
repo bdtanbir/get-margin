@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib'
-import { writeFile, mkdir } from 'node:fs/promises'
+import { writeFile, mkdir, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 
 const FIXED_DATE = new Date('2020-01-01T00:00:00Z')
@@ -16,7 +16,13 @@ async function save(doc: PDFDocument, outDir: string, name: string): Promise<voi
   pin(doc)
   // useObjectStreams:false keeps output stable and human-inspectable in a hex editor.
   const bytes = await doc.save({ useObjectStreams: false })
-  await writeFile(join(outDir, `${name}.pdf`), bytes)
+  const finalPath = join(outDir, `${name}.pdf`)
+  // Multiple test files each call generateFixtures() in their own beforeAll and
+  // vitest runs them concurrently — write-then-rename so a reader never observes
+  // a torn/partial file mid-write from a sibling generator run.
+  const tmpPath = join(outDir, `.${name}.pdf.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`)
+  await writeFile(tmpPath, bytes)
+  await rename(tmpPath, finalPath)
 }
 
 async function simpleText(outDir: string): Promise<void> {
