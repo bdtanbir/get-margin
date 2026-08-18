@@ -110,3 +110,87 @@ test('worker boots, loads WASM, and opens a real PDF', async ({ page }, testInfo
   console.log(`[pixels] non-white fraction of page-0 canvas: ${(fraction * 100).toFixed(2)}%`)
   expect(fraction).toBeGreaterThan(0.001)
 })
+
+// Task 17: proves the prioritized render queue, the viewport store, and the
+// virtualized PageList actually work together in a real browser, not just
+// under mocks. Every unit test for this task mocks the worker (pdfClient)
+// and the canvas 2D context, so a unit suite alone cannot tell a genuinely
+// wired scroll-to-render pipeline from one where PageList mounts but never
+// pumps, or where the render queue never re-anchors — this project has
+// already shipped two Critical defects invisible to a fully green unit
+// suite (the worker-boot race in Task 15a, the unmounted DropZone/PageCanvas
+// scaffolding in Task 15/16) that only a real browser caught. Opens the
+// 12-page fixture (multi-page.pdf), confirms page 1 paints, scrolls the
+// document container to the bottom, and confirms a later page paints too —
+// i.e. the anchor actually moved and the queue actually rendered something
+// new, not just that page 1 stayed on screen forever.
+test('scrolling the page list renders later pages as they come into view', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop only')
+
+  const FIXTURE_12P = fileURLToPath(
+    new URL('../../../packages/pdf-core/test/fixtures/multi-page.pdf', import.meta.url),
+  )
+
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  page.on('console', (msg: ConsoleMessage) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err: Error) => {
+    pageErrors.push(err.stack ?? err.message)
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  await page.setInputFiles('input[type=file]', FIXTURE_12P)
+  await expect(page.getByRole('heading', { name: 'Open a PDF' })).not.toBeVisible({
+    timeout: 30_000,
+  })
+
+  const scroller = page.getByRole('region', { name: 'Document pages' })
+  await expect(scroller).toBeVisible()
+
+  // Wait for page 1's canvas to actually paint (non-white pixels), same
+  // signal as the test above, before touching scroll — otherwise a "later
+  // page painted" result could just mean page 1 never painted at all and
+  // this test is comparing two blank canvases.
+  async function paintedFraction(label: string): Promise<number> {
+    const handle = await scroller.evaluateHandle(
+      (root: HTMLElement, ariaLabel: string) => {
+        const canvases = Array.from(root.querySelectorAll('canvas'))
+        const target = canvases.find(
+          (c) => c.closest('[role="img"]')?.getAttribute('aria-label') === ariaLabel,
+        )
+        if (!target || target.width === 0 || target.height === 0) return -1
+        const ctx = target.getContext('2d')
+        if (!ctx) return -1
+        const { data } = ctx.getImageData(0, 0, target.width, target.height)
+        let nonWhite = 0
+        const total = data.length / 4
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) nonWhite++
+        }
+        return nonWhite / total
+      },
+      label,
+    )
+    return handle.jsonValue()
+  }
+
+  await expect
+    .poll(() => paintedFraction('Page 1'), { timeout: 15_000 })
+    .toBeGreaterThan(0.001)
+
+  // Scroll the document container to the bottom so the queue's anchor moves
+  // to a late page in the 12-page fixture.
+  await scroller.evaluate((el: HTMLElement) => {
+    el.scrollTop = el.scrollHeight
+  })
+
+  await expect
+    .poll(() => paintedFraction('Page 12'), { timeout: 15_000 })
+    .toBeGreaterThan(0.001)
+
+  expect(consoleErrors, `console errors:\n${consoleErrors.join('\n')}`).toEqual([])
+  expect(pageErrors, `page errors:\n${pageErrors.join('\n')}`).toEqual([])
+})
