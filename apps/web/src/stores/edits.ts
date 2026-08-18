@@ -33,16 +33,42 @@ function emptyDocument(): EditDocument {
 }
 
 /**
- * Rough byte weight of a patch payload. Only typed arrays matter at this
- * scale (images, signatures); everything else is noise against a 64MB cap.
+ * Recursively sums the byte weight of typed-array payloads reachable from
+ * `v`. `addObject`'s patch value is the WHOLE `EditObject` (`{ id, kind,
+ * rect, ..., data: Uint8Array }` for an image/signature), not a bare
+ * `Uint8Array` -- a shallow `instanceof` check on the patch value itself
+ * never finds it, so the byte cap it exists to enforce is silently inert
+ * for exactly the payloads (images, signatures) it was written to bound.
  */
-function weigh(patches: Patch[]): number {
-  let n = 0
-  for (const p of patches) {
-    const v = p.value as unknown
-    if (v instanceof Uint8Array) n += v.byteLength
-    else n += 64
+function weighValue(v: unknown): number {
+  if (v instanceof Uint8Array) return v.byteLength
+  if (Array.isArray(v)) {
+    let n = 0
+    for (const item of v) n += weighValue(item)
+    return n
   }
+  if (v !== null && typeof v === 'object') {
+    let n = 0
+    for (const key of Object.keys(v as Record<string, unknown>)) {
+      n += weighValue((v as Record<string, unknown>)[key])
+    }
+    return n
+  }
+  return 0
+}
+
+/**
+ * Rough byte weight of a history entry. Typed arrays reachable from either
+ * side matter at this scale (images, signatures); everything else is noise
+ * against a 64MB cap. Both `patches` (the redo side) AND `inversePatches`
+ * (the undo side, e.g. a deleted image's `addObject` inverse retains the
+ * full payload it deleted) are weighed -- an entry retains both for as
+ * long as it lives in history, so both count toward what it costs to keep.
+ */
+function weigh(patches: Patch[], inversePatches: Patch[]): number {
+  let n = 0
+  for (const p of patches) n += 64 + weighValue(p.value)
+  for (const p of inversePatches) n += 64 + weighValue(p.value)
   return n
 }
 
@@ -101,7 +127,7 @@ export const useEditsStore = defineStore('edits', () => {
 
   function push(label: string, patches: Patch[], inversePatches: Patch[]): void {
     if (patches.length === 0) return
-    const next = [...past.value, { label, patches, inversePatches, weight: weigh(patches) }]
+    const next = [...past.value, { label, patches, inversePatches, weight: weigh(patches, inversePatches) }]
     let bytes = next.reduce((n, e) => n + e.weight, 0)
     while (next.length > HISTORY_LIMIT || (bytes > HISTORY_BYTES_LIMIT && next.length > 1)) {
       const dropped = next.shift()
