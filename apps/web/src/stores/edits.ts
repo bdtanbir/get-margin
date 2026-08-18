@@ -1,0 +1,206 @@
+import { defineStore } from 'pinia'
+import { ref, shallowRef, computed } from 'vue'
+import { produceWithPatches, enablePatches, applyPatches, type Patch } from 'immer'
+import { EDIT_DOCUMENT_VERSION, type EditDocument, type Op, type ObjectId } from '@margin/pdf-core'
+
+// Immer ships patch support opt-in. Without this, produceWithPatches returns
+// empty patch arrays and every undo silently does nothing.
+enablePatches()
+
+const HISTORY_LIMIT = 200
+/**
+ * Entry count alone is not a memory bound: an image or signature op carries
+ * its pixel payload inside the patch. Cap accumulated patch weight too.
+ */
+const HISTORY_BYTES_LIMIT = 64 * 1024 * 1024
+
+type HistoryEntry = {
+  label: string
+  patches: Patch[]
+  inversePatches: Patch[]
+  weight: number
+}
+
+function emptyDocument(): EditDocument {
+  return {
+    version: EDIT_DOCUMENT_VERSION,
+    sourceHash: '',
+    pageOrder: [],
+    pages: {},
+    objects: {},
+    nextZ: 1,
+  }
+}
+
+/**
+ * Rough byte weight of a patch payload. Only typed arrays matter at this
+ * scale (images, signatures); everything else is noise against a 64MB cap.
+ */
+function weigh(patches: Patch[]): number {
+  let n = 0
+  for (const p of patches) {
+    const v = p.value as unknown
+    if (v instanceof Uint8Array) n += v.byteLength
+    else n += 64
+  }
+  return n
+}
+
+function reduce(draft: EditDocument, op: Op): void {
+  switch (op.type) {
+    case 'addObject':
+      draft.objects[op.object.id] = op.object
+      if (op.object.z >= draft.nextZ) draft.nextZ = op.object.z + 1
+      break
+    case 'updateObject': {
+      const target = draft.objects[op.id]
+      if (!target) return
+      Object.assign(target, op.patch)
+      break
+    }
+    case 'deleteObject':
+      delete draft.objects[op.id]
+      break
+    case 'reorder': {
+      const target = draft.objects[op.id]
+      if (!target) return
+      target.z = op.z
+      if (op.z >= draft.nextZ) draft.nextZ = op.z + 1
+      break
+    }
+  }
+}
+
+export const useEditsStore = defineStore('edits', () => {
+  // shallowRef, not ref: Immer deep-freezes everything it produces
+  // (`produceWithPatches`'s autofreeze). Vue's `ref()` would deep-wrap that
+  // frozen object in a reactive Proxy, and reading back through that Proxy
+  // later -- as the base of the NEXT `produceWithPatches` call, or via
+  // `applyPatches` -- trips the Proxy invariant for frozen/non-configurable
+  // properties ("'get' on proxy: property ... is a read-only and
+  // non-configurable data property ... but the proxy did not return its
+  // actual value"). `structuredClone` on the same reactive-wrapped object
+  // throws `DataCloneError` for the identical reason. `past`/`future` hold
+  // Immer patches whose `value` fields reference pieces of that same frozen
+  // state, so they need the same treatment. Because shallowRef does not
+  // track in-place mutation, every writer below reassigns `.value` with a
+  // new array/object rather than push/pop/shift-ing the existing one.
+  const state = shallowRef<EditDocument>(emptyDocument())
+  const past = shallowRef<HistoryEntry[]>([])
+  const future = shallowRef<HistoryEntry[]>([])
+  const selectedIds = ref<ObjectId[]>([])
+
+  // Transaction depth, plus the patches accumulated across the whole
+  // transaction. `applyOp` still mutates state immediately during a
+  // transaction (the overlay must track the drag live) -- what the
+  // transaction changes is HISTORY: 60 drag frames become one entry.
+  let depth = 0
+  let txPatches: Patch[] = []
+  let txInverse: Patch[] = []
+  let txLabel = ''
+
+  function push(label: string, patches: Patch[], inversePatches: Patch[]): void {
+    if (patches.length === 0) return
+    const next = [...past.value, { label, patches, inversePatches, weight: weigh(patches) }]
+    let bytes = next.reduce((n, e) => n + e.weight, 0)
+    while (next.length > HISTORY_LIMIT || (bytes > HISTORY_BYTES_LIMIT && next.length > 1)) {
+      const dropped = next.shift()
+      bytes -= dropped?.weight ?? 0
+    }
+    past.value = next
+    future.value = []
+  }
+
+  function applyOp(op: Op, label: string): void {
+    const [next, patches, inversePatches] = produceWithPatches(state.value, (draft) => {
+      reduce(draft, op)
+    })
+    state.value = next as EditDocument
+    if (depth > 0) {
+      txPatches.push(...patches)
+      // Inverses must be replayed in REVERSE order to unwind correctly, so
+      // build the transaction's inverse list back-to-front as we go.
+      txInverse.unshift(...inversePatches)
+      return
+    }
+    push(label, patches, inversePatches)
+  }
+
+  /**
+   * Coalesce every op emitted inside `fn` into a single history entry.
+   * Required for drags, resizes, freehand strokes, and typing -- without it
+   * one drag is 60 undo steps. Nested calls join the outermost transaction.
+   */
+  function withTransaction(label: string, fn: () => void): void {
+    if (depth === 0) {
+      txPatches = []
+      txInverse = []
+      txLabel = label
+    }
+    depth++
+    try {
+      fn()
+    } finally {
+      depth--
+      if (depth === 0) {
+        push(txLabel, txPatches, txInverse)
+        txPatches = []
+        txInverse = []
+      }
+    }
+  }
+
+  function undo(): void {
+    const entry = past.value[past.value.length - 1]
+    if (!entry) return
+    past.value = past.value.slice(0, -1)
+    state.value = applyPatches(state.value, entry.inversePatches)
+    future.value = [...future.value, entry]
+  }
+
+  function redo(): void {
+    const entry = future.value[future.value.length - 1]
+    if (!entry) return
+    future.value = future.value.slice(0, -1)
+    state.value = applyPatches(state.value, entry.patches)
+    past.value = [...past.value, entry]
+  }
+
+  function nextZ(): number {
+    return state.value.nextZ
+  }
+
+  function select(ids: ObjectId[]): void { selectedIds.value = ids }
+  function clearSelection(): void { selectedIds.value = [] }
+
+  function reset(
+    sourceHash: string,
+    pageOrder: string[],
+    pages: EditDocument['pages'],
+  ): void {
+    state.value = { ...emptyDocument(), sourceHash, pageOrder, pages }
+    past.value = []
+    future.value = []
+    selectedIds.value = []
+  }
+
+  return {
+    // computed(), NOT readonly(). Pinia's setup-store type extraction treats
+    // any isRef()-true value as mutable state and only special-cases
+    // computed() -- so readonly() would leave `edits.doc = x` type-clean
+    // while silently failing at runtime. See stores/viewport.ts's caveat.
+    doc: computed(() => state.value),
+    selection: computed(() => selectedIds.value),
+    canUndo: computed(() => past.value.length > 0),
+    canRedo: computed(() => future.value.length > 0),
+    historySize: computed(() => past.value.length),
+    applyOp,
+    withTransaction,
+    undo,
+    redo,
+    nextZ,
+    select,
+    clearSelection,
+    reset,
+  }
+})
