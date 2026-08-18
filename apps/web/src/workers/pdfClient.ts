@@ -87,3 +87,8 @@ export function getPdfClient(): PdfClient {
   shared ??= createPdfClient()
   return shared
 }
+
+/** Closes the shared client's document if one was ever created. No-ops otherwise. */
+export async function closeSharedDocument(): Promise<void> {
+  await shared?.close()
+}

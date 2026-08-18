@@ -27,6 +27,8 @@ export default defineWorkspace([
       root: './apps/web',
       environment: 'jsdom',
       globals: true,
+      // jsdom's Blob/File lacks arrayBuffer() — see test/setup.ts.
+      setupFiles: ['./test/setup.ts'],
       // Explicit exclude overrides Vitest's defaults entirely, so merge
       // rather than replace — otherwise node_modules gets scanned too.
       exclude: [...configDefaults.exclude, 'test/workers/**'],
