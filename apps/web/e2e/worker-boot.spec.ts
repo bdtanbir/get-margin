@@ -3,20 +3,24 @@ import { fileURLToPath } from 'node:url'
 import type { ConsoleMessage, Response } from '@playwright/test'
 
 // Real in-browser verification of the Web Worker + WASM boundary (Task 15a).
-// No viewer exists yet (Tasks 17/20 build it), so the only observable signal
-// is DropZone disappearing when the document store's status flips to
-// 'ready' — which only happens after the worker has booted, fetched and
-// instantiated the 10.4MB MuPDF WASM binary, parsed a real PDF, and
-// returned a page count back across the Comlink boundary. That is a
-// genuine end-to-end signal, not a synthetic worker-boot ping.
+// No real viewer exists yet (Tasks 17/20 build it), so the only observable
+// signal used to be DropZone disappearing when the document store's status
+// flips to 'ready' — which only happens after the worker has booted, fetched
+// and instantiated the 10.4MB MuPDF WASM binary, parsed a real PDF, and
+// returned a page count back across the Comlink boundary. That is a genuine
+// end-to-end signal, not a synthetic worker-boot ping.
 //
-// This spec does NOT verify the transfer handler's symmetric registration
-// across both realms — open() returns only DocumentInfo, so no pixel
-// buffer (and therefore no `Comlink.transfer`) crosses the boundary here.
-// A one-sided registration would degrade silently to a copy (a perf
-// regression), not a functional failure, and would not be caught by this
-// or any purely functional test. Genuine transfer first happens when a
-// page is rendered — Task 21's viewer spec is where that gets exercised.
+// Task 16 (A3) adds a second, stronger signal: App.vue now renders one
+// PageCanvas for page 0 once the document is ready, sourced from a real
+// `getPdfClient().render(0, devicePixelRatio)` call. A unit test mocking
+// `getContext` cannot distinguish a canvas that paints from a silent
+// no-op (this is exactly how DropZone shipped unmounted for a full task
+// with 124 green tests) — so this spec reads the canvas's actual pixels
+// back out and asserts some of them are not white. The fixture's first
+// page has visible text, so an all-white canvas means the render pipeline
+// (worker render call -> transferred rgba -> BitmapCache/props -> canvas
+// putImageData) silently failed somewhere, even though every unit test
+// passes.
 
 const FIXTURE = fileURLToPath(
   new URL('../../../packages/pdf-core/test/fixtures/multi-page.pdf', import.meta.url),
@@ -60,4 +64,38 @@ test('worker boots, loads WASM, and opens a real PDF', async ({ page }) => {
 
   expect(wasmResponse, 'no .wasm request was observed').toBeDefined()
   expect(wasmResponse?.status()).toBe(200)
+
+  // Task 16 (A3): prove the canvas actually painted, not just that it
+  // exists. Wait for the canvas element itself first...
+  const canvas = page.locator('canvas')
+  await expect(canvas).toBeVisible()
+
+  // ...then wait for its pixels to actually be non-white. The canvas can
+  // exist in the DOM for one frame before `putImageData` has run (the
+  // element mounts, then the async render resolves and paints), so poll
+  // rather than sampling once immediately after visibility.
+  const nonWhiteFraction = await page.waitForFunction(
+    () => {
+      const el = document.querySelector('canvas')
+      if (!el || el.width === 0 || el.height === 0) return false
+      const ctx = el.getContext('2d')
+      if (!ctx) return false
+      const { data } = ctx.getImageData(0, 0, el.width, el.height)
+      let nonWhite = 0
+      const totalPixels = data.length / 4
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) nonWhite++
+      }
+      const fraction = nonWhite / totalPixels
+      // The fixture's first page has visible text/content, so require a
+      // real, non-trivial fraction of non-white pixels, not just one stray
+      // pixel (which would also pass an off-by-nothing "> 0" check).
+      return fraction > 0.001 ? fraction : false
+    },
+    undefined,
+    { timeout: 15_000 },
+  )
+  const fraction = (await nonWhiteFraction.jsonValue()) as number
+  console.log(`[pixels] non-white fraction of page-0 canvas: ${(fraction * 100).toFixed(2)}%`)
+  expect(fraction).toBeGreaterThan(0.001)
 })
