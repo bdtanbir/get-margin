@@ -49,9 +49,17 @@ onMounted(() => { void vp.pump() })
 </script>
 
 <template>
+  <!--
+    Owns its own height (h-dvh) rather than trusting a caller-supplied class
+    — a caller-passed height utility landing on this same root element would
+    collide with one hardcoded here, with Tailwind's generated-CSS order
+    (not usage order) silently deciding the winner. A future shell that
+    embeds PageList beside other chrome (Task 20) should wrap it in a sized
+    container rather than pass conflicting height classes through.
+  -->
   <div
     ref="scroller"
-    class="h-full w-full overflow-auto overscroll-contain bg-canvas"
+    class="h-dvh w-full overflow-auto overscroll-contain bg-canvas"
     tabindex="0"
     role="region"
     aria-label="Document pages"

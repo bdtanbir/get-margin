@@ -72,6 +72,29 @@ describe('useViewportStore', () => {
     expect(render.mock.calls.length).toBeGreaterThan(calls)
   })
 
+  it('re-renders after setDpr changes the effective scale', async () => {
+    // dpr is a second input to effectiveScale, exactly like zoom — proves
+    // setDpr marks the plan dirty the same way setZoom does, closing the
+    // gap a plain writable `dpr` ref would leave open (a DPR change with no
+    // setter would never invalidate the cache, silently serving stale-scale
+    // bitmaps).
+    const { vp } = await seededStores()
+    await vp.pump()
+    const calls = render.mock.calls.length
+    vp.setDpr(vp.dpr + 1)
+    await vp.pump()
+    expect(render.mock.calls.length).toBeGreaterThan(calls)
+  })
+
+  it('setDpr is a no-op when the value is unchanged (no spurious dirty)', async () => {
+    const { vp } = await seededStores()
+    await vp.pump()
+    const calls = render.mock.calls.length
+    vp.setDpr(vp.dpr) // same value
+    await vp.pump()
+    expect(render.mock.calls.length).toBe(calls)
+  })
+
   it('clamps zoom to the allowed range', async () => {
     const { vp } = await seededStores()
     vp.setZoom(100); expect(vp.zoom).toBeLessThanOrEqual(8)
@@ -117,7 +140,7 @@ describe('useViewportStore', () => {
       pageOrder.map((id, i) => [id, { id, sourceIndex: i, geometry: GEOM }]),
     )
     doc.$patch({ pageOrder, pages })
-    vp.dpr = 2 // deterministic scale regardless of the test environment's devicePixelRatio
+    vp.setDpr(2) // deterministic scale regardless of the test environment's devicePixelRatio
     vp.setAnchor(0)
 
     const renderOrder: string[] = []

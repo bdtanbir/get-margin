@@ -13,5 +13,5 @@ const doc = useDocumentStore()
     and the viewport store) once the document is ready, DropZone otherwise.
   -->
   <DropZone v-if="doc.status !== 'ready'" />
-  <PageList v-else class="h-dvh w-full" />
+  <PageList v-else />
 </template>

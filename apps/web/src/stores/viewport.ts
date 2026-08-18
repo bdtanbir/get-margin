@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, shallowRef } from 'vue'
+import { ref, computed, shallowRef, readonly } from 'vue'
 import { BitmapCache, cacheKey } from '@/lib/bitmapCache'
 import { getPdfClient } from '@/workers/pdfClient'
 import { planRenders, effectiveScale, PLACEHOLDER_SCALE } from '@/features/viewport/renderPriority'
@@ -31,12 +31,21 @@ export const useViewportStore = defineStore('viewport', () => {
 
   let pumping: Promise<void> | undefined
   // Amendment A2: set whenever the render plan may be stale (anchor moved,
-  // zoom changed, or a page was invalidated). `pump()` loops while this is
-  // set, re-planning from scratch each pass, and also checks it between
-  // individual renders so a scroll mid-pump abandons the stale plan at the
-  // next render boundary rather than draining it to completion. MuPDF
-  // cannot interrupt a render already inside WASM, so "between renders" is
-  // the finest granularity available.
+  // zoom changed, dpr changed, or a page was invalidated). `pump()` loops
+  // while this is set, re-planning from scratch each pass, and also checks
+  // it between individual renders so a scroll mid-pump abandons the stale
+  // plan at the next render boundary rather than draining it to completion.
+  // MuPDF cannot interrupt a render already inside WASM, so "between
+  // renders" is the finest granularity available.
+  //
+  // Invariant: every input to `effectiveScale(zoom, dpr)` — the formula
+  // behind the cache key every render is planned and stored against — must
+  // mark the plan dirty when it changes, exactly like `setZoom` and
+  // `setDpr` do below. `zoom` and `dpr` are therefore never exposed as
+  // plain writable refs; each has a setter that owns marking `dirty`. If a
+  // third input is ever added to that formula, wire its setter the same
+  // way, or the cache will silently keep serving bitmaps rendered at the
+  // old scale — blurry pages, no error, no signal anything is stale.
   let dirty = true
 
   /** Best available bitmap: the full render if present, else the placeholder. */
@@ -60,6 +69,21 @@ export const useViewportStore = defineStore('viewport', () => {
     const clamped = Math.max(0, Math.min(doc.pageOrder.length - 1, i))
     if (clamped === anchorIndex.value) return
     anchorIndex.value = clamped
+    dirty = true
+  }
+
+  /**
+   * The only way to change `dpr` from outside the store — mirrors
+   * `setZoom`. `dpr` feeds `effectiveScale` exactly like `zoom` does, so a
+   * plain writable ref would let a caller change the render scale without
+   * marking the plan dirty, leaving the viewer silently serving bitmaps
+   * rendered at the old scale. Nothing currently calls this after the
+   * store's initial creation, but Task 18's zoom UI and any future
+   * DPR-change listener (a multi-monitor drag, browser page zoom) need it.
+   */
+  function setDpr(d: number): void {
+    if (d === dpr.value) return
+    dpr.value = d
     dirty = true
   }
 
@@ -112,5 +136,18 @@ export const useViewportStore = defineStore('viewport', () => {
 
   const zoomPercent = computed(() => Math.round(zoom.value * 100))
 
-  return { zoom, anchorIndex, dpr, zoomPercent, bitmapFor, setZoom, setAnchor, invalidate, pump }
+  // `dpr` is read-only outside the store — see the invariant comment by
+  // `dirty` above. External code that needs to change it calls `setDpr`.
+  return {
+    zoom,
+    anchorIndex,
+    dpr: readonly(dpr),
+    zoomPercent,
+    bitmapFor,
+    setZoom,
+    setAnchor,
+    setDpr,
+    invalidate,
+    pump,
+  }
 })
