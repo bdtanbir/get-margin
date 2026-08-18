@@ -7,9 +7,9 @@
 > and `docs/findings/evidence/`.
 
 Spike task 6 of Phase 0. Probes: `spikes/11-widgets.ts`, `spikes/12-content-stream.ts`,
-`spikes/13-builtin-redaction.ts` (bonus — see Q6). Run logs and intermediate artifacts under
+`spikes/13-builtin-redaction.ts` (bonus — see Q6), deleted with `spikes/` at Phase 0 close. Run logs and intermediate artifacts under
 `docs/findings/scratch/` (gitignored, not committed; regenerate by re-running the probes).
-Evidence PDFs/PNGs from the probes are committed under `spikes/out-*`.
+Evidence artifacts were produced under `spikes/out-*`; the three preserved for the outstanding human check now live in `docs/findings/evidence/`.
 
 mupdf is 1.28.0. `packages/pdf-core/node_modules/mupdf/dist/mupdf.d.ts` was read directly and
 used as ground truth before writing any probe code — see the "API drift vs. brief" section.
@@ -74,8 +74,8 @@ invisible in both renderers — the auto-generated `Off` appearance stream sets 
 draws no path, and no `/MK` (appearance-characteristics: border/background colour) was supplied,
 so there is nothing to see. This is not a bug — it is the correct PDF-spec behaviour for a box
 with no border colour. Confirmed the fix: setting `/MK/BC` (black) and `/AS = /Yes` and
-re-rendering (`docs/findings/scratch/render-checkbox-checked.ts`, not committed — evidence is the
-committed logic in `spikes/11-widgets.ts` plus this description; the derived PNG showed a crisp
+re-rendering (`docs/findings/scratch/render-checkbox-checked.ts`, not committed — the logic
+was in `spikes/11-widgets.ts` plus this description; the derived PNG showed a crisp
 black-bordered box with a checkmark). **Consequence for Phase 5: every checkbox/radio field needs
 an explicit `/MK/BC` (or equivalent) or it will be structurally correct but invisible when
 unchecked** — a real gap the brief's checklist didn't mention.

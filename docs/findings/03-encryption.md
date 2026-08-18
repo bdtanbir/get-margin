@@ -6,12 +6,11 @@
 > `packages/pdf-core/test/render.test.ts` (rotation/layout agreement, premultiplied compositing)
 > and `docs/findings/evidence/`.
 
-Probes (both committed, both runnable):
-- `spikes/10-encryption.ts` (numbered 10 — spikes 01–09 already existed in the repo). Run with
-  `export PATH=/opt/homebrew/bin:$PATH && pnpm tsx spikes/10-encryption.ts`. Produces
-  `spikes/out-enc.pdf` / `spikes/out-dec.pdf` (both committed as evidence artifacts).
-- `spikes/10-verify.sh` — the non-MuPDF corroboration (Q2), runnable independently against the
-  two committed PDFs above: `bash spikes/10-verify.sh`.
+Probes (committed at the time of the spike; deleted with `spikes/` at Phase 0 close):
+- `spikes/10-encryption.ts` (numbered 10 — spikes 01–09 already existed in the repo). Produced
+  `spikes/out-enc.pdf` / `spikes/out-dec.pdf` (evidence artifacts from the spike, now deleted).
+- `spikes/10-verify.sh` — the non-MuPDF corroboration (Q2), which independently verified the
+  evidence PDFs produced by the encryption probe.
 
 Fixture: `packages/pdf-core/test/fixtures/large-300p.pdf` (636KB source, 300 pages).
 mupdf **1.28.0** (not the brief's assumed `^1.26.0`).
@@ -100,8 +99,8 @@ AES-256 string) reopens with `needsPassword() === true`; a document saved with o
 Verified by Preview: not run directly (no interactive Preview.app session in this environment).
 Used instead: `qlmanage`, which drives the same CoreGraphics/Quick Look rendering stack
 Preview.app uses — disclosed explicitly, not silently substituted. See the two independent,
-non-MuPDF checks below (now committed as `spikes/10-verify.sh`, a runnable script, not just
-prose), which are strictly stronger than "Preview showed a password prompt" because they inspect
+non-MuPDF checks below (drawn from the verification logic in `spikes/10-verify.sh`, which was
+a runnable script, not just prose), which are strictly stronger than "Preview showed a password prompt" because they inspect
 the file bytes/CoreGraphics's own handling rather than relying on a human glance.
 
 Permission-flag enforcement (user password + owner password + `encrypt=` all confirmed above)
@@ -110,9 +109,9 @@ a `permissions=` value present is not, by itself, evidence the value does anythi
 
 ### Non-MuPDF confirmation (two independent checks, both macOS-native, neither uses MuPDF)
 
-Both checks are now **committed as a runnable companion script**, `spikes/10-verify.sh` — run
-`bash spikes/10-verify.sh` against the committed `spikes/out-enc.pdf` / `spikes/out-dec.pdf` to
-re-derive this evidence in one command, rather than re-typing the commands below by hand.
+Both checks were performed by the now-deleted verification script `spikes/10-verify.sh` against the
+probe-generated evidence PDFs (`spikes/out-enc.pdf` / `spikes/out-dec.pdf`, also deleted). The
+verification logic is reproduced below in full; no re-running of the original spike scripts is possible.
 
 **1. `strings` — presence of the `/Encrypt` dictionary in the raw file bytes:**
 

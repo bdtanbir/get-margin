@@ -10,9 +10,7 @@ mupdf resolved to **1.28.0** (per `engine-facts.md`). `packages/pdf-core/node_mo
 was used as ground truth throughout; drift from the brief's `^1.26.0`-era assumptions is called
 out inline.
 
-Probes, all committed (an earlier pass of this spike deleted several ad-hoc probes after folding
-their output into this doc — that was a mistake, corrected in this revision; every claim below
-now has a committed script behind it):
+Probes (committed at the time of the spike; deleted with `spikes/` at Phase 0 close — see the banner above). An earlier pass of this spike deleted several ad-hoc probes after folding their output into this doc; that was a mistake, corrected in this revision:
 - `spikes/03-annotations.ts` — Q1/Q2 annotation matrix, `/AP` presence.
 - `spikes/04-fonts.ts` — original combined font probe (kept for its own record, but see the note
   on Q5 below: it does not isolate `addSimpleFont`/`addFont`).
@@ -55,7 +53,7 @@ un-try/catched call in the same shape as the original probe's and captures the r
 (The deleted probe itself no longer exists to compare against directly, so this is a plausible
 reconstruction, not a verified trace — the substantive claim that follows, that the low-level
 `put()` succeeds and the failure is an ordinary catchable `Error`, is independently demonstrated by
-the committed, runnable code below and stands on its own regardless of this historical account.)
+the probe code above and stands on its own regardless of this historical account.)
 
 ```
 Error: Link annotations have no Rect property
@@ -279,7 +277,7 @@ Arial.ttf (755.1KB raw):
 | Arial.ttf | 755.1KB | 1.2KB | 432.4KB | 431.2KB | 57.1% |
 
 These numbers are unchanged from the previous revision of this doc — the isolation probe
-reproduces the same percentages, just with committed code behind them now.
+reproduces the same percentages that the probe code (deleted with `spikes/`) originally measured.
 
 The delta is consistently 57–65% of raw TTF size regardless of font size or which `add*Font` call
 is used — the signature of **plain Flate compression of the whole font program**, not glyph-level
