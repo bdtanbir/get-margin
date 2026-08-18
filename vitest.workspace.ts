@@ -31,7 +31,11 @@ export default defineWorkspace([
       setupFiles: ['./test/setup.ts'],
       // Explicit exclude overrides Vitest's defaults entirely, so merge
       // rather than replace — otherwise node_modules gets scanned too.
-      exclude: [...configDefaults.exclude, 'test/workers/**'],
+      // 'e2e/**' excludes Playwright specs (Task 15a) — configDefaults
+      // doesn't cover it, and Playwright's own `*.spec.ts` naming matches
+      // Vitest's default include glob, so without this Vitest would try to
+      // collect and run Playwright tests as unit tests.
+      exclude: [...configDefaults.exclude, 'test/workers/**', 'e2e/**'],
     },
   },
   {

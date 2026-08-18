@@ -9,3 +9,6 @@ packages/pdf-core/test/golden/**/*.diff.png
 packages/pdf-core/test/golden/_scratch-*
 docs/findings/scratch/
 spikes/
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
