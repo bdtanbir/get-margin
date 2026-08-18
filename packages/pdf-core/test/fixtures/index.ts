@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const FIXTURE_NAMES = [
   'simple-text', 'rotated', 'offset-cropbox', 'multi-page', 'large-300p', 'mixed-fonts',
@@ -6,7 +7,7 @@ export const FIXTURE_NAMES = [
 
 export type FixtureName = (typeof FIXTURE_NAMES)[number]
 
-const DIR = new URL('.', import.meta.url).pathname
+const DIR = fileURLToPath(new URL('.', import.meta.url))
 
 export function fixturePath(name: FixtureName): string {
   return join(DIR, `${name}.pdf`)

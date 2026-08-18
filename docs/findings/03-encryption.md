@@ -1,5 +1,11 @@
 # Findings: encryption and save options
 
+> **Note:** `spikes/…` paths referenced below were throwaway probe scripts, deleted with Phase 0
+> (commit `e5bdcc3`) and never committed. The durable regression proofs are
+> `packages/transform/test/transform.test.ts` (MuPDF matrix cross-check),
+> `packages/pdf-core/test/render.test.ts` (rotation/layout agreement, premultiplied compositing)
+> and `docs/findings/evidence/`.
+
 Probes (both committed, both runnable):
 - `spikes/10-encryption.ts` (numbered 10 — spikes 01–09 already existed in the repo). Run with
   `export PATH=/opt/homebrew/bin:$PATH && pnpm tsx spikes/10-encryption.ts`. Produces

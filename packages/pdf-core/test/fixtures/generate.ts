@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib'
 import { writeFile, mkdir, rename } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const FIXED_DATE = new Date('2020-01-01T00:00:00Z')
 
@@ -105,7 +106,7 @@ async function mixedFonts(outDir: string): Promise<void> {
   await save(doc, outDir, 'mixed-fonts')
 }
 
-export async function generateFixtures(outDir = new URL('.', import.meta.url).pathname): Promise<void> {
+export async function generateFixtures(outDir = fileURLToPath(new URL('.', import.meta.url))): Promise<void> {
   await mkdir(outDir, { recursive: true })
   await simpleText(outDir)
   await rotated(outDir)

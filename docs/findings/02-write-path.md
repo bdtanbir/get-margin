@@ -1,5 +1,11 @@
 # Findings: MuPDF.js write path (annotations and font embedding)
 
+> **Note:** `spikes/…` paths referenced below were throwaway probe scripts, deleted with Phase 0
+> (commit `e5bdcc3`) and never committed. The durable regression proofs are
+> `packages/transform/test/transform.test.ts` (MuPDF matrix cross-check),
+> `packages/pdf-core/test/render.test.ts` (rotation/layout agreement, premultiplied compositing)
+> and `docs/findings/evidence/`.
+
 mupdf resolved to **1.28.0** (per `engine-facts.md`). `packages/pdf-core/node_modules/mupdf/dist/mupdf.d.ts`
 was used as ground truth throughout; drift from the brief's `^1.26.0`-era assumptions is called
 out inline.
@@ -161,9 +167,11 @@ prediction and ~0px from the unflipped one.)
 **Practical consequence:** `engine-facts.md`'s Task 3 statement — "`/Rect` and `/QuadPoints` live
 in [bottom-up] space, not page space" — is true of the *raw on-disk dictionary value*, but **false
 of what the `PDFAnnotation` setter/getter methods expose**. A future `annots.ts` should feed these
-setters page-space (top-down) coordinates directly — the same coordinates `render.ts`/`transform`
-already produce — with **no manual bottom-up flip**. Applying Task 3's read-path flip rule to
-these write-path setters would place every annotation in the wrong place (as this spike did on its
+setters the output of **`pdfToView(p, geom, 1)`** — i.e. page space at **scale 1, unscaled points**,
+not the zoom-scaled view pixels `pdfToView` returns for on-screen rendering — with **no manual
+bottom-up flip**. Passing a zoom-scaled rect here would be silently accepted and land the
+annotation at a multiple of the correct offset. Applying Task 3's read-path flip rule to these
+write-path setters would also place every annotation in the wrong place (as this spike did on its
 first pass, until pixel-sampled evidence caught it).
 
 ## Q3 — FreeText capability

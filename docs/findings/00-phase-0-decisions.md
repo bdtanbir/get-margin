@@ -11,7 +11,7 @@ document is the compact reference table.
 
 | Question | Decision | Source |
 |---|---|---|
-| pdf-lib as a runtime dependency? | **YES** (font subsetting/embedding path only — MuPDF stays the single engine for everything else) | `02-write-path.md` Q5, "DECISION: pdf-lib as a runtime dependency" |
+| pdf-lib as a runtime dependency? | **YES** (font subsetting/embedding path only — MuPDF stays the single engine for everything else) (promoted at the font task in Phase 4 — currently devDependency, fixture generator only) | `02-write-path.md` Q5, "DECISION: pdf-lib as a runtime dependency" |
 | qpdf-wasm needed for encryption? | **NO** — MuPDF writes genuine AES-256 encrypted PDFs natively via `saveToBuffer('encrypt=aes-256,...')` | `03-encryption.md` Q1/Q2, "DECISION: qpdf-wasm" |
 | Pixmap disposal required? | **YES — mandatory, not optional.** Omitting `.destroy()` hard-crashes the WASM heap (`malloc failed`) within a single 300–600 page sweep; with disposal, RSS drift is ~5–7MB flat over the same sweep. | `01-read-path.md` Q3 |
 | MuPDF applies rotation automatically | **TRUE** — pixmap dimensions swap for 90°/270°, and `getTransform()`'s matrix already contains the rotation. `render.ts` must pass a scale-only matrix; `transform.ts` must still compose rotation itself, because it maps unrotated PDF-space geometry onto this same already-rotated page space. | `01-read-path.md` Q6 |

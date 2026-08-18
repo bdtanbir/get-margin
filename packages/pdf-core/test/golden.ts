@@ -3,9 +3,10 @@ import pixelmatch from 'pixelmatch'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { PdfDocument, renderPage } from '../src/index.js'
 
-const GOLDEN_DIR = join(new URL('.', import.meta.url).pathname, 'golden')
+const GOLDEN_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'golden')
 
 /**
  * Read live rather than captured once at module load, so tests can flip
@@ -55,9 +56,14 @@ export async function renderToPng(pdf: Uint8Array, page = 0, scale = 1): Promise
 /**
  * Render `pdf` and compare against the reviewed golden image for `name`.
  *
- * Missing goldens are written and the assertion passes with a warning — the
- * new file must then be reviewed by eye and committed. Run the whole suite with
- * UPDATE_GOLDENS=1 to re-baseline after an intentional rendering change.
+ * Locally, missing goldens are written and the assertion passes with a
+ * warning — the new file must then be reviewed by eye and committed. Run the
+ * whole suite with UPDATE_GOLDENS=1 to re-baseline after an intentional
+ * rendering change.
+ *
+ * Under CI, a missing golden instead throws: a green build must never mean
+ * "nothing was compared." A typo'd golden name or a golden dropped from a
+ * commit fails loudly instead of silently creating a new, unreviewed one.
  */
 export async function assertGolden(name: string, pdf: Uint8Array, opts: GoldenOptions = {}): Promise<void> {
   assertSafeName(name)
@@ -66,6 +72,14 @@ export async function assertGolden(name: string, pdf: Uint8Array, opts: GoldenOp
   await mkdir(GOLDEN_DIR, { recursive: true })
 
   const goldenPath = join(GOLDEN_DIR, `${name}.png`)
+
+  if (!UPDATE && !existsSync(goldenPath) && process.env.CI) {
+    throw new Error(
+      `[golden] no committed golden for "${name}". Run the suite locally, review the ` +
+      `generated PNG by eye, and commit it.`,
+    )
+  }
+
   const actualPng = await renderToPng(pdf, page, scale)
 
   if (UPDATE || !existsSync(goldenPath)) {

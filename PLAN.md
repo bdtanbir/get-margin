@@ -2,7 +2,7 @@
 
 Web-based PDF editor with feature parity to Sejda's editor (referenced for *feature scope only* — no UI/UX or visual borrowing). Original modern-SaaS design.
 
-**Status:** Phase 0 complete (10 tasks, 68 tests passing, spikes retired). Amended throughout to match measured engine reality — see `docs/findings/00-phase-0-decisions.md`. Phase 1 not yet started.
+**Status:** Phase 0 complete (11 tasks, 68 tests passing, spikes retired). Amended throughout to match measured engine reality — see `docs/findings/00-phase-0-decisions.md`. Phase 1 not yet started.
 **Date:** 2026-08-17 (original) · amended 2026-08-18
 
 ---

@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { unlink } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { assertGolden, renderToPng } from './golden.js'
 import { generateFixtures, fixturePath } from './fixtures/index.js'
 
 /** Same layout golden.ts uses internally — this file lives in the same directory. */
-const goldenFile = (name: string) => join(new URL('.', import.meta.url).pathname, 'golden', `${name}.png`)
+const goldenFile = (name: string) => join(fileURLToPath(new URL('.', import.meta.url)), 'golden', `${name}.png`)
 
 async function mutate(): Promise<Uint8Array> {
   const doc = await PDFDocument.load(bytes('simple-text'))
@@ -122,5 +123,21 @@ describe('golden rig — creation and rebaseline are distinguishable from a real
   it('rejects a golden name that could escape the golden directory', async () => {
     await expect(assertGolden('../escape', bytes('simple-text'))).rejects.toThrow(/must not contain/i)
     await expect(assertGolden('nested/name', bytes('simple-text'))).rejects.toThrow(/must not contain/i)
+  })
+
+  it('rejects a missing golden under CI instead of silently creating one', async () => {
+    const name = `_scratch-ci-missing-${process.pid}`
+    const previousCI = process.env.CI
+    process.env.CI = '1'
+    try {
+      await expect(assertGolden(name, bytes('simple-text'))).rejects.toThrow(
+        /no committed golden for/i,
+      )
+    } finally {
+      if (previousCI === undefined) delete process.env.CI
+      else process.env.CI = previousCI
+    }
+    // Nothing should have been written under CI — confirm no stray file needs cleanup.
+    expect(existsSync(goldenFile(name))).toBe(false)
   })
 })

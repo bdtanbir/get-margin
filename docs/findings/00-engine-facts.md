@@ -1,5 +1,11 @@
 # Settled MuPDF.js facts — read before implementing Tasks 8, 9, 10
 
+> **Note:** `spikes/…` paths referenced below were throwaway probe scripts, deleted with Phase 0
+> (commit `e5bdcc3`) and never committed. The durable regression proofs are
+> `packages/transform/test/transform.test.ts` (MuPDF matrix cross-check),
+> `packages/pdf-core/test/render.test.ts` (rotation/layout agreement, premultiplied compositing)
+> and `docs/findings/evidence/`.
+
 These are **measured, verified results**, not assumptions. They come from the Task 3 spike
 (`docs/findings/01-read-path.md`) and were independently cross-checked by the controller.
 Where they contradict your task brief, **these win** — the brief was written before the
@@ -89,11 +95,13 @@ already has **(a)** the CropBox origin translated to (0,0), **(b)** a top-down y
 This is **not** the raw PDF content-stream space that the on-disk dictionary stores, which is
 bottom-up with no CropBox correction.
 
-> ## ✅ VERIFIED — evidence committed
+> ## ✅ VERIFIED
 >
 > This claim was initially narrated with no committed probe, was flagged provisional, and has since
-> been **re-derived and reproduced exactly** with committed evidence (`spikes/05`–`09`). Safe to
-> build on.
+> been **re-derived and reproduced exactly** (originally via the now-deleted, gitignored `spikes/05`–`09`
+> probe scripts). Safe to build on — the durable regression proof is
+> `packages/transform/test/transform.test.ts` and `packages/pdf-core/test/render.test.ts` (see the
+> banner note at the top of this file).
 >
 > **CORRECTION (measured by the Task 4 write-path spike — read this before touching annotations).**
 > An earlier version of this file said "`/Rect` and `/QuadPoints` live in bottom-up space, not page
@@ -113,10 +121,12 @@ bottom-up with no CropBox correction.
 > `img_row = raw_y × scale` matched within 1–3px; the naive `(pageHeight − raw_y) × scale` flip was
 > off by 120–140px and is ruled out.
 >
-> **Consequence:** feed these setters page-space coordinates directly — the same ones `transform`
-> and `render.ts` already produce — with **no manual bottom-up flip**. Applying the read-path flip
-> rule here places every annotation 120–140px off. The spike made exactly that mistake on its first
-> pass and caught it only with pixel evidence.
+> **Consequence:** feed these setters the output of `pdfToView(p, geom, 1)` — page space at
+> **scale 1, unscaled points**, not the zoom-scaled view pixels `pdfToView` returns for on-screen
+> rendering — with **no manual bottom-up flip**. A zoom-scaled rect would be silently accepted and
+> land at a multiple of the correct offset. Applying the read-path flip rule here also places every
+> annotation 120–140px off. The spike made exactly that mistake on its first pass and caught it
+> only with pixel evidence.
 
 - `page.getBounds()` returns the **CropBox**, origin-normalized to (0,0). Confirmed:
   `getBounds() === getBounds('CropBox')`. For the `offset-cropbox` fixture (raw `/CropBox`

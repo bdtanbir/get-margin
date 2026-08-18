@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs'
 import * as mupdf from 'mupdf'
 import { PdfDocument, renderPage } from '../src/index.js'
 import { generateFixtures, fixturePath } from './fixtures/index.js'
-import { pageViewSize } from '@margin/transform'
+import { pageViewSize, pdfToView } from '@margin/transform'
+import { assertGolden } from './golden.js'
 
 beforeAll(async () => { await generateFixtures() }, 60_000)
 
@@ -202,5 +203,57 @@ describe('renderPage', () => {
       pixmapDestroySpy.mockRestore()
       doc.close()
     }
+  })
+
+  // --- Seam check: transform's predictions vs. what MuPDF actually renders --
+  //
+  // Everything above verifies bitmap DIMENSIONS agree with pageViewSize, and
+  // transform's own suite verifies pdfToView is internally self-consistent —
+  // but nothing samples rendered pixel CONTENT against a pdfToView prediction.
+  // A 90-vs-270 swap in pdfToView would pass every test on this branch without
+  // this one: the round-trip is self-consistent, the matrix table is a
+  // transcription, and pixmap dimensions are identical for 90 and 270.
+  //
+  // The `rotated` fixture draws a solid red 40x20 marker at PDF (0,0)-(40,20)
+  // on each of its four pages (rotate 0/90/180/270, in that page order) —
+  // see test/fixtures/generate.ts. Its centre is PDF (20,10). This test
+  // renders each page and asserts the pixel at pdfToView's predicted screen
+  // location for that centre is actually red.
+  it('renders the PDF-origin marker where pdfToView predicts, for all four rotations', () => {
+    const doc = PdfDocument.open(bytes('rotated'))
+    try {
+      for (let i = 0; i < 4; i++) {
+        const geom = doc.pageGeometry(i)
+        const r = renderPage(doc, i, 1)
+        const predicted = pdfToView({ x: 20, y: 10 }, geom, 1)
+        const px = Math.round(predicted.x)
+        const py = Math.round(predicted.y)
+        const label = `page ${i} (rotate ${geom.rotate})`
+        expect(px, `${label}: predicted x within bitmap bounds`).toBeGreaterThanOrEqual(0)
+        expect(px, `${label}: predicted x within bitmap bounds`).toBeLessThan(r.width)
+        expect(py, `${label}: predicted y within bitmap bounds`).toBeGreaterThanOrEqual(0)
+        expect(py, `${label}: predicted y within bitmap bounds`).toBeLessThan(r.height)
+
+        const idx = (py * r.width + px) * 4
+        expect(r.rgba[idx], `${label}: R at predicted marker centre`).toBeGreaterThan(200)
+        expect(r.rgba[idx + 1], `${label}: G at predicted marker centre`).toBeLessThan(50)
+        expect(r.rgba[idx + 2], `${label}: B at predicted marker centre`).toBeLessThan(50)
+      }
+    } finally {
+      doc.close()
+    }
+  })
+
+  // --- Golden images covering the two riskiest coordinate paths ------------
+  // Both previously committed goldens (simple-text-p0, multi-page-p5) are
+  // unrotated, zero-origin pages. Rotation and non-zero CropBox — the two
+  // coordinate paths most likely to break — had no image baseline. These add
+  // one of each. Both generated PNGs were reviewed by eye before committing.
+  it('matches the golden for a rotated page (rotate 90)', async () => {
+    await assertGolden('rotated-p1', bytes('rotated'), { page: 1 })
+  })
+
+  it('matches the golden for a page with a non-zero CropBox', async () => {
+    await assertGolden('offset-cropbox-p0', bytes('offset-cropbox'))
   })
 })

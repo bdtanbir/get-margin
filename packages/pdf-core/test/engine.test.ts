@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import * as mupdf from 'mupdf'
-import { PdfDocument } from '../src/index.js'
+import { PdfDocument, PdfOpenError, looksLikePdf } from '../src/index.js'
 import { generateFixtures, fixturePath } from './fixtures/index.js'
 
 beforeAll(async () => { await generateFixtures() }, 60_000)
@@ -28,7 +28,7 @@ describe('PdfDocument.open', () => {
   })
 
   it('throws a typed error on non-PDF input', () => {
-    expect(() => PdfDocument.open(new Uint8Array([1, 2, 3, 4]))).toThrow()
+    expect(() => PdfDocument.open(new Uint8Array([1, 2, 3, 4]))).toThrow(PdfOpenError)
   })
 
   it('is safe to close twice', () => {
@@ -41,6 +41,33 @@ describe('PdfDocument.open', () => {
     const doc = PdfDocument.open(bytes('simple-text'))
     doc.close()
     expect(() => doc.pageGeometry(0)).toThrow(/closed/i)
+  })
+})
+
+// --- looksLikePdf: the input validator itself, not just PdfDocument.open()'s use of it ---
+describe('looksLikePdf', () => {
+  const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46] // "%PDF"
+
+  function withHeaderAt(offset: number, totalLength: number): Uint8Array {
+    const buf = new Uint8Array(totalLength).fill(0x20) // junk padding
+    for (let k = 0; k < PDF_MAGIC.length; k++) buf[offset + k] = PDF_MAGIC[k]!
+    return buf
+  }
+
+  it('accepts a header at offset 0', () => {
+    expect(looksLikePdf(withHeaderAt(0, 100))).toBe(true)
+  })
+
+  it('accepts a header preceded by junk, at offset 500 (junk-prefix tolerance)', () => {
+    expect(looksLikePdf(withHeaderAt(500, 2000))).toBe(true)
+  })
+
+  it('rejects a 2-byte buffer', () => {
+    expect(looksLikePdf(new Uint8Array([1, 2]))).toBe(false)
+  })
+
+  it('rejects a header beyond the scan window, at offset 2000', () => {
+    expect(looksLikePdf(withHeaderAt(2000, 3000))).toBe(false)
   })
 })
 

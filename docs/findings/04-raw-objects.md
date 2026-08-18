@@ -1,5 +1,11 @@
 # Findings: raw PDF object access (form widgets and content streams)
 
+> **Note:** `spikes/…` paths referenced below were throwaway probe scripts, deleted with Phase 0
+> (commit `e5bdcc3`) and never committed. The durable regression proofs are
+> `packages/transform/test/transform.test.ts` (MuPDF matrix cross-check),
+> `packages/pdf-core/test/render.test.ts` (rotation/layout agreement, premultiplied compositing)
+> and `docs/findings/evidence/`.
+
 Spike task 6 of Phase 0. Probes: `spikes/11-widgets.ts`, `spikes/12-content-stream.ts`,
 `spikes/13-builtin-redaction.ts` (bonus — see Q6). Run logs and intermediate artifacts under
 `docs/findings/scratch/` (gitignored, not committed; regenerate by re-running the probes).

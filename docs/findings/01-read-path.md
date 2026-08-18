@@ -1,5 +1,11 @@
 # Findings: MuPDF.js read path
 
+> **Note:** `spikes/…` paths referenced below were throwaway probe scripts, deleted with Phase 0
+> (commit `e5bdcc3`) and never committed. The durable regression proofs are
+> `packages/transform/test/transform.test.ts` (MuPDF matrix cross-check),
+> `packages/pdf-core/test/render.test.ts` (rotation/layout agreement, premultiplied compositing)
+> and `docs/findings/evidence/`.
+
 Engine: mupdf@1.28.0 (plan assumed `^1.26.0` — some API drift found and documented below)
 Machine: Apple M1 Pro, 16GB RAM, node v23.7.0 (macOS/Darwin 24.6.0)
 
@@ -105,6 +111,11 @@ Courier:             {"mono":true, "serif":false,"bold":false,"italic":false}
 IMPACT ON SPEC §2.4: Font metadata is present, so span-level (and even character-level) text patching is achievable — this is good news, not a blocker. But **the brief's assumed code path is wrong**: there is no `line.spans[]` array and no per-character bboxes in `asJSON()`. Task 10 (`text.ts`) needs two different calls depending on granularity: `toStructuredText().asJSON()` for span/line-level text+font (sufficient for whole-run replace or font-swap operations), and `StructuredText.walk({onChar})` for character-level quads (needed for precise markup-quad computation per spec §2.1, or sub-span edits). Planning a single `asJSON()`-only implementation, as the brief's probe code implies, would silently omit character-level positioning — this needs to be corrected before Task 10 starts, not discovered mid-implementation.
 
 ## Q5 — getBounds()
+
+> **Numbers below are stale.** Commit `70294ba` changed the `offset-cropbox` fixture; the raw
+> `/CropBox` is now `[50 80 400 500]` and `getBounds()` now returns `[0, 0, 350, 420]` (as
+> `00-engine-facts.md` states and the current test suite asserts). The narrative and derivation
+> logic below are otherwise unchanged — only the concrete numbers moved.
 
 Returns: **CropBox** (confirmed: `page.getBounds()` === `page.getBounds('CropBox')`, both `[0,0,400,500]`; `page.getBounds('MediaBox')` differs: `[-50,-212,562,580]`).
 

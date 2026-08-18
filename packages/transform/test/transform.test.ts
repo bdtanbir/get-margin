@@ -101,10 +101,16 @@ describe('normalizeRotation', () => {
 })
 
 describe('svgViewBox', () => {
-  it('uses unrotated cropBox extent with a zero origin', () => {
-    // The root <g transform> handles the flip and rotation, so the viewBox
-    // stays in unrotated PDF units — this is what lets objects render at raw coords.
-    expect(svgViewBox({ cropBox: [50, 80, 400, 500], rotate: 90 })).toBe('0 0 350 420')
+  it('uses the displayed (post-rotation) extent in points, with a zero origin', () => {
+    // The viewBox must agree with svgRootTransform(), which maps content into
+    // the ROTATED extent — so on a quarter turn, viewBox swaps width/height
+    // relative to the unrotated cropBox. This is what lets objects render at
+    // their raw stored coords with no per-object math.
+    expect(svgViewBox({ cropBox: [50, 80, 400, 500], rotate: 90 })).toBe('0 0 420 350')
+  })
+
+  it('keeps the unrotated extent when rotate is 0', () => {
+    expect(svgViewBox({ cropBox: [50, 80, 400, 500], rotate: 0 })).toBe('0 0 350 420')
   })
 })
 

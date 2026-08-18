@@ -22,18 +22,6 @@ export type RenderedPage = {
   rgba: Uint8Array
 }
 
-function rotationMatrix(deg: number): mupdf.Matrix {
-  // Only needed when MuPDF does NOT apply /Rotate for us. Dead under the
-  // current (true) setting of MUPDF_APPLIES_ROTATION; kept for the day the
-  // engine's behaviour changes and this constant flips to false.
-  switch (((deg % 360) + 360) % 360) {
-    case 90: return [0, 1, -1, 0, 0, 0]
-    case 180: return [-1, 0, 0, -1, 0, 0]
-    case 270: return [0, -1, 1, 0, 0, 0]
-    default: return mupdf.Matrix.identity
-  }
-}
-
 export function renderPage(doc: PdfDocument, index: number, scale: number): RenderedPage {
   if (!Number.isFinite(scale) || scale <= 0) {
     throw new RangeError(`scale must be a positive finite number, got ${scale}`)
@@ -42,10 +30,12 @@ export function renderPage(doc: PdfDocument, index: number, scale: number): Rend
   const page = doc._raw().loadPage(index)
   let pixmap: mupdf.Pixmap | undefined
   try {
-    let matrix = mupdf.Matrix.scale(scale, scale)
-    if (!MUPDF_APPLIES_ROTATION && geom.rotate !== 0) {
-      matrix = mupdf.Matrix.concat(matrix, rotationMatrix(geom.rotate))
-    }
+    // MUPDF_APPLIES_ROTATION is true (see comment above): the engine bakes
+    // /Rotate into toPixmap() itself, so the matrix passed here is scale-only.
+    // Composing an extra rotation would double-rotate. The render/layout
+    // cross-check below is what actually detects the engine changing this
+    // behaviour.
+    const matrix = mupdf.Matrix.scale(scale, scale)
     // alpha=true: ImageData requires 4 channels (putImageData/createImageBitmap).
     pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, true, true)
 

@@ -23,19 +23,30 @@ export type Rect = { x: number; y: number; w: number; h: number }
 export type ViewRect = { x: number; y: number; w: number; h: number }
 export type Rotation = 0 | 90 | 180 | 270
 export type PageGeometry = {
-  /** [x0, y0, x1, y1] — CropBox if present, else MediaBox. Origin may be non-zero. */
+  /**
+   * [x0, y0, x1, y1] — CropBox if present, else MediaBox. Origin may be
+   * non-zero. Invariant: x0 < x1, y0 < y1 (lower-left, upper-right) —
+   * normalised by pdf-core's `readBox`. Every function in this module trusts
+   * that ordering; reversed corners would silently mirror the output.
+   */
   cropBox: [number, number, number, number]
   rotate: Rotation
 }
 
+/** Rounds to the nearest multiple of 90 and normalizes into [0, 360). NaN in, NaN out (cast as Rotation). */
 export function normalizeRotation(deg: number): Rotation {
   const r = ((Math.round(deg / 90) * 90) % 360 + 360) % 360
   return r as Rotation
 }
 
-/** Unrotated page extent in points. */
+/**
+ * Unrotated page extent in points (not display pixels — see `pageViewSize`
+ * for the zoomed, rotation-aware size used on screen).
+ */
 export function pageSizePt(g: PageGeometry): { w: number; h: number } {
   const [x0, y0, x1, y1] = g.cropBox
+  // Math.abs is belt-and-braces against a malformed cropBox; it is not a
+  // supported "reversed corners" input mode — see the PageGeometry invariant.
   return { w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) }
 }
 
@@ -46,6 +57,7 @@ export function pageViewSize(g: PageGeometry, zoom: number): { width: number; he
   return { width: (swap ? h : w) * zoom, height: (swap ? w : h) * zoom }
 }
 
+/** Maps a PDF user-space point to a view-space point (CSS pixels, origin top-left, y-down) at the given zoom. */
 export function pdfToView(p: Point, g: PageGeometry, zoom: number): Point {
   const [x0, y0] = g.cropBox
   const { w, h } = pageSizePt(g)
@@ -67,6 +79,7 @@ export function pdfToView(p: Point, g: PageGeometry, zoom: number): Point {
   return { x: vx * zoom, y: vy * zoom }
 }
 
+/** Maps a view-space point (CSS pixels, origin top-left, y-down) back to a PDF user-space point at the given zoom. */
 export function viewToPdf(p: Point, g: PageGeometry, zoom: number): Point {
   const [x0, y0] = g.cropBox
   const { w, h } = pageSizePt(g)
@@ -111,13 +124,16 @@ export function viewRectToPdf(r: ViewRect, g: PageGeometry, zoom: number): Rect 
 }
 
 /**
- * SVG overlay viewBox — always the UNROTATED extent with a zero origin.
- * Combined with svgRootTransform(), this is what lets objects render at their
- * raw stored PDF coordinates with no per-object math (spec §1.3, Layer 2).
+ * SVG overlay viewBox — the DISPLAYED extent (post-rotation) in points, with
+ * a zero origin. This must agree with svgRootTransform(), which maps content
+ * into that same rotated extent: on a quarter-turned page the viewBox is
+ * swapped width/height relative to the unrotated CropBox. Combined with
+ * svgRootTransform(), this is what lets objects render at their raw stored
+ * PDF coordinates with no per-object math (spec §1.3, Layer 2).
  */
 export function svgViewBox(g: PageGeometry): string {
-  const { w, h } = pageSizePt(g)
-  return `0 0 ${w} ${h}`
+  const { width, height } = pageViewSize(g, 1)
+  return `0 0 ${width} ${height}`
 }
 
 /**
