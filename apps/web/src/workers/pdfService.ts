@@ -76,14 +76,14 @@ export class PdfService {
     return { width, height, rgba, page: req.page, scale: req.scale }
   }
 
+  /**
+   * Marks a render request id as cancelled if it hasn't started yet.
+   * Per-request cancellation via `PdfClient.render`'s `AbortSignal` is the
+   * only cancellation mechanism — there is no bulk/"cancel all except"
+   * method; callers that want to cancel many requests call this once per id.
+   */
   cancel(id: number): void {
     this.#cancelled.add(id)
-  }
-
-  /** Called on scroll settle: keep the still-wanted ids, drop everything else. */
-  cancelAllExcept(ids: number[]): void {
-    const keep = new Set(ids)
-    for (const id of this.#cancelled) if (keep.has(id)) this.#cancelled.delete(id)
   }
 
   close(): void {

@@ -71,17 +71,6 @@ describe('PdfService.render', () => {
     s.close()
   })
 
-  it('cancelAllExcept drops every other pending id', () => {
-    const s = new PdfService()
-    s.open(bytes('multi-page'))
-    s.cancel(1); s.cancel(2); s.cancel(3)
-    s.cancelAllExcept([2])
-    expect(s.render({ id: 1, page: 0, scale: 1 })).toBeNull()
-    expect(s.render({ id: 3, page: 0, scale: 1 })).toBeNull()
-    expect(s.render({ id: 2, page: 0, scale: 1 })).not.toBeNull()
-    s.close()
-  })
-
   it('throws when no document is open', () => {
     const s = new PdfService()
     expect(() => s.render({ id: 1, page: 0, scale: 1 })).toThrow(/no document/i)

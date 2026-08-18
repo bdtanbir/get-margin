@@ -1,5 +1,9 @@
 import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
+// Side-effect import: registers the `rgba` transfer handler on this end of
+// the boundary. Must also be imported by pdf.worker.ts — see that file's
+// comment in transferHandlers.ts for why both ends need it.
+import './transferHandlers'
 
 export type PdfClient = {
   open(bytes: Uint8Array): Promise<DocumentInfo>
@@ -12,6 +16,12 @@ export type PdfClient = {
    * worth wiring up: fast scrolling queues dozens of renders, and dropping
    * the stale ones before they start is the difference between a responsive
    * viewer and an unusable one.
+   *
+   * Per-request `AbortSignal` is *the* cancellation mechanism — there is no
+   * bulk "cancel all except" API. Callers that manage many in-flight
+   * renders (e.g. a virtualised viewport) should keep a
+   * `Map<pageId, AbortController>` and `.abort()` the ones they no longer
+   * want; `render()` handles the rest.
    */
   render(page: number, scale: number, signal?: AbortSignal): Promise<RenderResult | null>
   close(): Promise<void>
