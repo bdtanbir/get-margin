@@ -44,12 +44,16 @@ test('worker boots, loads WASM, and opens a real PDF', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
 
+  const openStart = Date.now()
   await page.setInputFiles('input[type=file]', FIXTURE)
 
   // Generous timeout: first load fetches and instantiates 10.4MB of WASM.
   await expect(page.getByRole('heading', { name: 'Open a PDF' })).not.toBeVisible({
     timeout: 30_000,
   })
+  // Not an assertion — just a visible record of how long open() actually
+  // took in this run, from file-drop to the drop zone disappearing.
+  console.log(`[timing] file-drop to drop-zone-gone: ${Date.now() - openStart}ms`)
 
   expect(consoleErrors, `console errors:\n${consoleErrors.join('\n')}`).toEqual([])
   expect(pageErrors, `page errors:\n${pageErrors.join('\n')}`).toEqual([])

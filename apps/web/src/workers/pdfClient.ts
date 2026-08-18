@@ -34,6 +34,37 @@ export type PdfClient = {
  */
 export function createPdfClient(): PdfClient {
   const worker = new Worker(new URL('./pdf.worker.ts', import.meta.url), { type: 'module' })
+
+  // Readiness handshake (Task 15a). pdf.worker.ts's module graph pulls in
+  // `mupdf`, which fetches and instantiates ~10MB of WASM before
+  // `Comlink.expose()` finishes registering its `message` listener — real
+  // async work that yields the event loop. A message posted to `worker`
+  // before that listener exists is silently dropped in a real browser (no
+  // error, no rejection — confirmed by direct reproduction; see
+  // task-15a-report.md), so every method below waits on `ready` before
+  // touching `remote`.
+  //
+  // This listener is attached synchronously, in the same tick as
+  // `new Worker(...)`, before any `await` in this function — required for
+  // correctness, not just style. If it were attached after an `await`, the
+  // worker could already have posted its ready signal by the time the
+  // listener existed, and `ready` would then hang forever waiting for a
+  // message that already came and went. Attaching it here is safe from that
+  // failure mode for the opposite reason the original bug existed: the
+  // worker cannot execute *any* of its own script — let alone post a
+  // message — until `new Worker(...)` above has returned control to this
+  // synchronous block, so there is no interleaving in which the ready
+  // signal could arrive before this listener is registered.
+  const ready = new Promise<void>((resolve) => {
+    worker.addEventListener('message', function onReady(ev: MessageEvent) {
+      const data = ev.data as { __pdfWorkerReady?: boolean } | undefined
+      if (data?.__pdfWorkerReady) {
+        worker.removeEventListener('message', onReady)
+        resolve()
+      }
+    })
+  })
+
   const remote = Comlink.wrap<PdfService>(worker)
   let nextId = 1
 
@@ -42,11 +73,18 @@ export function createPdfClient(): PdfClient {
     // 200MB of avoidable pressure on a phone. This neuters `bytes` on the main
     // thread: callers must not read it again after calling open() (capture
     // name/size/hash beforehand, per the spec's §4 privacy stance).
-    open: (bytes) => remote.open(Comlink.transfer(bytes, [bytes.buffer])),
+    async open(bytes) {
+      await ready
+      return remote.open(Comlink.transfer(bytes, [bytes.buffer]))
+    },
 
-    authenticate: (password) => remote.authenticate(password),
+    async authenticate(password) {
+      await ready
+      return remote.authenticate(password)
+    },
 
     async render(page, scale, signal) {
+      await ready
       const id = nextId++
       if (signal?.aborted) return null
       const onAbort = (): void => { void remote.cancel(id) }
@@ -58,8 +96,15 @@ export function createPdfClient(): PdfClient {
       }
     },
 
-    close: () => remote.close(),
+    async close() {
+      await ready
+      return remote.close()
+    },
 
+    // No `await ready` here: terminating a worker that never finished
+    // booting is still a valid, immediate operation — there is nothing to
+    // wait for, and waiting would make `terminate()` from a stuck boot
+    // impossible.
     terminate() {
       remote[Comlink.releaseProxy]()
       worker.terminate()
