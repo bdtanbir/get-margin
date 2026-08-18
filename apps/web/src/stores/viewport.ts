@@ -5,9 +5,16 @@ import { getPdfClient } from '@/workers/pdfClient'
 import { planRenders, effectiveScale, PLACEHOLDER_SCALE } from '@/features/viewport/renderPriority'
 import { useDocumentStore, type PageId } from '@/stores/document'
 import type { RenderResult } from '@/workers/pdfService'
+import { type FitMode, computeFitZoom, nextZoomStep, MIN_ZOOM, MAX_ZOOM } from '@/lib/fit'
+import type { PageGeometry } from '@margin/transform'
 
-export const MIN_ZOOM = 0.1
-export const MAX_ZOOM = 8
+// MIN_ZOOM/MAX_ZOOM now live in `@/lib/fit` (Task 18 amendment) — this
+// module used to define them, and `lib/fit.ts` imported them from here
+// while this module imports `computeFitZoom`/`nextZoomStep` from
+// `lib/fit.ts`. That is a genuine ES module cycle. Re-exported here so
+// existing `import { MIN_ZOOM } from '@/stores/viewport'` call sites keep
+// working; `lib/fit.ts` must never import from this module.
+export { MIN_ZOOM, MAX_ZOOM }
 const VISIBLE_RADIUS = 1
 
 // Amendment A1: use the shared `getPdfClient()` singleton rather than a
@@ -106,6 +113,19 @@ export const useViewportStore = defineStore('viewport', () => {
     dirty = true
   }
 
+  const fitMode = ref<FitMode>('width')
+
+  function setFitMode(m: FitMode): void { fitMode.value = m }
+
+  /** Called by the shell on container resize and on document open. */
+  function applyFit(containerWidth: number, containerHeight: number, geometry: PageGeometry): void {
+    if (fitMode.value === 'custom') return
+    setZoom(computeFitZoom({ mode: fitMode.value, containerWidth, containerHeight, geometry }))
+  }
+
+  function zoomIn(): void { fitMode.value = 'custom'; setZoom(nextZoomStep(zoom.value, 1)) }
+  function zoomOut(): void { fitMode.value = 'custom'; setZoom(nextZoomStep(zoom.value, -1)) }
+
   /**
    * Drain the render plan. Serialized: concurrent callers await the
    * in-flight pump rather than starting a second one, because MuPDF is not
@@ -157,11 +177,16 @@ export const useViewportStore = defineStore('viewport', () => {
     anchorIndex,
     dpr: readonly(dpr),
     zoomPercent,
+    fitMode,
     bitmapFor,
     setZoom,
     setAnchor,
     setDpr,
     invalidate,
     pump,
+    setFitMode,
+    applyFit,
+    zoomIn,
+    zoomOut,
   }
 })

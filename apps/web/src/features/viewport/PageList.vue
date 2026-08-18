@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, onMounted, ref } from 'vue'
+import { computed, watch, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { pageViewSize } from '@margin/transform'
 import PageCanvas from './PageCanvas.vue'
@@ -45,7 +45,38 @@ watch(() => vp.zoom, () => {
   void vp.pump()
 })
 
-onMounted(() => { void vp.pump() })
+// Task 18: fit modes need a container size and a reference page geometry to
+// resolve into an actual zoom number. There is no dedicated shell yet
+// (Task 20) to own "on resize, re-fit" — PageList owns the scrolling
+// container, so it owns this until that shell exists. Uses the anchor
+// page's geometry (falling back to the first page) rather than assuming
+// every page in the document shares one size.
+function referenceGeometry() {
+  const id = doc.pageOrder[vp.anchorIndex] ?? doc.pageOrder[0]
+  return id ? doc.pages[id]?.geometry : undefined
+}
+
+function refit(): void {
+  const el = scroller.value
+  const geometry = referenceGeometry()
+  if (!el || !geometry) return
+  vp.applyFit(el.clientWidth, el.clientHeight, geometry)
+}
+
+watch(() => vp.fitMode, refit)
+
+let resizeObserver: ResizeObserver | undefined
+
+onMounted(() => {
+  void vp.pump()
+  refit()
+  if (typeof ResizeObserver !== 'undefined' && scroller.value) {
+    resizeObserver = new ResizeObserver(() => refit())
+    resizeObserver.observe(scroller.value)
+  }
+})
+
+onBeforeUnmount(() => resizeObserver?.disconnect())
 </script>
 
 <template>

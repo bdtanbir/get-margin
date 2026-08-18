@@ -207,3 +207,74 @@ test('scrolling the page list renders later pages as they come into view', async
   expect(consoleErrors, `console errors:\n${consoleErrors.join('\n')}`).toEqual([])
   expect(pageErrors, `page errors:\n${pageErrors.join('\n')}`).toEqual([])
 })
+
+// Task 18: proves zoom actually changes the rendered page size in a real
+// browser, not just that the store's `zoom` ref changes value. Every unit
+// test for this task mocks the worker and the canvas 2D context (fit.test.ts
+// tests pure math; viewport.test.ts asserts on cache/call counts) — none of
+// them render a real <canvas> element, so none of them can catch a wiring
+// gap where `zoomIn()` updates the store but PageCanvas/PageList never
+// re-renders at the new size. This project has already shipped two Critical
+// defects invisible to a fully green unit suite for exactly that reason
+// (the worker-boot race in Task 15a, the unmounted DropZone/PageCanvas
+// scaffolding in Task 15/16), so this spec opens the fixture, records page
+// 1's actual rendered bounding-box width, clicks the zoom pill's "Zoom in"
+// button, and asserts the on-screen width changed and grew.
+test('zoom in changes the rendered page size', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop only')
+
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  page.on('console', (msg: ConsoleMessage) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err: Error) => {
+    pageErrors.push(err.stack ?? err.message)
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  await page.setInputFiles('input[type=file]', FIXTURE)
+  await expect(page.getByRole('heading', { name: 'Open a PDF' })).not.toBeVisible({
+    timeout: 30_000,
+  })
+
+  const page1 = page.getByRole('img', { name: 'Page 1', exact: true })
+  await expect(page1).toBeVisible()
+
+  // Wait for the initial render (fit-width, applied on mount) to actually
+  // paint before recording a "before" size, same reasoning as the tests
+  // above: a size change against a canvas that never painted at all would
+  // be a false positive.
+  const canvas = page1.locator('canvas')
+  await expect
+    .poll(async () => {
+      const box = await canvas.boundingBox()
+      return box?.width ?? 0
+    }, { timeout: 15_000 })
+    .toBeGreaterThan(0)
+
+  const before = await page1.boundingBox()
+  expect(before, 'page 1 has no bounding box before zoom').not.toBeNull()
+
+  const zoomIn = page.getByRole('button', { name: 'Zoom in' })
+  await expect(zoomIn).toBeVisible()
+  await zoomIn.click()
+
+  // Poll rather than assert once immediately: the click triggers
+  // setZoom -> dirty=true -> pump() -> a real worker render -> repaint,
+  // all asynchronous.
+  await expect
+    .poll(async () => (await page1.boundingBox())?.width ?? 0, { timeout: 15_000 })
+    .toBeGreaterThan(before!.width)
+
+  const after = await page1.boundingBox()
+  console.log(
+    `[zoom] page 1 width before: ${before!.width.toFixed(1)}px, after: ${after!.width.toFixed(1)}px`,
+  )
+  expect(after!.width).toBeGreaterThan(before!.width)
+  expect(after!.height).toBeGreaterThan(before!.height)
+
+  expect(consoleErrors, `console errors:\n${consoleErrors.join('\n')}`).toEqual([])
+  expect(pageErrors, `page errors:\n${pageErrors.join('\n')}`).toEqual([])
+})
