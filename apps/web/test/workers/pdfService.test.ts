@@ -63,34 +63,20 @@ describe('PdfService.render', () => {
     s.close()
   })
 
-  it('returns null for a cancelled request', () => {
-    const s = new PdfService()
-    s.open(bytes('simple-text'))
-    s.cancel(7)
-    expect(s.render({ id: 7, page: 0, scale: 1 })).toBeNull()
-    s.close()
-  })
-
   it('throws when no document is open', () => {
     const s = new PdfService()
     expect(() => s.render({ id: 1, page: 0, scale: 1 })).toThrow(/no document/i)
   })
-
-  it('does not accumulate cancelled ids without bound', () => {
-    const s = new PdfService()
-    s.open(bytes('simple-text'))
-    for (let i = 0; i < 5000; i++) s.cancel(i)
-    // Consuming a cancelled id must forget it — otherwise a long session leaks.
-    s.render({ id: 4999, page: 0, scale: 1 })
-    expect(s.pendingCancelCount).toBeLessThan(5000)
-    s.close()
-  })
 })
 
 describe('PdfService password handling', () => {
-  it('surfaces needsPassword and accepts authentication', () => {
-    // No encrypted fixture exists yet — Task 5 decides whether we can create one.
-    // This test documents the contract; it is skipped until an encrypted fixture lands.
+  // No encrypted fixture exists yet — Task 5 decides whether we can create
+  // one. There is no real password-handling coverage here: this only
+  // asserts that `authenticate` exists as a function, which proves nothing
+  // about needsPassword or actual authentication. Explicitly skipped so it
+  // reads as "not covered yet" everywhere (test runner output, CI, coverage
+  // reports) instead of appearing as a passing password test.
+  it.skip('surfaces needsPassword and accepts authentication (blocked on an encrypted fixture)', () => {
     expect(typeof new PdfService().authenticate).toBe('function')
   })
 })

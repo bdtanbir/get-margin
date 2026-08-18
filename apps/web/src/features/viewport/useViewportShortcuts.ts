@@ -51,16 +51,15 @@ export function useViewportShortcuts(): void {
   whenever(keys['Meta+digit0']!, () => { vp.setFitMode('actual'); vp.setZoom(1) })
   whenever(keys['Ctrl+digit0']!, () => { vp.setFitMode('actual'); vp.setZoom(1) })
 
-  // Fit-width. NOTE (found during implementation, not part of the original
-  // brief): Ctrl+1 / Cmd+1 double as "switch to the first tab" in every
-  // major desktop browser (Chrome, Firefox, Safari), and that shortcut is
-  // reserved by the browser chrome itself — real keystrokes are consumed
-  // before a keydown event ever reaches page JS, `preventDefault()` or not.
-  // A user pressing Cmd+1 here will switch browser tabs, not fit the page
-  // to width; this binding is effectively unreachable in normal use. Kept
-  // as specified rather than unilaterally rebound, since choosing a
-  // replacement combo is a product decision outside this task's scope —
-  // flagged here and in the Task 21 report for a follow-up decision.
-  whenever(keys['Meta+digit1']!, () => vp.setFitMode('width'))
-  whenever(keys['Ctrl+digit1']!, () => vp.setFitMode('width'))
+  // No fit-width binding: Ctrl+1 / Cmd+1 double as "switch to the first tab"
+  // in every major desktop browser (Chrome, Firefox, Safari), and that
+  // shortcut is reserved by the browser chrome itself — real keystrokes are
+  // consumed before a keydown event ever reaches page JS, `preventDefault()`
+  // or not (and `onEventFired` above does not even list `'1'` among the keys
+  // it calls `preventDefault()` on, so the binding was inert twice over). A
+  // binding on that combo is effectively unreachable in normal use, and the
+  // ZoomPill's "Fit width" button already covers the function, so it was
+  // removed rather than kept as dead code. Do not invent a replacement
+  // binding here — picking one is a product decision for a later shortcuts
+  // pass, not this fix.
 }

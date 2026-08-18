@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
+import { nextZoomStep } from '../src/lib/fit.js'
 
 // Task 21: the Phase 1 milestone suite. worker-boot.spec.ts (Tasks 15a/17/
 // 18/19/20) already proves the worker/WASM boundary, the render queue, zoom,
@@ -9,10 +10,11 @@ import { fileURLToPath } from 'node:url'
 // A2 installed WebKit for this task (`pnpm --filter @margin/web exec
 // playwright install webkit` succeeded), so this file — unlike
 // worker-boot.spec.ts — is NOT desktop-only: every test below runs under
-// both the `desktop` and `phone` projects except the one that is
-// structurally phone-only (the horizontal-scroll check), which guards
-// itself with `test.skip` the same way worker-boot.spec.ts's Task 20 test
-// does.
+// both the `desktop` and `phone` projects except the ones that are
+// structurally phone-only (the horizontal-scroll check, and the Pages-modal
+// dismissal check — DesktopShell has no such modal to dismiss), which guard
+// themselves with `test.skip` the same way worker-boot.spec.ts's Task 20
+// test does.
 
 const FIXTURE = fileURLToPath(
   new URL('../../../packages/pdf-core/test/fixtures/multi-page.pdf', import.meta.url),
@@ -102,8 +104,27 @@ test('zoom controls change the rendered size', async ({ page }) => {
     .toBeGreaterThan(0)
 
   const before = await canvas.boundingBox()
+  expect(before, 'page 1 canvas has no bounding box before zoom').not.toBeNull()
+
+  // worker-boot.spec.ts:294-331 (Task 21's "zoom in changes the rendered
+  // page size" test) already fixed exactly this defect once: a bare
+  // `not.toBe(before?.width)` inequality check passes on a one-pixel nudge,
+  // a shrink, or — the worst case — a canvas that stopped existing, since
+  // `boundingBox()` then resolves `undefined`, and `undefined !== number`
+  // passes too. That would report success for a zoom that unmounted the
+  // page. `ZOOM_STEPS`/`nextZoomStep` (apps/web/src/lib/fit.ts) are pure,
+  // Node-importable, so this derives the exact expected pixel width from
+  // the same preset table the app uses and asserts equality, mirroring the
+  // established pattern rather than reintroducing the inequality-only check.
+  const PAGE_WIDTH_PT = 612 // this fixture's Letter page width, in points
+  const zoomBefore = before!.width / PAGE_WIDTH_PT
+  const expectedZoomAfter = nextZoomStep(zoomBefore, 1)
+  const expectedWidthAfter = Math.round(expectedZoomAfter * PAGE_WIDTH_PT)
+
   await page.getByRole('button', { name: 'Zoom in' }).click()
-  await expect.poll(async () => (await canvas.boundingBox())?.width, { timeout: 15_000 }).not.toBe(before?.width)
+  await expect
+    .poll(async () => (await canvas.boundingBox())?.width, { timeout: 15_000 })
+    .toBe(expectedWidthAfter)
 })
 
 test('a 300-page document shows its first page promptly', async ({ page }) => {
@@ -121,6 +142,40 @@ test('the page area does not scroll horizontally on a phone', async ({ page }, t
   await page.goto('/')
   await page.setInputFiles('input[type=file]', FIXTURE)
   await expect(page1Canvas(page)).toBeVisible({ timeout: 30_000 })
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+
+  // `document.documentElement.scrollWidth - window.innerWidth` cannot detect
+  // overflow here: the page area is PageList's own `overflow-auto` scroller
+  // (role="region", aria-label="Document pages"), nested inside
+  // MobileShell's `<main class="… overflow-hidden">`, inside an `h-dvh`
+  // root, under `body { overflow: hidden }` — content inside an
+  // `overflow-hidden` ancestor cannot contribute to `documentElement`'s
+  // scrollWidth no matter how wide it gets, so that measurement passes even
+  // if the scroller itself overflows freely. Measure the scroller directly
+  // instead.
+  const scroller = page.getByRole('region', { name: 'Document pages' })
+  const overflow = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth)
   expect(overflow).toBeLessThanOrEqual(1)
+})
+
+// On phone, ThumbnailPanel renders inside MobileShell's full-screen `fixed
+// inset-0` "Pages" modal (see MobileShell.vue), not as a permanent sidebar
+// the way it does on desktop. Before this fix, ThumbnailPanel.select() only
+// moved the viewport anchor and emitted nothing, so tapping a thumbnail
+// moved the (now off-screen, behind the opaque overlay) viewport and left
+// the user staring at the same modal with no visible feedback — they had to
+// notice nothing happened and go find "Done" themselves. The fix has
+// ThumbnailPanel emit `select` after moving the anchor; MobileShell closes
+// the modal on it.
+test('tapping a thumbnail closes the Pages modal on phone', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'phone', 'phone only')
+  await page.goto('/')
+  await page.setInputFiles('input[type=file]', FIXTURE)
+  await expect(page1Canvas(page)).toBeVisible({ timeout: 30_000 })
+
+  await page.getByRole('button', { name: 'Pages' }).click()
+  const modal = page.getByRole('dialog', { name: 'Pages' })
+  await expect(modal).toBeVisible()
+
+  await modal.getByRole('button', { name: 'Go to page 8', exact: true }).click()
+  await expect(modal).not.toBeVisible()
 })

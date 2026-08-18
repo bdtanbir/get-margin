@@ -15,21 +15,26 @@ export type PdfClient = {
   open(bytes: Uint8Array): Promise<DocumentInfo>
   authenticate(password: string): Promise<DocumentInfo>
   /**
-   * Renders one page. `signal`, if given, cancels the request — but only if
-   * it fires before the worker has started rendering: MuPDF renders
-   * synchronously inside WASM and cannot be interrupted mid-page. A resolved
-   * `null` means "never started", not "aborted partway through". Still
-   * worth wiring up: fast scrolling queues dozens of renders, and dropping
-   * the stale ones before they start is the difference between a responsive
-   * viewer and an unusable one.
+   * Renders one page.
    *
-   * Per-request `AbortSignal` is *the* cancellation mechanism — there is no
-   * bulk "cancel all except" API. Callers that manage many in-flight
-   * renders (e.g. a virtualised viewport) should keep a
-   * `Map<pageId, AbortController>` and `.abort()` the ones they no longer
-   * want; `render()` handles the rest.
+   * There is no cancellation mechanism here, and deliberately so: Comlink's
+   * `requestResponseMessage` posts the RENDER message synchronously, and
+   * worker message delivery is FIFO, so a hypothetical `cancel(id)` posted
+   * right after `render(id)` can never be processed before the render it
+   * targets runs — the render always executes regardless. (An earlier
+   * version of this method took an `AbortSignal` and posted a CANCEL
+   * message on abort; it looked load-bearing but could not work for exactly
+   * this reason, and was removed.)
+   *
+   * The actual abandonment mechanism lives one layer up, in
+   * `stores/viewport.ts`'s `pump()`: it re-plans from the live `dirty` flag
+   * between renders, so a scroll or zoom mid-drain stops queuing stale work
+   * at the next render boundary instead of grinding through it. MuPDF
+   * renders synchronously inside WASM and cannot be interrupted mid-page,
+   * so "between renders" is the finest granularity cancellation can ever
+   * have here — there is no finer mechanism to build.
    */
-  render(page: number, scale: number, signal?: AbortSignal): Promise<RenderResult | null>
+  render(page: number, scale: number): Promise<RenderResult | null>
   close(): Promise<void>
   terminate(): void
 }
@@ -133,17 +138,10 @@ export function createPdfClient(): PdfClient {
       return remote.authenticate(password)
     },
 
-    async render(page, scale, signal) {
+    async render(page, scale) {
       await ready
       const id = nextId++
-      if (signal?.aborted) return null
-      const onAbort = (): void => { void remote.cancel(id) }
-      signal?.addEventListener('abort', onAbort, { once: true })
-      try {
-        return await remote.render({ id, page, scale })
-      } finally {
-        signal?.removeEventListener('abort', onAbort)
-      }
+      return await remote.render({ id, page, scale })
     },
 
     async close() {

@@ -79,7 +79,7 @@ const pagesOpen = ref(false)
         <button type="button" class="min-h-11 px-3 text-[13px] text-accent" @click="pagesOpen = false">Done</button>
       </header>
       <div class="min-h-0 flex-1 overflow-y-auto">
-        <ThumbnailPanel class="!w-full !border-r-0" />
+        <ThumbnailPanel class="!w-full !border-r-0" @select="pagesOpen = false" />
       </div>
     </div>
   </div>

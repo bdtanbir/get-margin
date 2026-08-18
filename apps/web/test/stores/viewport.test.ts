@@ -117,6 +117,33 @@ describe('useViewportStore', () => {
     expect(vp.bitmapFor('p0')).toBeUndefined()
   })
 
+  // F7: a rejected render (worker died post-boot; a render racing
+  // `closeSharedDocument()`) used to propagate out of `pump()`'s loop
+  // uncaught, clearing `pumping` and rejecting a promise every caller
+  // discards with `void` — leaving every page stuck as a placeholder with
+  // `dirty` already false, so nothing would ever re-plan. Proves the fix:
+  // `pump()` itself must not throw, later tasks in the same plan must still
+  // render, and the failure must be recorded rather than silently dropped.
+  it('recovers from a render rejection instead of abandoning the drain', async () => {
+    const { vp } = await seededStores()
+    let calls = 0
+    render.mockImplementation(async (p: number, scale: number) => {
+      calls++
+      if (p === 0) throw new Error('worker died')
+      return {
+        width: Math.round(612 * scale), height: Math.round(792 * scale),
+        rgba: new Uint8Array(Math.round(612 * scale) * Math.round(792 * scale) * 4),
+      }
+    })
+
+    await expect(vp.pump()).resolves.toBeUndefined() // does not throw/reject
+
+    expect(vp.bitmapFor('p0')).toBeUndefined() // the failed page never got a bitmap
+    expect(vp.bitmapFor('p1')).toBeDefined() // later tasks in the same plan still ran
+    expect(vp.lastError).toContain('worker died')
+    expect(calls).toBeGreaterThan(1) // the loop continued past the failure
+  })
+
   it('serializes pumps so overlapping calls cannot interleave renders', async () => {
     const { vp } = await seededStores()
     await Promise.all([vp.pump(), vp.pump(), vp.pump()])

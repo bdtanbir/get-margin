@@ -36,6 +36,13 @@ export const useViewportStore = defineStore('viewport', () => {
   const cache = shallowRef(new BitmapCache())
   const version = ref(0) // bumped on cache mutation so getters re-evaluate
 
+  // Set when a render rejects (worker died post-boot; a render racing
+  // `closeSharedDocument()` from `doc.reset()`). Diagnostic only — `pump()`
+  // itself already recovers by skipping the failed task and continuing the
+  // drain; nothing in this store reads `lastError` to decide behavior. A
+  // caller that wants to surface it to the user reads `lastError.value`.
+  const lastError = ref('')
+
   let pumping: Promise<void> | undefined
   // Amendment A2: set whenever the render plan may be stale (anchor moved,
   // zoom changed, dpr changed, or a page was invalidated). `pump()` loops
@@ -45,15 +52,17 @@ export const useViewportStore = defineStore('viewport', () => {
   // MuPDF cannot interrupt a render already inside WASM, so "between
   // renders" is the finest granularity available.
   //
-  // Invariant: every input to `effectiveScale(zoom, dpr)` — the formula
-  // behind the cache key every render is planned and stored against — must
-  // mark the plan dirty when it changes, exactly like `setZoom` and
-  // `setDpr` do below. `zoom` and `dpr` are therefore returned as
+  // Invariant: every input to the render plan produced by `planRenders` —
+  // not just `effectiveScale(zoom, dpr)`, the formula behind the cache key
+  // every render is planned and stored against, but also `anchorIndex`,
+  // which decides which pages the plan even considers — must mark the plan
+  // dirty when it changes, exactly like `setZoom`, `setDpr`, and `setAnchor`
+  // do below. `zoom`, `dpr`, and `anchorIndex` are therefore all returned as
   // `readonly()`-wrapped refs, not plain writable ones; each has a setter
-  // that owns marking `dirty`. If a third input is ever added to that
-  // formula, wire its setter the same way, or the cache will silently keep
-  // serving bitmaps rendered at the old scale — blurry pages, no error, no
-  // signal anything is stale.
+  // that owns marking `dirty`. If a new input is ever added to the plan,
+  // wire its setter the same way, or the cache will silently keep serving
+  // stale results — blurry pages or a plan anchored at the wrong page, no
+  // error, no signal anything is stale.
   //
   // Caveat: `readonly()` here is a runtime-only guarantee. Pinia's
   // setup-store type extraction treats any `isRef()`-true value as mutable
@@ -154,8 +163,21 @@ export const useViewportStore = defineStore('viewport', () => {
             if (dirty) break // stale plan — abandon it, the outer loop re-plans
             const key = cacheKey(task.pageId, task.scale)
             if (cache.value.has(key)) continue
-            const result = await getPdfClient().render(task.sourceIndex, task.scale)
-            if (!result) continue // cancelled
+            // A rejection here (worker died post-boot; a render racing
+            // `closeSharedDocument()` from `doc.reset()`) used to propagate
+            // out of this loop, clearing `pumping` and rejecting a promise
+            // every caller discards with `void` — leaving every page stuck
+            // as a pulsing placeholder with `dirty` already false, so
+            // nothing would ever re-plan. Catch it, record it, and move on
+            // to the next task instead of abandoning the whole drain.
+            let result
+            try {
+              result = await getPdfClient().render(task.sourceIndex, task.scale)
+            } catch (e) {
+              lastError.value = e instanceof Error ? e.message : String(e)
+              continue
+            }
+            if (!result) continue // never started (should not happen in practice; render() has no cancellation path)
             cache.value.set(key, result)
             version.value++
           }
@@ -169,14 +191,16 @@ export const useViewportStore = defineStore('viewport', () => {
 
   const zoomPercent = computed(() => Math.round(zoom.value * 100))
 
-  // `zoom` and `dpr` are read-only outside the store — see the invariant
-  // comment by `dirty` above. External code that needs to change either
-  // calls `setZoom`/`setDpr`, which own marking the plan dirty.
+  // `zoom`, `dpr`, and `anchorIndex` are read-only outside the store — see
+  // the invariant comment by `dirty` above. External code that needs to
+  // change any of them calls `setZoom`/`setDpr`/`setAnchor`, which own
+  // marking the plan dirty.
   return {
     zoom: readonly(zoom),
-    anchorIndex,
+    anchorIndex: readonly(anchorIndex),
     dpr: readonly(dpr),
     zoomPercent,
+    lastError: readonly(lastError),
     fitMode,
     bitmapFor,
     setZoom,

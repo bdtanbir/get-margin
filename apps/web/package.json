@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --port 4173",
     "typecheck": "vue-tsc --noEmit",
-    "e2e": "playwright test"
+    "e2e": "pnpm --filter @margin/pdf-core fixtures && playwright test"
   },
   "dependencies": {
     "@margin/pdf-core": "workspace:*",

@@ -6,6 +6,8 @@ import { useViewportStore } from '@/stores/viewport'
 const doc = useDocumentStore()
 const vp = useViewportStore()
 
+const emit = defineEmits<{ select: [index: number] }>()
+
 // `PageList` is virtualized: a thumbnail's target page may not exist in the
 // DOM at all yet (only pages near the current scroll position are mounted),
 // so a `document.querySelector('[data-page-index=...]')?.scrollIntoView()`
@@ -16,8 +18,18 @@ const vp = useViewportStore()
 // (which works regardless of what is currently mounted) whenever it
 // changes, so ThumbnailPanel never needs to touch the scroller's DOM
 // itself.
+//
+// Also emits `select` after moving the anchor. On desktop ThumbnailPanel is
+// a permanent sidebar, so nothing needs to react to the emit — but on phone
+// (MobileShell) it is rendered inside a full-screen `fixed inset-0` modal,
+// and without this the user taps a thumbnail, the viewport jumps behind the
+// still-open opaque overlay, and nothing visibly happens. Emitting the event
+// keeps the decision of what it MEANS in the shell, not here: MobileShell
+// closes its modal on it, DesktopShell ignores it — no feature component
+// branches on which shell it's mounted under.
 function select(index: number): void {
   vp.setAnchor(index)
+  emit('select', index)
 }
 </script>
 

@@ -26,9 +26,36 @@ class FakeWorker extends EventTarget {
   static instances: FakeWorker[] = []
   terminated = false
 
+  // Tracks live listener counts per event type. F9: `.not.toThrow()` on a
+  // stray dispatch can never fail — rejecting an already-settled promise is
+  // a silent no-op in every JS engine regardless of whether `cleanup()`
+  // actually removed the listener, so that assertion passed even against a
+  // deliberately-reintroduced leak (verified directly: temporarily removing
+  // the `worker.removeEventListener('error', onError)` call in
+  // pdfClient.ts's `cleanup()` and rerunning this file left every test
+  // green). Tracking counts here lets the tests assert the real invariant —
+  // the `error` listener is actually gone — instead of a side effect that
+  // can't distinguish a leak from a clean removal.
+  #listenerCounts = new Map<string, number>()
+
   constructor(..._args: unknown[]) {
     super()
     FakeWorker.instances.push(this)
+  }
+
+  override addEventListener(type: string, listener: EventListenerOrEventListenerObject | null): void {
+    this.#listenerCounts.set(type, (this.#listenerCounts.get(type) ?? 0) + 1)
+    super.addEventListener(type, listener)
+  }
+
+  override removeEventListener(type: string, listener: EventListenerOrEventListenerObject | null): void {
+    const count = this.#listenerCounts.get(type) ?? 0
+    if (count > 0) this.#listenerCounts.set(type, count - 1)
+    super.removeEventListener(type, listener)
+  }
+
+  listenerCount(type: string): number {
+    return this.#listenerCounts.get(type) ?? 0
   }
 
   postMessage(): void {
@@ -86,6 +113,13 @@ describe('createPdfClient readiness handshake — error and timeout paths', () =
     // Guards the cleanup logic: once `ready` settles, both the `error` and
     // `message` listeners must be removed, so a late/unrelated `error`
     // event can't blow up trying to reject an already-settled promise.
+    //
+    // `.not.toThrow()` alone cannot prove this: rejecting an already-settled
+    // promise is a silent no-op in every JS engine regardless of whether
+    // `cleanup()` actually removed the listener — verified directly (see
+    // FakeWorker's comment above), reintroducing a leaked `error` listener
+    // left this exact assertion green. Assert the actual invariant instead:
+    // `cleanup()` really removed the `error` listener from `worker`.
     vi.useFakeTimers()
     const client = createPdfClient()
     const worker = FakeWorker.instances[0]!
@@ -95,6 +129,7 @@ describe('createPdfClient readiness handshake — error and timeout paths', () =
     await vi.advanceTimersByTimeAsync(60_000)
     await assertion
 
+    expect(worker.listenerCount('error')).toBe(0)
     expect(() =>
       worker.dispatchEvent(Object.assign(new Event('error'), { message: 'late', error: new Error('late') })),
     ).not.toThrow()
@@ -121,9 +156,19 @@ describe('createPdfClient readiness handshake — error and timeout paths', () =
     await vi.advanceTimersByTimeAsync(60_000)
     expect(rejected).toBe(false)
 
-    // A stray error event after readiness must be a no-op too.
+    // A stray error event after readiness must be a no-op too. `.not.toThrow()`
+    // alone cannot prove that: dispatching an event with zero listeners
+    // never throws regardless of whether `cleanup()` actually removed the
+    // `error` listener, so a build that leaked it would pass that assertion
+    // too. Assert the actual invariant directly (the listener is gone) and
+    // the real consequence (`openPromise`, which is genuinely still pending
+    // here — unlike the previous test — must not flip to rejected, which it
+    // would if a leaked listener's `reject()` call actually reached it).
+    expect(worker.listenerCount('error')).toBe(0)
     expect(() =>
       worker.dispatchEvent(Object.assign(new Event('error'), { message: 'late', error: new Error('late') })),
     ).not.toThrow()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(rejected).toBe(false)
   })
 })

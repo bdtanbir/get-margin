@@ -22,7 +22,7 @@ const props = withDefaults(defineProps<{
           <span>{{ props.content }}</span>
           <kbd
             v-if="props.shortcut"
-            class="rounded border border-border bg-surface-sunken px-1 font-sans text-[11px] text-text-subtle"
+            class="rounded-control border border-border bg-surface-sunken px-1 font-sans text-[11px] text-text-subtle"
           >{{ props.shortcut }}</kbd>
         </TooltipContent>
       </TooltipPortal>

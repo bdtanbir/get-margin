@@ -20,11 +20,6 @@ export type RenderResult = { width: number; height: number; rgba: Uint8Array; pa
  */
 export class PdfService {
   #doc: PdfDocument | undefined
-  #cancelled = new Set<number>()
-
-  get pendingCancelCount(): number {
-    return this.#cancelled.size
-  }
 
   #info(): DocumentInfo {
     const doc = this.#doc
@@ -59,36 +54,23 @@ export class PdfService {
   }
 
   /**
-   * Returns null if this request id was cancelled before it started.
-   *
-   * MuPDF renders synchronously inside WASM and cannot be interrupted
-   * mid-page, so cancellation only ever drops requests that have not yet
-   * started — a null result means "never started", not "aborted partway".
-   * Still worth having: fast scrolling queues dozens of renders, and
-   * dropping the stale ones is the difference between responsive and
-   * unusable.
+   * Renders one page. There is no cancellation here — see the long comment
+   * on `PdfClient.render` in pdfClient.ts for why a per-request cancel
+   * message cannot work over Comlink's synchronous, FIFO message channel.
+   * The real abandonment mechanism is one layer up, in the viewport store's
+   * `pump()`, which re-plans between renders instead of mid-render (MuPDF
+   * cannot be interrupted once inside WASM, so between-renders is the
+   * finest granularity available).
    */
   render(req: RenderRequest): RenderResult | null {
     const doc = this.#doc
     if (!doc) throw new Error('no document open')
-    if (this.#cancelled.delete(req.id)) return null
     const { width, height, rgba } = renderPage(doc, req.page, req.scale)
     return { width, height, rgba, page: req.page, scale: req.scale }
-  }
-
-  /**
-   * Marks a render request id as cancelled if it hasn't started yet.
-   * Per-request cancellation via `PdfClient.render`'s `AbortSignal` is the
-   * only cancellation mechanism — there is no bulk/"cancel all except"
-   * method; callers that want to cancel many requests call this once per id.
-   */
-  cancel(id: number): void {
-    this.#cancelled.add(id)
   }
 
   close(): void {
     this.#doc?.close()
     this.#doc = undefined
-    this.#cancelled.clear()
   }
 }
