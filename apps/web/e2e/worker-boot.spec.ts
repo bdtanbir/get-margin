@@ -85,8 +85,11 @@ test('worker boots, loads WASM, and opens a real PDF', async ({ page }, testInfo
   // `page.locator('canvas')` is a strict-mode violation once more than one
   // is on screen. `[role="img"][aria-label="Page N"]` is PageCanvas's own
   // accessible label (see PageCanvas.vue), the same scoping the Task 17
-  // scroll spec below uses.
-  const canvas = page.getByRole('img', { name: 'Page 1' }).locator('canvas')
+  // scroll spec below uses. `exact: true` matters here: Playwright's
+  // accessible-name matching is substring by default, so a loose match on
+  // "Page 1" would also match "Page 10"/"Page 11"/"Page 12" in this
+  // 12-page fixture.
+  const canvas = page.getByRole('img', { name: 'Page 1', exact: true }).locator('canvas')
   await expect(canvas).toBeVisible()
 
   // ...then wait for its pixels to actually be non-white. The canvas can

@@ -41,11 +41,24 @@ export const useViewportStore = defineStore('viewport', () => {
   // Invariant: every input to `effectiveScale(zoom, dpr)` — the formula
   // behind the cache key every render is planned and stored against — must
   // mark the plan dirty when it changes, exactly like `setZoom` and
-  // `setDpr` do below. `zoom` and `dpr` are therefore never exposed as
-  // plain writable refs; each has a setter that owns marking `dirty`. If a
-  // third input is ever added to that formula, wire its setter the same
-  // way, or the cache will silently keep serving bitmaps rendered at the
-  // old scale — blurry pages, no error, no signal anything is stale.
+  // `setDpr` do below. `zoom` and `dpr` are therefore returned as
+  // `readonly()`-wrapped refs, not plain writable ones; each has a setter
+  // that owns marking `dirty`. If a third input is ever added to that
+  // formula, wire its setter the same way, or the cache will silently keep
+  // serving bitmaps rendered at the old scale — blurry pages, no error, no
+  // signal anything is stale.
+  //
+  // Caveat: `readonly()` here is a runtime-only guarantee. Pinia's
+  // setup-store type extraction treats any `isRef()`-true value as mutable
+  // state — a `readonly()`-wrapped ref is still `isRef() === true` (only
+  // `computed()` gets special-cased), so the store's exposed TypeScript
+  // type does not actually forbid `vp.zoom = x` / `vp.dpr = x` at compile
+  // time. `vp.zoom = x` still fails at runtime (Vue's readonly proxy warns
+  // and does not apply the write — verified directly, not assumed), but a
+  // caller gets a clean `tsc`/`vue-tsc` build and only a console warning
+  // that is easy to miss in CI. Route every external write through
+  // `setZoom`/`setDpr`; do not rely on the type system to catch a direct
+  // assignment here.
   let dirty = true
 
   /** Best available bitmap: the full render if present, else the placeholder. */
@@ -136,10 +149,11 @@ export const useViewportStore = defineStore('viewport', () => {
 
   const zoomPercent = computed(() => Math.round(zoom.value * 100))
 
-  // `dpr` is read-only outside the store — see the invariant comment by
-  // `dirty` above. External code that needs to change it calls `setDpr`.
+  // `zoom` and `dpr` are read-only outside the store — see the invariant
+  // comment by `dirty` above. External code that needs to change either
+  // calls `setZoom`/`setDpr`, which own marking the plan dirty.
   return {
-    zoom,
+    zoom: readonly(zoom),
     anchorIndex,
     dpr: readonly(dpr),
     zoomPercent,
