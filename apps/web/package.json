@@ -1,0 +1,38 @@
+{
+  "name": "@margin/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "typecheck": "vue-tsc --noEmit",
+    "e2e": "pnpm --filter @margin/pdf-core fixtures && playwright test"
+  },
+  "dependencies": {
+    "@margin/pdf-core": "workspace:*",
+    "@margin/transform": "workspace:*",
+    "@tanstack/vue-virtual": "^3.11.0",
+    "@vueuse/core": "^12.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "comlink": "^4.4.2",
+    "lucide-vue-next": "^0.468.0",
+    "nanoid": "^6.0.1",
+    "pinia": "^2.3.0",
+    "reka-ui": "^2.0.0",
+    "tailwind-merge": "^2.5.5",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/vite": "^4.0.0",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^25.0.1",
+    "tailwindcss": "^4.0.0",
+    "vite": "^6.0.0",
+    "vue-tsc": "^2.1.10"
+  }
+}
