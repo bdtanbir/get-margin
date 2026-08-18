@@ -26,7 +26,18 @@ const FIXTURE = fileURLToPath(
   new URL('../../../packages/pdf-core/test/fixtures/multi-page.pdf', import.meta.url),
 )
 
-test('worker boots, loads WASM, and opens a real PDF', async ({ page }) => {
+test('worker boots, loads WASM, and opens a real PDF', async ({ page }, testInfo) => {
+  // Desktop only, per the brief — the phone project is Task 21's. The real
+  // enforcement is `testIgnore` on the `phone` project in
+  // playwright.config.ts: this file destructures `page`, so Playwright
+  // resolves (and launches a browser for) that fixture before this line
+  // ever runs — an in-body `test.skip` alone cannot stop that launch
+  // attempt, which is exactly what let the bare `playwright test`
+  // invocation silently run (and fail to launch WebKit for) this file under
+  // `phone`. Kept here too, defensively, in case `testIgnore` is ever
+  // loosened without this comment being noticed.
+  test.skip(testInfo.project.name !== 'desktop', 'desktop only')
+
   const consoleErrors: string[] = []
   const pageErrors: string[] = []
   let wasmResponse: Response | undefined

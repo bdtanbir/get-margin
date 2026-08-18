@@ -5,6 +5,12 @@ import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
 // comment in transferHandlers.ts for why both ends need it.
 import './transferHandlers'
 
+// Failsafe only, not a synchronization mechanism — the message handshake
+// below is what makes the happy path race-free. 60s is generous for a
+// 10.4MB WASM fetch even on a slow connection; this only fires if the
+// worker is genuinely stuck.
+const WORKER_READY_TIMEOUT_MS = 60_000
+
 export type PdfClient = {
   open(bytes: Uint8Array): Promise<DocumentInfo>
   authenticate(password: string): Promise<DocumentInfo>
@@ -55,15 +61,59 @@ export function createPdfClient(): PdfClient {
   // message — until `new Worker(...)` above has returned control to this
   // synchronous block, so there is no interleaving in which the ready
   // signal could arrive before this listener is registered.
-  const ready = new Promise<void>((resolve) => {
-    worker.addEventListener('message', function onReady(ev: MessageEvent) {
+  const ready = new Promise<void>((resolve, reject) => {
+    const cleanup = (): void => {
+      worker.removeEventListener('message', onReady)
+      worker.removeEventListener('error', onError)
+      clearTimeout(timer)
+    }
+
+    const onReady = (ev: MessageEvent): void => {
       const data = ev.data as { __pdfWorkerReady?: boolean } | undefined
       if (data?.__pdfWorkerReady) {
-        worker.removeEventListener('message', onReady)
+        cleanup()
         resolve()
       }
-    })
+    }
+
+    // Fires if the worker's module graph throws while evaluating — WASM
+    // instantiation failing on an unsupported browser, a blocked or
+    // corrupted asset — or if the worker script itself fails to load (a
+    // network error, a CSP rejection). Any of these means execution never
+    // reaches `self.postMessage({ __pdfWorkerReady: true })` in
+    // pdf.worker.ts, so without this handler `ready` — and every PdfClient
+    // method that awaits it — would hang forever with zero console output:
+    // exactly the silent-hang class this task exists to eliminate, reached
+    // from a different direction than the original message-drop race.
+    const onError = (ev: ErrorEvent): void => {
+      cleanup()
+      reject(
+        new Error(`PDF worker ("pdf.worker.ts") failed to start: ${ev.message || 'unknown error'}`, {
+          cause: ev.error,
+        }),
+      )
+    }
+
+    const timer = setTimeout(() => {
+      cleanup()
+      reject(
+        new Error(
+          'The PDF worker did not become ready within 60 seconds. It may have failed to load, ' +
+            'or your browser may not support a required feature. Try reloading the page.',
+        ),
+      )
+    }, WORKER_READY_TIMEOUT_MS)
+
+    worker.addEventListener('message', onReady)
+    worker.addEventListener('error', onError)
   })
+  // Nobody may be awaiting `ready` yet at the moment it settles — e.g. a
+  // client created but never used before the page navigates away. Without
+  // this, a genuine boot failure or timeout would log an "Uncaught (in
+  // promise)" warning for a rejection nothing was listening to. This does
+  // not swallow the real rejection: `ready` itself is untouched, and every
+  // `await ready` below still throws normally.
+  ready.catch(() => {})
 
   const remote = Comlink.wrap<PdfService>(worker)
   let nextId = 1
