@@ -49,9 +49,11 @@ describe('nextZoomStep', () => {
   })
 
   it('snaps an off-preset value to the neighbouring preset', () => {
-    // 1.1 is between presets; stepping up must reach the next one above it.
-    expect(nextZoomStep(1.1, 1)).toBeGreaterThan(1.1)
-    expect(nextZoomStep(1.1, -1)).toBeLessThan(1.1)
+    // 1.1 sits strictly between the 1 and 1.25 presets. An inequality-only
+    // assertion here would pass even if this jumped straight to 8x instead
+    // of the true neighbour, so pin the exact expected preset on each side.
+    expect(nextZoomStep(1.1, 1)).toBe(1.25)
+    expect(nextZoomStep(1.1, -1)).toBe(1)
   })
 
   it('saturates at both ends instead of wrapping', () => {

@@ -261,19 +261,44 @@ test('zoom in changes the rendered page size', async ({ page }, testInfo) => {
   await expect(zoomIn).toBeVisible()
   await zoomIn.click()
 
+  // A bare "> before.width" would pass on a one-pixel nudge, a jump to the
+  // wrong preset, or "Zoom in" accidentally wired to some other multiplier
+  // entirely — as long as the page got fractionally bigger in both axes.
+  // This is exactly the shape of defect this project has caught four times
+  // (an endpoints-only compositing test where both candidate formulas
+  // agreed, an all-white golden image, a leaked-listener test that still
+  // passed, a substring locator matching the wrong element), so the bound
+  // needs to be tight enough that a near-zero regression cannot slip
+  // through it.
+  //
+  // The real number is deterministic here: at this fixture's Letter page
+  // size and the desktop project's 1440px viewport, fit-width lands at
+  // ~2.24x and `nextZoomStep` steps up to the 3x preset, i.e. a ~1.34x
+  // growth (observed: 1836/1376 ~= 1.334 in a local run). Asserting that
+  // exact ratio would require reading the store's internal zoom value out
+  // of the page, which isn't exposed on `window` anywhere in the app today
+  // — adding that just for this test would be exposing internal state
+  // purely for test convenience. Asserting a materially large lower bound
+  // instead (10% growth) is far below the true ~34% the feature actually
+  // produces, so it stays robust to sub-pixel layout rounding and to the
+  // exact preset table changing, while still failing hard on a regression
+  // that isn't a real preset jump.
+  const MIN_GROWTH = 1.1
+
   // Poll rather than assert once immediately: the click triggers
   // setZoom -> dirty=true -> pump() -> a real worker render -> repaint,
   // all asynchronous.
   await expect
     .poll(async () => (await page1.boundingBox())?.width ?? 0, { timeout: 15_000 })
-    .toBeGreaterThan(before!.width)
+    .toBeGreaterThan(before!.width * MIN_GROWTH)
 
   const after = await page1.boundingBox()
   console.log(
-    `[zoom] page 1 width before: ${before!.width.toFixed(1)}px, after: ${after!.width.toFixed(1)}px`,
+    `[zoom] page 1 width before: ${before!.width.toFixed(1)}px, after: ${after!.width.toFixed(1)}px ` +
+    `(ratio ${(after!.width / before!.width).toFixed(3)})`,
   )
-  expect(after!.width).toBeGreaterThan(before!.width)
-  expect(after!.height).toBeGreaterThan(before!.height)
+  expect(after!.width).toBeGreaterThan(before!.width * MIN_GROWTH)
+  expect(after!.height).toBeGreaterThan(before!.height * MIN_GROWTH)
 
   expect(consoleErrors, `console errors:\n${consoleErrors.join('\n')}`).toEqual([])
   expect(pageErrors, `page errors:\n${pageErrors.join('\n')}`).toEqual([])
