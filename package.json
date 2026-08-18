@@ -1,0 +1,21 @@
+{
+  "name": "get-margin",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:golden:update": "UPDATE_GOLDENS=1 vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+packages/pdf-core/test/fixtures/*.pdf
+packages/pdf-core/test/fixtures/.*.tmp-*
+packages/pdf-core/test/golden/**/*.actual.png
+packages/pdf-core/test/golden/**/*.diff.png
+packages/pdf-core/test/golden/_scratch-*
+docs/findings/scratch/
+spikes/

@@ -1,0 +1,8 @@
+{
+  "name": "@margin/transform",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "devDependencies": { "fast-check": "^3.23.0" }
+}
