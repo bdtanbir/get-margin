@@ -3,6 +3,7 @@ import { useDocumentStore } from '@/stores/document'
 import DropZone from '@/features/document/DropZone.vue'
 import PageList from '@/features/viewport/PageList.vue'
 import ZoomPill from '@/features/viewport/ZoomPill.vue'
+import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
 
 const doc = useDocumentStore()
 </script>
@@ -18,14 +19,23 @@ const doc = useDocumentStore()
     scroller, and this is the app's actual root so there is no risk of it
     shipping unmounted (a fully-built DropZone once shipped that way with a
     green suite; naming the mounting parent is the standing rule since).
-    The wrapping <template> groups PageList + the pill as one v-else branch
-    without introducing an extra DOM node.
+
+    Task 19: ThumbnailPanel is mounted here too, as a sibling of the
+    PageList/ZoomPill column, for the same reason — this is the app's real
+    root, so there is no way for it to be built but never rendered. The
+    outer flex row gives the panel a fixed-width column and lets the page
+    column take the rest; ZoomPill moves from `fixed` (viewport-relative) to
+    `absolute` inside that column so it stays centred over the pages, not
+    over the whole window including the new sidebar.
   -->
   <DropZone v-if="doc.status !== 'ready'" />
-  <template v-else>
-    <PageList />
-    <div class="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center">
-      <ZoomPill />
+  <div v-else class="flex h-dvh w-full">
+    <ThumbnailPanel />
+    <div class="relative min-w-0 flex-1">
+      <PageList />
+      <div class="pointer-events-none absolute inset-x-0 bottom-4 z-40 flex justify-center">
+        <ZoomPill />
+      </div>
     </div>
-  </template>
+  </div>
 </template>

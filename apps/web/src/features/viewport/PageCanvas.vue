@@ -30,7 +30,25 @@ function paint(): void {
 }
 
 onMounted(paint)
-watchEffect(paint)
+// flush: 'post' (Task 19 fix — see PageCanvas paint-clear race in the Task
+// 19 report). Default ('pre') flush timing runs this BEFORE the
+// component's own render effect patches `:width`/`:height` on the canvas
+// element below. When `props.bitmap` changes to a bitmap with DIFFERENT
+// dimensions than the currently-mounted canvas (e.g. a placeholder-tier
+// render being replaced by a full-tier one for a page that is already on
+// screen — exactly what happens when ThumbnailPanel jumps the viewport to
+// a page whose canvas is already mounted), the two pre-flush jobs raced:
+// `paint()` ran first and drew onto the OLD-sized canvas, then the
+// component's own patch immediately resized the `<canvas>` element to the
+// new bitmap's dimensions — which the HTML canvas spec defines as
+// resetting the bitmap to fully transparent — silently wiping out the
+// paint that had just happened. The result was a canvas with the correct
+// (new, full-resolution) width/height but permanently blank content: no
+// error, no console warning, structurally identical to a working page.
+// `flush: 'post'` makes this watcher run AFTER the DOM patch (the same
+// timing `onMounted` already uses for the very first paint), so it always
+// draws onto the canvas at its final, already-resized dimensions.
+watchEffect(paint, { flush: 'post' })
 </script>
 
 <template>

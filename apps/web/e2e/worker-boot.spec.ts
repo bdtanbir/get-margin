@@ -108,7 +108,15 @@ test('worker boots, loads WASM, and opens a real PDF', async ({ page }, testInfo
       let nonWhite = 0
       const totalPixels = data.length / 4
       for (let i = 0; i < data.length; i += 4) {
-        if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) nonWhite++
+        // alpha === 255 matters, not just "RGB isn't white": a <canvas>
+        // that was created (it passes the `el`/width/height checks above)
+        // but never actually painted is fully TRANSPARENT (0,0,0,0) per
+        // spec, not white — an RGB-only check would count every pixel of a
+        // silently-broken, never-painted canvas as "non-white" and pass. The
+        // real render pipeline always forces full opacity (packages/pdf-core
+        // /src/render.ts), so requiring alpha === 255 is a no-op for a
+        // genuine render and a hard filter against an unpainted one.
+        if (data[i + 3] === 255 && (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255)) nonWhite++
       }
       const fraction = nonWhite / totalPixels
       // The fixture's first page has visible text/content, so require a
@@ -181,7 +189,11 @@ test('scrolling the page list renders later pages as they come into view', async
         let nonWhite = 0
         const total = data.length / 4
         for (let i = 0; i < data.length; i += 4) {
-          if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) nonWhite++
+          // alpha === 255 required — see the identical comment on the
+          // page-1 check above: an unpainted canvas is transparent
+          // (0,0,0,0), not white, and would otherwise be miscounted as
+          // "non-white content".
+          if (data[i + 3] === 255 && (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255)) nonWhite++
         }
         return nonWhite / total
       },
@@ -271,19 +283,26 @@ test('zoom in changes the rendered page size', async ({ page }, testInfo) => {
   // needs to be tight enough that a near-zero regression cannot slip
   // through it.
   //
-  // The real number is deterministic here: at this fixture's Letter page
-  // size and the desktop project's 1440px viewport, fit-width lands at
-  // ~2.24x and `nextZoomStep` steps up to the 3x preset, i.e. a ~1.34x
-  // growth (observed: 1836/1376 ~= 1.334 in a local run). Asserting that
-  // exact ratio would require reading the store's internal zoom value out
-  // of the page, which isn't exposed on `window` anywhere in the app today
-  // — adding that just for this test would be exposing internal state
-  // purely for test convenience. Asserting a materially large lower bound
-  // instead (10% growth) is far below the true ~34% the feature actually
-  // produces, so it stays robust to sub-pixel layout rounding and to the
-  // exact preset table changing, while still failing hard on a regression
-  // that isn't a real preset jump.
-  const MIN_GROWTH = 1.1
+  // The real number is deterministic here, but it moved when Task 19 added
+  // ThumbnailPanel as a permanent 240px-wide sidebar (see App.vue): the
+  // viewer column is no longer the full 1440px desktop viewport, so
+  // fit-width lands at a lower zoom and crosses fewer preset boundaries.
+  // At this fixture's Letter page size and the narrowed (~1200px) viewer
+  // column, fit-width lands at ~1.86x (before.width observed: 1136px) and
+  // `nextZoomStep` steps up to the 2x preset, i.e. a ~1.077x growth
+  // (observed: 1224/1136 ~= 1.077 in a local run) — much smaller than the
+  // pre-sidebar ~1.34x this threshold used to be calibrated against.
+  // Asserting the exact ratio would require reading the store's internal
+  // zoom value out of the page, which isn't exposed on `window` anywhere in
+  // the app today — adding that just for this test would be exposing
+  // internal state purely for test convenience. Asserting a materially
+  // large lower bound instead (5% growth) stays safely below the true
+  // ~7.7% the feature actually produces (both figures are exact integer-CSS-
+  // pixel results, not measurement noise, so the margin is real headroom,
+  // not a hedge against jitter), while still failing hard on a regression
+  // that isn't a real preset jump — a near-zero or negative width change
+  // cannot slip under a 5% floor.
+  const MIN_GROWTH = 1.05
 
   // Poll rather than assert once immediately: the click triggers
   // setZoom -> dirty=true -> pump() -> a real worker render -> repaint,
@@ -299,6 +318,141 @@ test('zoom in changes the rendered page size', async ({ page }, testInfo) => {
   )
   expect(after!.width).toBeGreaterThan(before!.width * MIN_GROWTH)
   expect(after!.height).toBeGreaterThan(before!.height * MIN_GROWTH)
+
+  expect(consoleErrors, `console errors:\n${consoleErrors.join('\n')}`).toEqual([])
+  expect(pageErrors, `page errors:\n${pageErrors.join('\n')}`).toEqual([])
+})
+
+// Task 19: proves the thumbnail panel's canvases actually paint real page
+// content, not just that the panel and its frames exist in the DOM. Every
+// unit test for this task (Thumbnail.test.ts, ThumbnailPanel.test.ts) mocks
+// the viewport store's `bitmapFor` (implicitly, via never populating the
+// cache) or asserts on props/emits/markup — none of them exercise the real
+// render queue, so none of them can tell a thumbnail that genuinely paints
+// its placeholder-tier bitmap from one whose canvas ref never actually
+// wires up `putImageData`, or whose frame is present but permanently blank.
+// This is exactly the shape of defect this project has already shipped
+// twice with a fully green unit suite (Task 15a's worker-boot race, Task
+// 15/16's unmounted DropZone/PageCanvas) — an empty-frames thumbnail panel
+// would look completely plausible in a screenshot and pass any structural
+// ("N buttons rendered", "aria-current toggles") test.
+//
+// The thumbnail checked here (page 8 of 12) is deliberately NOT the anchor
+// page or one of its immediate neighbours (PageList's VISIBLE_RADIUS is 1,
+// so only pages ~0-1 get a full-resolution render on initial load): its
+// bitmap can only have come from the placeholder tier (Task 17's
+// PLACEHOLDER_SCALE render), which is the specific pipeline this test
+// exists to verify end-to-end. Nothing scrolls the document in this test,
+// so a bug that only fed the placeholder tier to PageList (never to
+// Thumbnail) would leave this thumbnail blank while page 1's main canvas
+// still painted fine.
+test('thumbnail panel renders real page content from the placeholder tier', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop only')
+
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  page.on('console', (msg: ConsoleMessage) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err: Error) => {
+    pageErrors.push(err.stack ?? err.message)
+  })
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  await page.setInputFiles('input[type=file]', FIXTURE)
+  await expect(page.getByRole('heading', { name: 'Open a PDF' })).not.toBeVisible({
+    timeout: 30_000,
+  })
+
+  const panel = page.getByRole('complementary', { name: 'Pages' })
+  await expect(panel).toBeVisible()
+
+  // 12 thumbnail buttons, one per page — the panel is actually wired to
+  // pageOrder, not stubbed with a fixed count.
+  await expect(panel.getByRole('button')).toHaveCount(12)
+
+  // `exact: true` matters here for the same reason it does on the page-1
+  // check above: accessible-name matching is substring by default, and
+  // "Go to page 1" would also match "Go to page 10"/"11"/"12" in this
+  // 12-page fixture.
+  const thumb8 = panel.getByRole('button', { name: 'Go to page 8', exact: true })
+  await expect(thumb8).toBeVisible()
+  const canvas = thumb8.locator('canvas')
+  await expect(canvas).toBeVisible()
+
+  // Poll rather than sample once: the placeholder render for page 8 is
+  // queued behind the anchor's full render and arrives asynchronously from
+  // a real worker call, same as the page-1 checks above.
+  const nonBlankFraction = await page.waitForFunction(
+    () => {
+      const btn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.getAttribute('aria-label') === 'Go to page 8',
+      )
+      const el = btn?.querySelector('canvas')
+      if (!el || el.width === 0 || el.height === 0) return false
+      const ctx = el.getContext('2d')
+      if (!ctx) return false
+      const { data } = ctx.getImageData(0, 0, el.width, el.height)
+      let nonBlank = 0
+      const totalPixels = data.length / 4
+      for (let i = 0; i < data.length; i += 4) {
+        // alpha === 255 required — see the identical comment on the page-1
+        // check above. Verified this matters here specifically: with this
+        // omitted, an intentionally-broken (never-painted) thumbnail canvas
+        // reads as "100% non-blank" instead of failing, because a
+        // transparent (0,0,0,0) pixel isn't white either.
+        if (data[i + 3] === 255 && (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255)) nonBlank++
+      }
+      const fraction = nonBlank / totalPixels
+      return fraction > 0.001 ? fraction : false
+    },
+    undefined,
+    { timeout: 15_000 },
+  )
+  const fraction = (await nonBlankFraction.jsonValue()) as number
+  console.log(`[pixels] non-blank fraction of thumbnail-8 canvas: ${(fraction * 100).toFixed(2)}%`)
+  expect(fraction).toBeGreaterThan(0.001)
+
+  // The thumbnail frame preserves the page's aspect ratio (portrait, in
+  // this fixture) rather than being force-squared — a stretched thumbnail
+  // would still pass the pixel check above.
+  const box = await canvas.boundingBox()
+  expect(box, 'thumbnail canvas has no bounding box').not.toBeNull()
+  expect(box!.height).toBeGreaterThan(box!.width)
+
+  // Clicking a thumbnail actually moves the viewport: page 8's main canvas
+  // should paint after the click, proving ThumbnailPanel's `select` handler
+  // is wired to the real viewport store, not just emitting an event nobody
+  // listens to. This check caught a real defect during development: jumping
+  // straight to a page whose PageCanvas is already mounted at one bitmap
+  // tier (placeholder) and then receives a differently-sized one (full-res)
+  // raced Vue's reactive `:width`/`:height` canvas bindings against the
+  // paint watcher, silently wiping the just-painted content — fixed in
+  // PageCanvas.vue by switching that watcher to `flush: 'post'`.
+  await thumb8.click()
+  await expect
+    .poll(
+      async () => {
+        return page.evaluate(() => {
+          const el = Array.from(document.querySelectorAll('canvas')).find(
+            (c) => c.closest('[role="img"]')?.getAttribute('aria-label') === 'Page 8',
+          )
+          if (!el || el.width === 0 || el.height === 0) return -1
+          const ctx = el.getContext('2d')
+          if (!ctx) return -1
+          const { data } = ctx.getImageData(0, 0, el.width, el.height)
+          let nonWhite = 0
+          const total = data.length / 4
+          for (let i = 0; i < data.length; i += 4) {
+            if (data[i + 3] === 255 && (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255)) nonWhite++
+          }
+          return nonWhite / total
+        })
+      },
+      { timeout: 15_000 },
+    )
+    .toBeGreaterThan(0.001)
 
   expect(consoleErrors, `console errors:\n${consoleErrors.join('\n')}`).toEqual([])
   expect(pageErrors, `page errors:\n${pageErrors.join('\n')}`).toEqual([])

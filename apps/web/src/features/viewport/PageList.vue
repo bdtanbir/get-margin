@@ -40,6 +40,21 @@ watch(items, (list) => {
   void vp.pump()
 })
 
+// Task 19: ThumbnailPanel jumps the viewport by calling `vp.setAnchor`
+// directly (it has no reference to this component or its scroller). For an
+// already-visible page that is a no-op — the watcher above already keeps
+// the anchor in sync with scroll position — but for a thumbnail far outside
+// the current viewport, `setAnchor` alone changes only the store's number;
+// nothing scrolls the container. `align: 'auto'` is what makes this safe to
+// run on every anchor change without fighting the user's own scrolling: per
+// tanstack-virtual, 'auto' is a no-op when the target index is already
+// fully in view (which it will be for scroll-driven anchor updates, since
+// those originate from `items` above), and only actually scrolls when the
+// index is genuinely off-screen (a thumbnail-driven jump).
+watch(() => vp.anchorIndex, (i) => {
+  virtualizer.value.scrollToIndex(i, { align: 'auto' })
+})
+
 watch(() => vp.zoom, () => {
   virtualizer.value.measure()
   void vp.pump()
