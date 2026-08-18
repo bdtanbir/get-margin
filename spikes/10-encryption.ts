@@ -100,8 +100,32 @@ if (worked) {
   console.log('needsPassword:', d.needsPassword())
   console.log('authenticatePassword("wrong"):', d.authenticatePassword('wrong'))
   console.log('authenticatePassword("secret"):', d.authenticatePassword('secret'))
-  console.log('hasPermission("print") after auth:', d.hasPermission('print'))
-  console.log('hasPermission("edit") after auth:', d.hasPermission('edit'))
+  console.log('hasPermission("print") after auth (default/full-permission doc):', d.hasPermission('print'))
+  console.log('hasPermission("edit") after auth (default/full-permission doc):', d.hasPermission('edit'))
+
+  console.log('\n=== Q3b: permission-flag ENFORCEMENT — does a restrictive permissions= value actually restrict? ===')
+  // "out-enc.pdf" above carries no permissions= key, so it's full-access by default: hasPermission()
+  // returning true for everything there proves nothing about enforcement (review finding #2).
+  // Save a SEPARATE doc with a genuinely restrictive permissions= value, reopen it, authenticate with
+  // the USER password (owner auth always gets full access — that's not the enforcement test), and check
+  // whether hasPermission() actually reflects the restriction.
+  const PERMS: mupdf.DocumentPermission[] = ['print', 'copy', 'edit', 'annotate', 'form', 'accessibility', 'assemble', 'print-hq']
+  function checkPermissions(label: string, permissionsValue: number | null) {
+    const opt = permissionsValue === null
+      ? 'encrypt=aes-256,user-password=secret,owner-password=owner'
+      : `encrypt=aes-256,user-password=secret,owner-password=owner,permissions=${permissionsValue}`
+    const doc2 = open()
+    const out2 = doc2.saveToBuffer(opt).asUint8Array()
+    const re2 = mupdf.Document.openDocument(out2, 'application/pdf') as mupdf.PDFDocument
+    re2.authenticatePassword('secret') // USER password — owner auth bypasses restrictions entirely
+    const results = PERMS.map((p) => `${p}=${re2.hasPermission(p)}`).join(' ')
+    console.log(`${label} (permissions=${permissionsValue}): ${results}`)
+  }
+  checkPermissions('no permissions= key (default)', null)
+  checkPermissions('print-only (PDF spec bit 3)', 4)
+  checkPermissions('explicit full access (matches default /P -4 seen in Q2)', -4)
+  checkPermissions('print+print-hq+copy+edit+annotate, no form/accessibility/assemble', 2048 + 32 + 16 + 8 + 4)
+
   let plain: Uint8Array
   try {
     plain = d.saveToBuffer('decrypt=yes,compress').asUint8Array()
@@ -117,9 +141,8 @@ if (worked) {
   console.log('\n=== Independent (non-MuPDF) confirmation of Q2 ===')
   console.log('spikes/out-enc.pdf size on disk:', statSync('spikes/out-enc.pdf').size, 'bytes')
   console.log('spikes/out-dec.pdf size on disk:', statSync('spikes/out-dec.pdf').size, 'bytes')
-  console.log('Run manually (outside this script, macOS-only, no MuPDF involved):')
-  console.log('  qlmanage -t -s 400 -o /tmp/ql-enc-test spikes/out-enc.pdf   # expect FAILURE/empty for the encrypted file')
-  console.log('  qlmanage -t -s 400 -o /tmp/ql-dec-test spikes/out-dec.pdf  # expect a real thumbnail for the decrypted file')
-  console.log('  strings spikes/out-enc.pdf | grep -i Encrypt               # expect a hit (an /Encrypt dict reference)')
-  console.log('  strings spikes/out-dec.pdf | grep -i Encrypt               # expect NO hit')
+  console.log('Run the companion script for the actual non-MuPDF checks (strings + qlmanage), it is a')
+  console.log('separate committed file (spikes/10-verify.sh) rather than inline here because those are')
+  console.log('shell/macOS tools, not something to shell out to from inside the tsx process:')
+  console.log('  bash spikes/10-verify.sh')
 }
