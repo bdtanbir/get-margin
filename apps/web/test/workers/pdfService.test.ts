@@ -80,3 +80,35 @@ describe('PdfService password handling', () => {
     expect(typeof new PdfService().authenticate).toBe('function')
   })
 })
+
+describe('PdfService.save', () => {
+  it('returns the exact source bytes for an unedited document', () => {
+    const svc = new PdfService()
+    const src = bytes('simple-text')
+    svc.open(src.slice())
+    expect(Array.from(svc.save())).toEqual(Array.from(src))
+  })
+
+  // Guards against a future transfer handler neutering the worker's own
+  // copy on the way out. If save() ever hands back the retained buffer as a
+  // Transferable, the SECOND call throws or returns an empty array.
+  it('can be called twice', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const a = svc.save()
+    const b = svc.save()
+    expect(a.byteLength).toBeGreaterThan(0)
+    expect(Array.from(b)).toEqual(Array.from(a))
+  })
+
+  it('throws when no document is open', () => {
+    expect(() => new PdfService().save()).toThrow('no document open')
+  })
+
+  it('drops the retained bytes on close', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    svc.close()
+    expect(() => svc.save()).toThrow('no document open')
+  })
+})

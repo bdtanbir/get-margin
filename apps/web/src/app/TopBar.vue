@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { Download, Sun, Moon, Monitor, PanelLeft } from 'lucide-vue-next'
 import Button from '@/ui/Button.vue'
 import IconButton from '@/ui/IconButton.vue'
 import Tooltip from '@/ui/Tooltip.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useTheme } from '@/lib/theme'
+import { getPdfClient } from '@/workers/pdfClient'
+import { downloadBytes, pdfFileName } from '@/lib/exportFile'
 
 const props = defineProps<{ compact?: boolean; panelOpen?: boolean }>()
 const emit = defineEmits<{ togglePanel: [] }>()
@@ -12,6 +15,21 @@ const emit = defineEmits<{ togglePanel: [] }>()
 const doc = useDocumentStore()
 const { choice, cycle } = useTheme()
 const icon = { light: Sun, dark: Moon, system: Monitor }
+
+const saving = ref(false)
+
+async function download(): Promise<void> {
+  if (saving.value) return
+  saving.value = true
+  try {
+    const bytes = await getPdfClient().save()
+    downloadBytes(bytes, pdfFileName(doc.fileName))
+  } catch (e) {
+    doc.error = e instanceof Error ? e.message : 'Could not export this PDF.'
+  } finally {
+    saving.value = false
+  }
+}
 </script>
 
 <template>
@@ -39,19 +57,18 @@ const icon = { light: Sun, dark: Moon, system: Monitor }
       </IconButton>
     </Tooltip>
 
-    <!--
-      Export lands in Phase 2; disabled rather than hidden so the layout is
-      final. Amendment A4: compact mode drops the visible "Download" text,
-      leaving the button icon-only with no accessible name — inconsistent
-      with the `IconButton` `label` discipline used everywhere else in this
-      app (see IconButton.vue's own `label` prop comment). `aria-label`
-      fills that gap in both modes (harmless when the text is also
-      present: an explicit `aria-label` simply becomes the accessible name
-      instead of the text content, which is identical here).
-    -->
-    <Button variant="primary" size="sm" disabled aria-label="Download">
-      <Download :size="15" :stroke-width="1.5" />
-      <span v-if="!props.compact">Download</span>
-    </Button>
+    <Tooltip content="Download PDF" side="bottom">
+      <Button
+        variant="primary"
+        size="sm"
+        aria-label="Download"
+        :loading="saving"
+        :disabled="!doc.isReady"
+        @click="download"
+      >
+        <Download :size="15" :stroke-width="1.5" />
+        <span v-if="!props.compact">Download</span>
+      </Button>
+    </Tooltip>
   </header>
 </template>

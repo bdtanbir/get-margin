@@ -20,6 +20,21 @@ export type RenderResult = { width: number; height: number; rgba: Uint8Array; pa
  */
 export class PdfService {
   #doc: PdfDocument | undefined
+  /**
+   * A pristine copy of the file the user opened, retained for the whole
+   * lifetime of the open document.
+   *
+   * This is what makes export a pure function of (sourceBytes, EditDocument):
+   * `replay()` (Task 24) builds a SECOND document from these bytes and never
+   * touches `#doc`, which is what keeps spec §1.5's deferred-bake invariant
+   * true — an edit never invalidates a page bitmap, because the document
+   * being rendered is never modified.
+   *
+   * Costs one extra resident copy of the file. `bytes` was transferred into
+   * this worker by pdfClient, so retaining the reference is free; it is not
+   * a second copy of anything the main thread still holds.
+   */
+  #sourceBytes: Uint8Array | undefined
 
   #info(): DocumentInfo {
     const doc = this.#doc
@@ -42,6 +57,7 @@ export class PdfService {
    */
   open(bytes: Uint8Array): DocumentInfo {
     this.close()
+    this.#sourceBytes = bytes
     this.#doc = PdfDocument.open(bytes)
     return this.#info()
   }
@@ -69,8 +85,28 @@ export class PdfService {
     return { width, height, rgba, page: req.page, scale: req.scale }
   }
 
+  /**
+   * The exported document.
+   *
+   * With no edits (Phase 2 Task 22) this is byte-for-byte the file the user
+   * opened — not a MuPDF re-serialisation, which would silently change file
+   * size and metadata on a document nobody edited. Task 24 replaces the body
+   * with `replay(src, editDoc)` while keeping this exact signature.
+   *
+   * Returned by structured clone, not transfer: the `renderResult` handler in
+   * transferHandlers.ts only matches objects carrying an `rgba` field, so a
+   * bare Uint8Array is copied across the boundary and `#sourceBytes` survives.
+   * The "can be called twice" test pins that.
+   */
+  save(): Uint8Array {
+    const src = this.#sourceBytes
+    if (!src) throw new Error('no document open')
+    return src
+  }
+
   close(): void {
     this.#doc?.close()
     this.#doc = undefined
+    this.#sourceBytes = undefined
   }
 }

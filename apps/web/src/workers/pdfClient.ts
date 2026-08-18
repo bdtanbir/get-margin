@@ -35,6 +35,8 @@ export type PdfClient = {
    * have here — there is no finer mechanism to build.
    */
   render(page: number, scale: number): Promise<RenderResult | null>
+  /** The exported document's bytes. See PdfService.save. */
+  save(): Promise<Uint8Array>
   close(): Promise<void>
   terminate(): void
 }
@@ -142,6 +144,11 @@ export function createPdfClient(): PdfClient {
       await ready
       const id = nextId++
       return await remote.render({ id, page, scale })
+    },
+
+    async save() {
+      await ready
+      return remote.save()
     },
 
     async close() {
