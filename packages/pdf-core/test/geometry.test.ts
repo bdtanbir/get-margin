@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { PdfDocument, readPageGeometry } from '../src/index.js'
+import { PdfDocument } from '../src/index.js'
 import { generateFixtures, fixturePath } from './fixtures/index.js'
 import { pageSizePt } from '@margin/transform'
 import { geometryFromPageObject, type RawObj } from '../src/geometry.js'
@@ -46,12 +46,6 @@ describe('pageGeometry', () => {
     const doc = PdfDocument.open(bytes('multi-page'))
     expect(() => doc.pageGeometry(12)).toThrow(/range/i)
     expect(() => doc.pageGeometry(-1)).toThrow(/range/i)
-    doc.close()
-  })
-
-  it('readPageGeometry free function matches the method form', () => {
-    const doc = PdfDocument.open(bytes('simple-text'))
-    expect(readPageGeometry(doc, 0)).toEqual(doc.pageGeometry(0))
     doc.close()
   })
 })
@@ -116,5 +110,39 @@ describe('geometryFromPageObject box normalisation', () => {
     })
     const g = geometryFromPageObject(page)
     expect(g.cropBox).toEqual([50, 80, 400, 500])
+  })
+})
+
+// --- /Parent-chain inheritance: no fixture exercises this path -------------
+//
+// Every fixture page (test/fixtures/generate.ts) is built via pdf-lib's
+// addPage(), which always writes /MediaBox (and, for `rotated`, /Rotate)
+// directly onto the page dictionary — never onto a shared Pages-tree parent.
+// So the real, inheritable-attribute case (legal PDF, common in real files
+// per PDF 32000-1 §7.7.3.4) is untested by every fixture-based test above.
+// This proves the walk in `inherited()` actually reaches and returns a
+// value from the immediate /Parent, not just that it degrades gracefully
+// when there's nothing to inherit.
+describe('geometryFromPageObject /Parent inheritance', () => {
+  it('walks up to /Parent when the page itself omits /MediaBox and /Rotate', () => {
+    const parent = pageStub({
+      MediaBox: arrObj([0, 0, 612, 792]),
+      Rotate: numObj(90),
+    })
+    const page = pageStub({ Parent: parent })
+    const g = geometryFromPageObject(page)
+    expect(g.cropBox).toEqual([0, 0, 612, 792])
+    expect(g.rotate).toBe(90)
+  })
+
+  it('falls back to MediaBox when CropBox/MediaBox intersection is degenerate', () => {
+    const page = pageStub({
+      MediaBox: arrObj([0, 0, 612, 792]),
+      // Zero width (x0 === x1) — a malformed CropBox that must be rejected,
+      // not silently produce a zero-area page.
+      CropBox: arrObj([100, 100, 100, 500]),
+    })
+    const g = geometryFromPageObject(page)
+    expect(g.cropBox).toEqual([0, 0, 612, 792])
   })
 })

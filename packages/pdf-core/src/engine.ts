@@ -94,12 +94,3 @@ export class PdfDocument {
     doc?.destroy()
   }
 }
-
-/**
- * Free function form of `PdfDocument#pageGeometry`, listed separately in the
- * task interface. Kept as a thin delegate — the method is the source of
- * truth (caching lives there) — so call sites can use either form.
- */
-export function readPageGeometry(doc: PdfDocument, index: number): PageGeometry {
-  return doc.pageGeometry(index)
-}
