@@ -1,41 +1,36 @@
 <script setup lang="ts">
+import { useShell } from '@/lib/breakpoint'
+import { useTheme } from '@/lib/theme'
 import { useDocumentStore } from '@/stores/document'
+import DesktopShell from './layouts/DesktopShell.vue'
+import MobileShell from './layouts/MobileShell.vue'
 import DropZone from '@/features/document/DropZone.vue'
-import PageList from '@/features/viewport/PageList.vue'
-import ZoomPill from '@/features/viewport/ZoomPill.vue'
-import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
 
+useTheme()
+const { isDesktop } = useShell()
 const doc = useDocumentStore()
 </script>
 
 <template>
   <!--
-    Task 17 replaces the single-PageCanvas scaffolding (Task 16 A3) with the
-    real virtualized viewer: PageList (backed by the render-priority queue
-    and the viewport store) once the document is ready, DropZone otherwise.
+    Task 20 replaces the single-shell scaffolding (Tasks 15-19, all mounted
+    directly here) with DesktopShell/MobileShell: two layout-only shells
+    that compose the same feature components (PageList, ZoomPill,
+    ThumbnailPanel, DropZone) and read the same stores. This is still the
+    app's real root, so it is still where every top-level piece gets
+    mounted (naming the mounting parent is the standing rule since a fully
+    built DropZone once shipped unmounted with a green suite) — now that
+    piece is one of exactly three: DropZone below, or whichever shell
+    `isDesktop` (apps/web/src/lib/breakpoint.ts) selects.
 
-    Task 18: ZoomPill is mounted here, alongside PageList, rather than
-    inside it — it is floating chrome over the viewer, not part of the
-    scroller, and this is the app's actual root so there is no risk of it
-    shipping unmounted (a fully-built DropZone once shipped that way with a
-    green suite; naming the mounting parent is the standing rule since).
-
-    Task 19: ThumbnailPanel is mounted here too, as a sibling of the
-    PageList/ZoomPill column, for the same reason — this is the app's real
-    root, so there is no way for it to be built but never rendered. The
-    outer flex row gives the panel a fixed-width column and lets the page
-    column take the rest; ZoomPill moves from `fixed` (viewport-relative) to
-    `absolute` inside that column so it stays centred over the pages, not
-    over the whole window including the new sidebar.
+    Amendment A1: the brief's App.vue also renders PasswordPrompt for
+    `doc.status === 'needs-password'`, but that component is Task 21's to
+    write — importing it here would break `vite build`/`vue-tsc` for this
+    task. Omitted entirely rather than stubbed: DropZone already covers
+    every non-ready status, `needs-password` included, because it renders
+    `doc.error` regardless of which non-ready status produced it. Task 21
+    adds the component and its `v-if` branch together.
   -->
   <DropZone v-if="doc.status !== 'ready'" />
-  <div v-else class="flex h-dvh w-full">
-    <ThumbnailPanel />
-    <div class="relative min-w-0 flex-1">
-      <PageList />
-      <div class="pointer-events-none absolute inset-x-0 bottom-4 z-40 flex justify-center">
-        <ZoomPill />
-      </div>
-    </div>
-  </div>
+  <component :is="isDesktop ? DesktopShell : MobileShell" v-else />
 </template>

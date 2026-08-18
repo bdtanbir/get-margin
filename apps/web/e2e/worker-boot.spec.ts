@@ -469,3 +469,159 @@ test('thumbnail panel renders real page content from the placeholder tier', asyn
   expect(consoleErrors, `console errors:\n${consoleErrors.join('\n')}`).toEqual([])
   expect(pageErrors, `page errors:\n${pageErrors.join('\n')}`).toEqual([])
 })
+
+// Task 20: proves DesktopShell and MobileShell both actually mount, and
+// that the breakpoint switch (apps/web/src/lib/breakpoint.ts, consumed by
+// App.vue) works in a real browser with a document already open — not just
+// that `useShell().isDesktop` flips in a unit test (breakpoint.test.ts
+// covers that in isolation, with mocked `window.innerWidth`). Every unit
+// test for this task mocks the worker and the DOM, so none of them can
+// catch a wiring gap where the shell swaps but PageList/the viewport store
+// don't survive the swap (e.g. because remounting PageList destroys and
+// never recreates its render-priority pump, or because the document store
+// gets reset). This project has already shipped multiple defects invisible
+// to a fully green unit suite for exactly that reason (the worker-boot race
+// in Task 15a, the unmounted DropZone/PageCanvas scaffolding in Task 15/16),
+// so this spec opens the fixture at desktop width, asserts DesktopShell's
+// chrome (the toggleable ThumbnailPanel/"Toggle pages panel" button, which
+// MobileShell never renders) is present, resizes the viewport below
+// DESKTOP_MIN_PX (1024px), and asserts MobileShell's chrome (the bottom
+// "Document actions" nav, which DesktopShell never renders) appears in its
+// place — with the document still open and a page still painting real
+// content on both sides of the switch.
+//
+// WebKit is not installed in this environment (only `playwright install
+// chromium` was ever run — see the `phone` project's `testIgnore` comment
+// above), so the `phone` project cannot launch a real mobile browser here.
+// This resizes the `desktop` project's Chromium viewport across the
+// breakpoint instead of using `phone`, which is exactly what the brief
+// asks for and is a legitimate way to exercise `useShell` (a plain
+// `useWindowSize`-backed resize listener, not a UA/touch check) end to end.
+test('the shell swaps between desktop and mobile chrome as the viewport crosses the breakpoint, with the document staying open', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'desktop only')
+
+  const consoleErrors: string[] = []
+  const pageErrors: string[] = []
+  page.on('console', (msg: ConsoleMessage) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text())
+  })
+  page.on('pageerror', (err: Error) => {
+    pageErrors.push(err.stack ?? err.message)
+  })
+
+  // Desktop width (>= DESKTOP_MIN_PX): the project's default viewport
+  // (1440x900, set in playwright.config.ts) already satisfies this, but
+  // this is set explicitly so the test does not silently depend on that
+  // config default staying above 1024px.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  await page.setInputFiles('input[type=file]', FIXTURE)
+  await expect(page.getByRole('heading', { name: 'Open a PDF' })).not.toBeVisible({
+    timeout: 30_000,
+  })
+
+  async function paintedFraction(label: string): Promise<number> {
+    return page.evaluate((ariaLabel: string) => {
+      const el = Array.from(document.querySelectorAll('canvas')).find(
+        (c) => c.closest('[role="img"]')?.getAttribute('aria-label') === ariaLabel,
+      )
+      if (!el || el.width === 0 || el.height === 0) return -1
+      const ctx = el.getContext('2d')
+      if (!ctx) return -1
+      const { data } = ctx.getImageData(0, 0, el.width, el.height)
+      let nonWhite = 0
+      const total = data.length / 4
+      for (let i = 0; i < data.length; i += 4) {
+        // alpha === 255 required — see the identical comment on the page-1
+        // check above: an unpainted canvas is transparent (0,0,0,0), not
+        // white, and would otherwise be miscounted as "non-white content".
+        if (data[i + 3] === 255 && (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255)) nonWhite++
+      }
+      return nonWhite / total
+    }, label)
+  }
+
+  // DesktopShell-only chrome: TopBar's "Toggle pages panel" button only
+  // renders when `!compact` (DesktopShell passes no `compact` prop;
+  // MobileShell passes `compact`), and ThumbnailPanel (an `aside` with
+  // accessible name "Pages") is only mounted by DesktopShell in Phase 1 —
+  // MobileShell only shows it inside the Pages modal, which is closed by
+  // default. Both together are a much stronger signal than either alone:
+  // a shell that rendered the wrong TopBar variant but happened to also
+  // mount an unrelated "Pages"-labelled element would still fail one of
+  // these two checks.
+  await expect(page.getByRole('button', { name: 'Toggle pages panel' })).toBeVisible()
+  await expect(page.getByRole('complementary', { name: 'Pages' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Document actions' })).toHaveCount(0)
+
+  await expect
+    .poll(() => paintedFraction('Page 1'), { timeout: 15_000 })
+    .toBeGreaterThan(0.001)
+
+  // The document must still be identifiable as open (TopBar shows the real
+  // file name, not "No document") before resizing — otherwise a pass below
+  // could just mean the document was never really open in the first place.
+  await expect(page.getByText('multi-page.pdf')).toBeVisible()
+
+  // Cross the breakpoint downward. DESKTOP_MIN_PX is 1024; 800 is
+  // comfortably below it without being an unrealistic phone width, so this
+  // also stands in for a narrow desktop/tablet window, not just a phone.
+  await page.setViewportSize({ width: 800, height: 900 })
+  await page.waitForTimeout(300) // useWindowSize's resize listener + Vue's reactivity tick
+
+  // MobileShell-only chrome: the bottom "Document actions" nav (only
+  // rendered once `doc.isReady`) replaces DesktopShell's rail entirely.
+  await expect(page.getByRole('navigation', { name: 'Document actions' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Toggle pages panel' })).toHaveCount(0)
+  // ThumbnailPanel is not gone for good — MobileShell just moved it behind
+  // the Pages modal, which starts closed. If DesktopShell's `aside` were
+  // still mounted here (a shell-swap that failed to actually unmount the
+  // old shell), this would still be visible and the check above would be
+  // meaningless.
+  await expect(page.getByRole('complementary', { name: 'Pages' })).toHaveCount(0)
+
+  // The document survived the swap: the file name is still shown (the
+  // document store was not reset), and *some* page is still painted with
+  // real content (PageList/the viewport store's render pump kept working
+  // after remounting under the new shell, not just that a canvas element
+  // exists). Not necessarily "Page 1" specifically: PageList's own
+  // pre-existing anchor-recentering watcher ("Keep the render anchor
+  // pointing at whatever is centred in the viewport", PageList.vue) reacts
+  // to the resize-driven refit exactly as it would to any zoom change, and
+  // can legitimately move the anchor to a different page — verified this is
+  // not a Task 20 regression by reproducing the same anchor drift on a
+  // resize/fit change against the pre-Task-20 App.vue (single shell, no
+  // TopBar) before writing this assertion. Pinning this check to "Page 1"
+  // would make the test flaky against PageList's own intended behavior, not
+  // a real signal about the shell swap.
+  await expect(page.getByText('multi-page.pdf')).toBeVisible()
+  await expect
+    .poll(
+      () => page.evaluate(() => document.querySelectorAll('[role="img"][aria-label^="Page "]').length),
+      { timeout: 15_000 },
+    )
+    .toBeGreaterThan(0)
+  const anchoredLabel = await page.evaluate(() => {
+    const el = document.querySelector('[role="img"][aria-label^="Page "]')
+    return el?.getAttribute('aria-label') ?? null
+  })
+  expect(anchoredLabel, 'no page is mounted after the breakpoint switch').not.toBeNull()
+  await expect
+    .poll(() => paintedFraction(anchoredLabel!), { timeout: 15_000 })
+    .toBeGreaterThan(0.001)
+
+  // Mobile's touch targets must clear the spec's 44px floor (min-h-11) —
+  // checked here rather than only by class-name inspection, since this is
+  // the one spot the mobile-only "Pages" bottom-nav button actually exists
+  // in the DOM to measure.
+  const pagesButton = page.getByRole('button', { name: 'Pages' })
+  await expect(pagesButton).toBeVisible()
+  const box = await pagesButton.boundingBox()
+  expect(box, 'mobile Pages button has no bounding box').not.toBeNull()
+  expect(box!.height).toBeGreaterThanOrEqual(44)
+  expect(box!.width).toBeGreaterThanOrEqual(44)
+
+  expect(consoleErrors, `console errors:\n${consoleErrors.join('\n')}`).toEqual([])
+  expect(pageErrors, `page errors:\n${pageErrors.join('\n')}`).toEqual([])
+})
