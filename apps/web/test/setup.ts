@@ -41,3 +41,51 @@ if (typeof crypto !== 'undefined' && crypto.subtle) {
     return nativeDigest(algorithm, Buffer.from(view))
   }) as typeof crypto.subtle.digest
 }
+
+/**
+ * jsdom ships no `ImageData` constructor at all (Task 16). PageCanvas calls
+ * `new ImageData(rgba, width, height)` to hand a rendered bitmap to
+ * `putImageData`, and without this the test file wouldn't even load — every
+ * PageCanvas test would fail before the component under test runs.
+ *
+ * Minimal but faithful: a test asserting `putImageData` was called with the
+ * right pixels needs `.data`/`.width`/`.height` to hold the real values
+ * that were passed in, not stand-ins.
+ */
+if (typeof globalThis.ImageData === 'undefined') {
+  class ImageDataPolyfill {
+    data: Uint8ClampedArray
+    width: number
+    height: number
+    constructor(data: Uint8ClampedArray, width: number, height?: number) {
+      this.data = data
+      this.width = width
+      this.height = height ?? data.length / 4 / width
+    }
+  }
+  // @ts-expect-error -- minimal polyfill, not a full ImageData implementation
+  globalThis.ImageData = ImageDataPolyfill
+}
+
+/**
+ * jsdom's real `HTMLCanvasElement.getContext('2d')` throws "Not
+ * implemented: ... (without installing the canvas npm package)" (Task 16)
+ * — real browsers never throw here. Worse, jsdom emits that error to its
+ * virtual console (which vitest forwards to stderr) as a side effect
+ * *before* throwing, so wrapping the call in try/catch still leaves the
+ * noise: the emission already happened by the time the catch runs.
+ *
+ * PageCanvas calls `getContext('2d')` from `onMounted`/`watchEffect` on
+ * every mount, so every test that doesn't explicitly stub it would
+ * otherwise print that jsdom error on every single mount. The only fix is
+ * to never let jsdom's real implementation run at all: replace it outright
+ * with a harmless stub. `vi.spyOn(HTMLCanvasElement.prototype,
+ * 'getContext').mockReturnValue(...)` in the one PageCanvas test that
+ * cares about paint behavior fully overrides this stub's body, so this has
+ * no effect there.
+ */
+if (typeof HTMLCanvasElement !== 'undefined') {
+  HTMLCanvasElement.prototype.getContext = function (): unknown {
+    return { putImageData() {} }
+  } as typeof HTMLCanvasElement.prototype.getContext
+}
