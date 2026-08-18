@@ -5,6 +5,7 @@ import Button from '@/ui/Button.vue'
 import IconButton from '@/ui/IconButton.vue'
 import Tooltip from '@/ui/Tooltip.vue'
 import { useDocumentStore } from '@/stores/document'
+import { useEditsStore } from '@/stores/edits'
 import { useTheme } from '@/lib/theme'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
@@ -13,6 +14,7 @@ const props = defineProps<{ compact?: boolean; panelOpen?: boolean }>()
 const emit = defineEmits<{ togglePanel: [] }>()
 
 const doc = useDocumentStore()
+const edits = useEditsStore()
 const { choice, cycle } = useTheme()
 const icon = { light: Sun, dark: Moon, system: Monitor }
 
@@ -22,7 +24,7 @@ async function download(): Promise<void> {
   if (saving.value) return
   saving.value = true
   try {
-    const bytes = await getPdfClient().save()
+    const bytes = await getPdfClient().save(edits.doc)
     downloadBytes(bytes, pdfFileName(doc.fileName))
   } catch (e) {
     doc.error = e instanceof Error ? e.message : 'Could not export this PDF.'

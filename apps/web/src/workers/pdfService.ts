@@ -1,4 +1,4 @@
-import { PdfDocument, renderPage } from '@margin/pdf-core'
+import { PdfDocument, renderPage, replay, type EditDocument } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
 export type DocumentInfo = {
@@ -88,20 +88,25 @@ export class PdfService {
   /**
    * The exported document.
    *
-   * With no edits (Phase 2 Task 22) this is byte-for-byte the file the user
-   * opened — not a MuPDF re-serialisation, which would silently change file
-   * size and metadata on a document nobody edited. Task 24 replaces the body
-   * with `replay(src, editDoc)` while keeping this exact signature.
+   * With no edits, returns the user's original bytes untouched rather than a
+   * MuPDF re-serialisation — an unedited download should hand back exactly
+   * what was opened, not a normalised file with a different size. An e2e
+   * test (e2e/download.spec.ts) asserts that byte-for-byte identity.
+   *
+   * With edits, `replay` opens a SECOND document from `#sourceBytes` and
+   * never touches `#doc`, so exporting cannot invalidate a rendered page —
+   * spec §1.5's deferred-bake invariant.
    *
    * Returned by structured clone, not transfer: the `renderResult` handler in
    * transferHandlers.ts only matches objects carrying an `rgba` field, so a
    * bare Uint8Array is copied across the boundary and `#sourceBytes` survives.
    * The "can be called twice" test pins that.
    */
-  save(): Uint8Array {
+  save(editDoc?: EditDocument): Uint8Array {
     const src = this.#sourceBytes
     if (!src) throw new Error('no document open')
-    return src
+    if (!editDoc || Object.keys(editDoc.objects).length === 0) return src
+    return replay(src, editDoc)
   }
 
   close(): void {

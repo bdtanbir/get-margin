@@ -111,4 +111,35 @@ describe('PdfService.save', () => {
     svc.close()
     expect(() => svc.save()).toThrow('no document open')
   })
+
+  // Task 24 routed save() through replay(). The no-objects path must stay a
+  // pass-through of the original file: e2e/download.spec.ts asserts the
+  // downloaded bytes are identical to the opened fixture, and a MuPDF
+  // re-serialisation would break that even though it renders the same.
+  it('still returns the original bytes when the edit document is empty', () => {
+    const svc = new PdfService()
+    const src = bytes('simple-text')
+    svc.open(src.slice())
+    const empty = {
+      version: 1, sourceHash: '', pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0 } }, objects: {}, nextZ: 1,
+    }
+    expect(Array.from(svc.save(empty))).toEqual(Array.from(src))
+  })
+
+  // The other side of that branch: once there IS an object, save() must go
+  // through replay -- and replay refuses a kind it has no writer for rather
+  // than silently exporting a document missing the user's edit.
+  it('routes through replay once the edit document has objects', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const edits = {
+      version: 1, sourceHash: '', pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0 } },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      objects: { a1: { id: 'a1', pageId: 'p0', kind: 'rect', z: 1 } as any },
+      nextZ: 2,
+    }
+    expect(() => svc.save(edits)).toThrow(/no writer registered/)
+  })
 })

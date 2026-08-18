@@ -354,3 +354,57 @@ font-registration step) is real design work for a later task, not this spike.
   genuine WASM heap OOM, confirmed via RSS measurements and a real fatal `malloc` failure) remains
   the correct example of this binding failing hard; this Link/`Rect` case does not belong in that
   category after all.
+
+---
+
+## Amendment — Phase 2 Task 24: the three gaps this spike left open
+
+Phase 0 closed Q2 (annotation coordinate space) by measurement but explicitly left three
+adjacent questions unanswered. All three are now settled by
+`packages/pdf-core/test/write/pinning.test.ts`, which runs on every commit — so these are
+live regression proofs, not one-off spike observations.
+
+**1. Content-stream operator space (Convention B) — CONFIRMED, no change needed.**
+
+This spike verified the `Font`/`Text`/`Device` primitives only against a standalone `Pixmap`
+and recorded that "wiring this into an actual page content-stream edit was not tested".
+It now is. A `re f` fragment appended to a real page's `/Contents` lands in **raw, unrotated,
+bottom-up PDF user space with the CropBox origin NOT normalised** — i.e. exactly the space
+every `EditObject.rect` is already stored in, making `toContentSpace` the identity.
+
+Measured on three fixtures, sampling the rendered pixmap at the point `pdfToView` predicts:
+`simple-text` p0 (origin-zero letter), `offset-cropbox` p0 (CropBox `[50,80,400,500]`), and
+`rotated` p1 (`/Rotate 90`). Each case also samples 6pt outside all four edges to pin the
+rect's *extent*, not just a point inside it. Deliberately mutating `toContentSpace` to apply
+a y-flip, to subtract the CropBox origin, or to scale the extent 3x each fails the suite —
+so these assertions discriminate rather than merely passing.
+
+This matters because a content-stream rect drawn on an origin-zero, unrotated letter page
+looks correct under *all three* wrong transforms. Only the offset-CropBox and rotated cases
+separate them.
+
+**2. `createLink(bbox, uri)` bbox space — NEWLY ANSWERED: page space, same as Convention A.**
+
+This spike confirmed `getURI()` round-trips but never checked where the hotspot landed.
+`bbox` is in the **same top-down, CropBox-normalised, `/Rotate`-applied page space that
+`setRect` takes** — not raw PDF space. A rect passed through `toAnnotSpace` round-trips
+through save → reopen → `getLinks()[0].getBounds()` within 1pt. Pinned with a rect high on
+the page, where the page-space and raw-space y values differ by ~570pt, so the two
+conventions cannot be confused by a vertically centred sample.
+
+Practical consequence for Task 35 (link tool): `LinkObject.rect` goes through `toAnnotSpace`
+like every annotation, **not** through `toContentSpace`. `fz_link` has no `/AP` and renders
+nothing, so a misplaced hotspot is invisible until a user clicks the wrong part of the page —
+there is no pixel to catch it. That is why this is asserted structurally.
+
+**3. Multi-part `/Contents` arrays — NEWLY EXERCISED (closes the `04-raw-objects.md` Q5 gap).**
+
+Q5 in `04-raw-objects.md` recorded that `/Contents` was already a 1-element *array* on the
+fixtures and that "a genuinely multi-part `Contents` array was not available in any fixture
+and was not constructed — **untested**: whether concatenation-order assumptions hold across
+>1 real part." `write/content.ts`'s `appendContent` constructs exactly that case: it pushes a
+second stream onto the existing array (promoting a bare single stream to a one-element array
+first, for producers that emit that form). Concatenation order holds — the appended fragment
+draws *over* the original page content, and the original content survives intact (asserted by
+an ink-count comparison against the untouched source, bounded above *and* below so it fails
+both if nothing was drawn and if the original stream was clobbered).

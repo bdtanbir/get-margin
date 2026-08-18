@@ -9,3 +9,4 @@ export type {
   InkObject, MarkupObject, LinkObject, SignatureObject,
 } from './write/types.js'
 export { EDIT_DOCUMENT_VERSION } from './write/types.js'
+export { replay, WRITERS, type ObjectWriter, type WriteContext } from './write/index.js'

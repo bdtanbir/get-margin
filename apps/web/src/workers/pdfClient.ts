@@ -1,5 +1,6 @@
 import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
+import type { EditDocument } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
 // comment in transferHandlers.ts for why both ends need it.
@@ -35,8 +36,14 @@ export type PdfClient = {
    * have here — there is no finer mechanism to build.
    */
   render(page: number, scale: number): Promise<RenderResult | null>
-  /** The exported document's bytes. See PdfService.save. */
-  save(): Promise<Uint8Array>
+  /**
+   * The exported document's bytes. See PdfService.save.
+   *
+   * `editDoc` is structure-cloned across the boundary, not transferred: the
+   * store keeps owning it, and any Uint8Array inside it (image/signature
+   * payloads) must survive on the main thread for the next export.
+   */
+  save(editDoc?: EditDocument): Promise<Uint8Array>
   close(): Promise<void>
   terminate(): void
 }
@@ -146,9 +153,9 @@ export function createPdfClient(): PdfClient {
       return await remote.render({ id, page, scale })
     },
 
-    async save() {
+    async save(editDoc) {
       await ready
-      return remote.save()
+      return remote.save(editDoc)
     },
 
     async close() {
