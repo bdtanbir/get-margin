@@ -46,7 +46,7 @@ function paintBitmap(el: HTMLCanvasElement | null): void {
     <div
       data-testid="thumb-frame"
       :class="cn(
-        'w-full overflow-hidden rounded bg-surface ring-1 transition-shadow duration-fast',
+        'w-full overflow-hidden rounded-sheet bg-surface ring-1 transition-shadow duration-fast',
         props.active ? 'ring-2 ring-accent' : 'ring-border group-hover:ring-border-strong',
       )"
       :style="{ aspectRatio: ratio }"

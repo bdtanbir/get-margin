@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 import type { ConsoleMessage, Response } from '@playwright/test'
+import { ZOOM_STEPS, nextZoomStep } from '../src/lib/fit.js'
 
 // Real in-browser verification of the Web Worker + WASM boundary (Task 15a).
 // No real viewer exists yet (Tasks 17/20 build it), so the only observable
@@ -279,45 +280,56 @@ test('zoom in changes the rendered page size', async ({ page }, testInfo) => {
   // This is exactly the shape of defect this project has caught four times
   // (an endpoints-only compositing test where both candidate formulas
   // agreed, an all-white golden image, a leaked-listener test that still
-  // passed, a substring locator matching the wrong element), so the bound
-  // needs to be tight enough that a near-zero regression cannot slip
-  // through it.
+  // passed, a substring locator matching the wrong element), so a flat
+  // percentage floor was never quite right — and got worse when Task 19
+  // added ThumbnailPanel as a permanent 240px sidebar (see App.vue): the
+  // viewer column shrank from the full 1440px viewport to ~1200px, so
+  // fit-width now lands on a smaller preset gap (~1.86x -> 2x, ~7.7%
+  // growth) than before the sidebar existed (~2.24x -> 3x, ~34% growth). A
+  // flat threshold has to sit meaningfully below whatever the real growth
+  // happens to be at the time, which means any future chrome that narrows
+  // the viewer further pushes the real number toward the threshold and
+  // makes the test flaky — the margin shrinks even though nothing is wrong.
   //
-  // The real number is deterministic here, but it moved when Task 19 added
-  // ThumbnailPanel as a permanent 240px-wide sidebar (see App.vue): the
-  // viewer column is no longer the full 1440px desktop viewport, so
-  // fit-width lands at a lower zoom and crosses fewer preset boundaries.
-  // At this fixture's Letter page size and the narrowed (~1200px) viewer
-  // column, fit-width lands at ~1.86x (before.width observed: 1136px) and
-  // `nextZoomStep` steps up to the 2x preset, i.e. a ~1.077x growth
-  // (observed: 1224/1136 ~= 1.077 in a local run) — much smaller than the
-  // pre-sidebar ~1.34x this threshold used to be calibrated against.
-  // Asserting the exact ratio would require reading the store's internal
-  // zoom value out of the page, which isn't exposed on `window` anywhere in
-  // the app today — adding that just for this test would be exposing
-  // internal state purely for test convenience. Asserting a materially
-  // large lower bound instead (5% growth) stays safely below the true
-  // ~7.7% the feature actually produces (both figures are exact integer-CSS-
-  // pixel results, not measurement noise, so the margin is real headroom,
-  // not a hedge against jitter), while still failing hard on a regression
-  // that isn't a real preset jump — a near-zero or negative width change
-  // cannot slip under a 5% floor.
-  const MIN_GROWTH = 1.05
+  // `ZOOM_STEPS`/`nextZoomStep` (apps/web/src/lib/fit.ts) are pure,
+  // Node-importable functions with no Vue/browser dependency, so rather
+  // than asserting a flat lower bound this derives the actual expected
+  // pixel width from the SAME preset table the app uses, and asserts
+  // equality against that — tighter than any percentage floor could be,
+  // and immune to future chrome changing how much the viewer narrows.
+  // `before.width` is `Math.round(612 * zoomBefore)` (PageCanvas's cssWidth
+  // — see PageCanvas.vue), so `before.width / 612` recovers `zoomBefore` to
+  // within ~1/612 (~0.0016) of the real value — negligible next to the gap
+  // between adjacent ZOOM_STEPS entries, so it cannot land in the wrong
+  // preset bucket. This avoids exposing the store's internal zoom value on
+  // `window` purely for test convenience, which the original version of
+  // this comment explicitly ruled out.
+  const PAGE_WIDTH_PT = 612 // this fixture's Letter page width, in points
+  const PAGE_HEIGHT_PT = 792
+  const zoomBefore = before!.width / PAGE_WIDTH_PT
+  const expectedZoomAfter = nextZoomStep(zoomBefore, 1)
+  const expectedWidthAfter = Math.round(expectedZoomAfter * PAGE_WIDTH_PT)
+  const expectedHeightAfter = Math.round(expectedZoomAfter * PAGE_HEIGHT_PT)
+  console.log(
+    `[zoom] before: ${before!.width}px (zoom ~${zoomBefore.toFixed(4)}), ` +
+    `expected preset after 'Zoom in': ${expectedZoomAfter}x (${ZOOM_STEPS.join(', ')}) ` +
+    `-> expected width ${expectedWidthAfter}px`,
+  )
 
   // Poll rather than assert once immediately: the click triggers
   // setZoom -> dirty=true -> pump() -> a real worker render -> repaint,
   // all asynchronous.
   await expect
     .poll(async () => (await page1.boundingBox())?.width ?? 0, { timeout: 15_000 })
-    .toBeGreaterThan(before!.width * MIN_GROWTH)
+    .toBe(expectedWidthAfter)
 
   const after = await page1.boundingBox()
   console.log(
     `[zoom] page 1 width before: ${before!.width.toFixed(1)}px, after: ${after!.width.toFixed(1)}px ` +
     `(ratio ${(after!.width / before!.width).toFixed(3)})`,
   )
-  expect(after!.width).toBeGreaterThan(before!.width * MIN_GROWTH)
-  expect(after!.height).toBeGreaterThan(before!.height * MIN_GROWTH)
+  expect(after!.width).toBe(expectedWidthAfter)
+  expect(after!.height).toBe(expectedHeightAfter)
 
   expect(consoleErrors, `console errors:\n${consoleErrors.join('\n')}`).toEqual([])
   expect(pageErrors, `page errors:\n${pageErrors.join('\n')}`).toEqual([])
