@@ -20,6 +20,7 @@
   --color-accent-subtle: oklch(0.95 0.03 268);
   --color-danger: oklch(0.55 0.21 25);
   --color-danger-subtle: oklch(0.96 0.03 25);
+  --color-danger-fg: oklch(1 0 0);
   --color-warning: oklch(0.7 0.16 75);
   --color-focus: oklch(0.6 0.19 268);
 
@@ -53,6 +54,7 @@
   --color-accent-subtle: oklch(0.28 0.05 268);
   --color-danger: oklch(0.65 0.19 25);
   --color-danger-subtle: oklch(0.28 0.06 25);
+  --color-danger-fg: oklch(0.16 0.01 25);
   --color-warning: oklch(0.78 0.15 75);
   --color-focus: oklch(0.7 0.17 268);
 

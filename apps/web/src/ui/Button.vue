@@ -23,7 +23,7 @@ const button = cva(
         primary: 'bg-accent text-accent-fg hover:bg-accent-hover shadow-low',
         secondary: 'bg-surface text-text border border-border hover:bg-surface-sunken shadow-low',
         ghost: 'bg-transparent text-text-muted hover:bg-surface-sunken hover:text-text',
-        danger: 'bg-danger text-white hover:opacity-90 shadow-low',
+        danger: 'bg-danger text-danger-fg hover:opacity-90 shadow-low',
       },
       size: { sm: 'h-8 px-2.5 text-[13px]', md: 'h-9 px-3.5 text-sm' },
     },
