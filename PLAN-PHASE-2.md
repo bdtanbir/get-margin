@@ -709,8 +709,12 @@ describe('useEditsStore', () => {
   // documented in stores/viewport.ts.
   it('exposes no writer other than applyOp', () => {
     const s = useEditsStore()
+    // Every Pinia store exposes $patch/$reset/$subscribe/$onAction/$dispose/
+    // _hotUpdate as enumerable keys -- framework surface, not ours, and not
+    // removable. Filter them so this asserts the store's OWN surface.
+    // (Found during Task 23 execution.)
     const mutators = Object.keys(s).filter(
-      (k) => typeof (s as Record<string, unknown>)[k] === 'function',
+      (k) => typeof (s as Record<string, unknown>)[k] === 'function' && !k.startsWith('$') && !k.startsWith('_'),
     )
     expect(mutators.sort()).toEqual(
       ['applyOp', 'clearSelection', 'nextZ', 'redo', 'reset', 'select', 'undo', 'withTransaction'].sort(),
@@ -730,7 +734,7 @@ Create `apps/web/src/stores/edits.ts`:
 
 ```ts
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { shallowRef, computed } from 'vue'
 import { produceWithPatches, enablePatches, applyPatches, type Patch } from 'immer'
 import { EDIT_DOCUMENT_VERSION, type EditDocument, type Op, type ObjectId } from '@margin/pdf-core'
 
@@ -803,10 +807,19 @@ function reduce(draft: EditDocument, op: Op): void {
 }
 
 export const useEditsStore = defineStore('edits', () => {
-  const state = ref<EditDocument>(emptyDocument())
-  const past = ref<HistoryEntry[]>([])
-  const future = ref<HistoryEntry[]>([])
-  const selectedIds = ref<ObjectId[]>([])
+  // shallowRef, NOT ref. Immer calls Object.freeze on the state it produces,
+  // and Vue's deep reactive Proxy conflicts with a frozen target -- a plain
+  // ref() throws a Proxy invariant error on the SECOND applyOp and again on
+  // structuredClone. shallowRef keeps reactivity at the root, which is the
+  // correct granularity anyway: applyOp reassigns the whole document rather
+  // than mutating into it, so every read through the computed below
+  // re-evaluates. viewport.ts already uses shallowRef for the same class of
+  // reason (large typed arrays that must never become reactive).
+  // (Found during Task 23 execution; the plan originally said ref().)
+  const state = shallowRef<EditDocument>(emptyDocument())
+  const past = shallowRef<HistoryEntry[]>([])
+  const future = shallowRef<HistoryEntry[]>([])
+  const selectedIds = shallowRef<ObjectId[]>([])
 
   // Transaction depth, plus the patches accumulated across the whole
   // transaction. `applyOp` still mutates state immediately during a
