@@ -2,8 +2,8 @@
 
 Web-based PDF editor with feature parity to Sejda's editor (referenced for *feature scope only* — no UI/UX or visual borrowing). Original modern-SaaS design.
 
-**Status:** design doc, pre-implementation. No code written yet.
-**Date:** 2026-08-17
+**Status:** Phase 0 complete (10 tasks, 68 tests passing, spikes retired). Amended throughout to match measured engine reality — see `docs/findings/00-phase-0-decisions.md`. Phase 1 not yet started.
+**Date:** 2026-08-17 (original) · amended 2026-08-18
 
 ---
 
@@ -187,7 +187,7 @@ Three stacked layers per page, sharing one CSS box:
 
 **Layer 1 — `<canvas>`** — the page bitmap from the worker, rasterized at `dpr × zoom` and CSS-downscaled to logical size.
 
-**Layer 2 — `<svg>` with `viewBox="0 0 widthPt heightPt"`** — the load-bearing trick of the whole design. Set the viewBox to the page's PDF dimensions, and put the y-flip and page rotation on a *single root `<g transform>`*. Consequences:
+**Layer 2 — `<svg>` with `viewBox="0 0 widthPt heightPt"`** — the load-bearing trick of the whole design. Set the viewBox to the page's PDF dimensions, and put all three of MuPDF's own baked-in page-space transforms — CropBox-origin translation to `(0,0)`, the y-flip, and `/Rotate` (see §1.4) — on a *single root `<g transform>`*. Consequences:
 
 - Every object renders at its **raw stored PDF coordinates with zero per-object math.**
 - Zoom is nothing but a CSS width change on the SVG — no re-layout, no recomputation, no re-render of anything.
@@ -211,6 +211,8 @@ pageTransform({ cropBox, rotate, zoom, dpr }) → { toView: DOMMatrix, toPdf: DO
 ```
 
 - **All stored geometry is unrotated PDF user space** — origin bottom-left, y-up, 72dpi points.
+- **MuPDF's own page space — the space `toPixmap()`, `getBounds()`, `getTransform()`, and every `PDFAnnotation` rect/quad setter and getter operate in — already composes three transforms: CropBox-origin translation to `(0,0)`, a top-down y-flip, and `/Rotate`.** `pageTransform` must replicate that exact composition, not just a bare y-flip. Verified: MuPDF's own `getTransform()` matrices for `/Rotate` 0/90/180/270 were checked against this module's math and match exactly, including the CropBox term (`docs/findings/00-engine-facts.md`). Dropping any one of the three — most easily the rotation, since "MuPDF applies rotation" (§1.5) reads like permission to leave it out here — reproduces the exact class of bug this module exists to prevent.
+- **This constrains `render.ts` in the opposite direction, not this module.** Because `toPixmap` already applies `/Rotate` internally (§1.5), `render.ts` must pass a scale-only matrix and must not compose rotation into it a second time — that would double-rotate. `transform.ts` still composes all three transforms itself, because it maps *raw, unrotated* PDF-space object geometry onto the same already-rotated page space MuPDF's bitmap uses, so the overlay's `<g transform>` agrees with the pixels underneath. Both statements are true at once.
 - Hit-testing goes through `element.getScreenCTM().inverse()` so the browser does the math rather than you.
 - **Rule: no component performs its own coordinate arithmetic.** Ever.
 - Property-tested across random rects × 4 page rotations × zoom levels × non-zero CropBox origins.
@@ -219,12 +221,15 @@ This gets its own module and its own test suite because PDF y-up vs CSS y-down, 
 
 ### 1.5 Render pipeline
 
+- **`toPixmap` applies `/Rotate` automatically** — measured: pixmap dimensions swap for 90°/270° pages, and `page.getTransform()`'s returned matrix already contains the rotation (`docs/findings/00-engine-facts.md`). `render.ts` must pass a **scale-only** matrix to `toPixmap`; composing rotation into it as well would double-rotate. This is the mirror image of §1.4's rule, not a contradiction of it: `transform.ts` still must include rotation, because it maps unrotated PDF-space object geometry onto this same already-rotated bitmap.
 - **One Comlink-wrapped worker per document**, with a serialized command queue inside (MuPDF is not safely reentrant) and a cancellation token per render request so scrolling away aborts in-flight work.
 - `@tanstack/vue-virtual` drives continuous vertical scroll. Render priority = distance from viewport anchor.
 - **Two tiers:** one cheap ~0.2× pass over all pages (doubles as the thumbnail panel source), then full-res for visible ±1.
 - Bitmaps transfer as `ImageBitmap` from an `OffscreenCanvas` in the worker — zero-copy. Fall back to `ImageData` where unsupported.
 - LRU cache keyed `pageId@scale`, capped by total megapixels (~200MP) rather than entry count.
 - **Overlay edits never invalidate a page bitmap.** Only source changes — crop, rotate, phase-6 text patch — trigger re-render. This is the concrete payoff of the deferred-bake architecture.
+
+**Disposal is a correctness requirement, not hygiene.** Every `loadPage()` and `toPixmap()` call must be wrapped in `try/finally` calling `.destroy()` unconditionally. Omitting it does not leak gradually — it hard-crashes the WASM heap (`malloc failed`) inside a single few-hundred-page sweep, well within a normal editing session on a 300-page document. Measured: ~5–7MB RSS drift across a 300-page sweep with disposal; +433MB and climbing to a fatal crash without it (`docs/findings/00-engine-facts.md`).
 
 **Pin the single-threaded MuPDF WASM build.** The threaded build needs `SharedArrayBuffer`, which needs COOP/COEP cross-origin isolation headers, which break third-party embeds and complicate hosting — for very little gain given work is already off the main thread.
 
@@ -244,8 +249,8 @@ Difficulty is **implementation risk**, not effort: 🟢 straightforward · 🟡 
 | Font / size / color | Curated self-hosted set (see §2.5) + the standard 14. Inspector controls. | 🟢 |
 | Add images | `PDFDocument.addImage` → XObject drawn on export. Client-side decode/downscale before embedding (a 12MP phone photo dropped on a page must not become a 4MB embed). Handle EXIF orientation. | 🟡 |
 | Shapes: rect, ellipse, line, arrow | SVG preview; export as content-stream path operators (or native Square/Circle/Line annots). Arrowheads are computed geometry — a path, not an annotation feature. | 🟢 |
-| Hyperlinks | Native `Link` annotation with `/Rect` + `/A << /S /URI >>`. Also detect **existing** links on load so they're editable. Validate/normalize URLs; block `javascript:`. | 🟢 |
-| Whiteout | An opaque filled rect above content. **Name it honestly in the UI** — it *covers*, it does not *remove*. The underlying text is still extractable by any PDF tool. For actual removal, that's the phase-6 redact path, and conflating the two is a real user-harm risk (people white out SSNs and think they're gone). | 🟡 |
+| Hyperlinks | **`page.createLink(bbox, uri)`** — a separate `fz_link` API, not a `PDFAnnotation`. (The originally-specced `createAnnotation('Link')` + `setRect()` does not work: a `Link` annotation rejects `setRect()`/`getRect()`, throwing an ordinary catchable `Error` — an ordinary `try/catch` is sufficient, nothing special needed.) `fz_link` has no `/AP` concept — link hotspots are invisible by design, per the PDF spec — so the overlay must draw its own visual affordance; MuPDF gives no rendered rectangle for free. `getURI()` round-trips exactly. Also detect **existing** links on load so they're editable. Validate/normalize URLs; block `javascript:`. | 🟢 |
+| Whiteout | An opaque filled rect above content. **Name it honestly in the UI** — it *covers*, it does not *remove*. The underlying text is still extractable by any PDF tool. For actual removal, that's the phase-6 redact path (§2.4), now backed by a verified mechanism (`applyRedactions()`) that produces genuine, re-extraction-confirmed removal rather than a second cosmetic cover — so the two features can be honestly distinguished in the UI rather than both quietly being covers. Conflating them is a real user-harm risk (people white out SSNs and think they're gone). | 🟡 |
 | Highlight / underline / strikeout | Select text via `toStructuredText` quads → native `Highlight`/`Underline`/`StrikeOut` annots with `/QuadPoints`. Native means they stay editable/removable in Acrobat and don't damage the page. **Text selection across a bitmap is its own chunk of work**: build a per-page quad index from structured text and implement selection hit-testing against it. | 🟡 |
 | Freehand draw | `perfect-freehand` → transient canvas → commit `ink` object → export as native `Ink` annot (or path). | 🟢 |
 | Signature: draw | Same pipeline as freehand, in a modal, on a fixed-aspect pad. | 🟢 |
@@ -266,10 +271,10 @@ Difficulty is **implementation risk**, not effort: 🟢 straightforward · 🟡 
 |---|---|---|
 | Fill existing fields | `page.getWidgets()` → widget annots with field type/value/options; set via the widget's value setters. This is well-supported and the easy half. | 🟢 |
 | Render existing fields | Draw as interactive DOM inputs in Layer 3 positioned over the widget rect — real inputs, so keyboard/mobile/a11y work. | 🟡 |
-| Create new fields | Needs `createAnnotation('Widget')` **plus raw PDF object work**: field dict (`/FT`, `/T`, `/Ff` flags, `/Opt` for choices), the AcroForm dict, `/DR` default resources, `/DA` default appearance, and the `/Fields` array. mupdf.js exposes raw `PDFObject` manipulation for this, but there's no high-level "create a text field" call — you're assembling dictionaries. **Phase 0 spike item.** | 🔴 |
+| Create new fields | `createAnnotation('Widget')` **plus raw PDF object work**: field dict (`/FT`, `/T`, `/Ff` flags, `/Opt` for choices), one-time `/AcroForm` + `/DR` default-resources + `/DA` document wiring, and the `/Fields` array. **Measured, not assumed**: ~9 lines per field once the ~20-line one-time AcroForm/DR wiring exists — text (`/Tx`), checkbox (`/Btn`), and combo (`/Ch`) fields were all built in one document with no dead ends, and mupdf **auto-generates real `/AP` appearance streams for every type**, including two-state checkbox appearances — the fiddly part nobody had to hand-build. Round-trips correctly through save/reload (`page.getWidgets()` on a fresh reopen). Every checkbox/radio field needs an explicit `/MK/BC` border color or its unchecked state renders invisibly (structurally correct, but blank). | 🟡 |
 | Field properties | Name, required, read-only, default value, choice options, multiline, max length, appearance. Straightforward once creation works. | 🟢 |
 | Tab order | Page `/Annots` array order + `/Tabs /R`. Reorderable list in the inspector. | 🟡 |
-| Radio groups | Parent field with kids sharing `/T` and distinct `/AS` on-states. Genuinely fiddly PDF semantics. | 🟡 |
+| Radio groups | Parent field with kids sharing `/T` and distinct `/AS` on-states. Genuinely fiddly PDF semantics, and **untested by the Phase 0 spike** — structurally inferred to behave like the checkbox case, but not measured. Run a half-day mini-spike at the start of Phase 5 before committing to the phase estimate holding. | 🟡 |
 
 ### 2.3 Advanced (phase 6)
 
@@ -277,7 +282,7 @@ Difficulty is **implementation risk**, not effort: 🟢 straightforward · 🟡 
 |---|---|---|
 | **Edit existing text** | See §2.4 below — the hardest thing in the product. | 🔴 |
 | Find & replace | `toStructuredText` index across all pages → match with normalization (PDFs break words across spans, use ligatures, and have irregular spacing, so naive `indexOf` misses most real matches) → each hit becomes a `textPatch` op. Replace-all is one transaction. | 🔴 |
-| Password protect | MuPDF's writer supports encryption; **whether mupdf.js exposes it through `saveToBuffer` options is unverified — phase 0 spike.** Fallback: `qpdf-wasm` client-side, or qpdf on the backend. | 🟡 |
+| Password protect | **Resolved — MuPDF writes genuine encrypted PDFs natively**, no fallback needed: `saveToBuffer('encrypt=aes-256,user-password=<pw>,owner-password=<pw>')`. Confirmed three independent ways: `needsPassword()` on reopen, a real `/Encrypt` dict with `/CFM/AESV3` visible via raw byte inspection, and Apple's CoreGraphics renderer refusing to render the encrypted file while rendering the decrypted twin normally — two of the three checks don't touch MuPDF at all. **Mandatory safety requirement**: an option string with `user-password=`/`owner-password=` but no `encrypt=` key saves cleanly, throws nothing, and produces a completely unprotected PDF — reproduced directly. The implementation must reopen its own output and assert `needsPassword() === true` before reporting success; never treat a non-throwing `saveToBuffer` as evidence of encryption. **New capability, absent from the original plan**: `permissions=<bitmask>` genuinely enforces (verified against an arbitrary bit combination, not just one flag), so the same dialog can legitimately offer print-only / no-copy / no-edit restrictions, not just an open password — worth surfacing in §6's protect dialog as checkboxes. Treat the bitmask semantics as empirically derived, not documented: `permissions=` is not a literal key in the wasm string table. | 🟡 |
 | Remove password | `needsPassword()` → `authenticatePassword(pw)` → save without encryption. Only works with the *user* password; can't break encryption, and shouldn't. | 🟢 |
 | Watermark | Content-stream draw (text or image) per page, with opacity/rotation/tiling, drawn above or below existing content. | 🟢 |
 | Page numbers / header / footer | Same writer, plus token substitution (`{n}`, `{total}`), range selection, margin presets, and skip-first-N. | 🟢 |
@@ -291,25 +296,27 @@ You chose **line/span-level patch**, which is the right call — paragraph reflo
 
 The pipeline:
 
-1. **Extract** — `page.toStructuredText('preserve-whitespace,preserve-spans')` gives blocks → lines → spans → chars, each with a bbox and font info (name, size, weight/italic flags).
-2. **Address stably** — a patch op must survive reload and replay, so a run is identified by `{pageId, blockIdx, lineIdx, spanIdx, originalTextHash}`. The hash is the guard: if extraction shifts (different MuPDF version, different options), the op refuses to apply rather than patching the wrong text. **Fail loudly, never silently mispatch.**
-3. **Cover the original glyphs** — the pragmatic approach is drawing an opaque rect in the page background color over the run's bbox, then drawing new text on top. The rigorous approach is content-stream surgery: parse the stream, locate the `Tj`/`TJ` operators for that run, and remove them. Surgery is correct (text no longer extractable, no background-color guessing) but requires a content-stream parser/serializer and careful handling of graphics state. **Start with cover-and-redraw, upgrade to surgery for the redaction feature** — where actual removal is the entire point.
+1. **Extract — two calls, not one.** `page.toStructuredText(options?).asJSON(scale?)` gives blocks → lines, each line **already a homogeneous-style run** with a bbox and font info (name, size, weight/italic flags) — measured: there is **no separate `spans` array** nested under a line, and `asJSON()` itself takes only a numeric `scale`, not an options string (the options string belongs to `toStructuredText()` and affects internal segmentation, not the JSON shape). **Per-character bboxes are not in this output at any option setting.** For those, use `StructuredText.walk({ onChar })` separately — it yields an 8-number quad per character (not an axis-aligned rect, so rotated/skewed runs are representable), needed for precise markup-quad and sub-run-edit geometry. No single call gives both; plan for the two-call shape explicitly. Good news this resolves: per-run font name/size/weight/style are all present, so span-level text editing is confirmed viable, not just assumed.
+2. **Address stably** — a patch op must survive reload and replay, so a run is identified by `{pageId, blockIdx, lineIdx, originalTextHash}` (no `spanIdx` — a "span" and a `lines[]` entry are the same thing, per the extraction finding above). The hash is the guard: if extraction shifts (different MuPDF version, different options), the op refuses to apply rather than patching the wrong text. **Fail loudly, never silently mispatch.**
+3. **Cover the original glyphs** — the pragmatic approach is drawing an opaque rect in the page background color over the run's bbox, then drawing new text on top. For genuine removal — the redaction feature, where actual removal is the entire point — use **`PDFPage.applyRedactions()`** instead of hand-rolled content-stream surgery. It's a built-in MuPDF primitive, confirmed to remove text verifiably: a fresh cold-reopen re-extraction shows the target text genuinely gone, not merely covered, and it transparently handles FlateDecode-compressed content streams with no manual decode/encode work. **Do not hand-roll a content-stream regex for this** — proven, not merely feared: a naive regex over a `TJ` array containing a literal `]` silently misses the match entirely, exactly the failure mode this document originally speculated about ("a real tokenizer is needed"). Drive `applyRedactions()` with a `Redact` annotation's `/QuadPoints` — it is quad-driven, not `/Rect`-driven — sourced from the same page-space bbox `toStructuredText().asJSON()` already returns for step 1. **Start with cover-and-redraw for ordinary text edits; build the redact feature on `applyRedactions()`.** Caveat: its image/vector-art redaction paths (`image_method`/`line_art_method`) are unexercised — text only was verified — and rotated/skewed quads are untested.
 4. **Background color detection** — sample the pixmap around the run's bbox. Works on solid backgrounds, fails on gradients, images, and textures. Detect low confidence (high variance in sampled pixels) and warn the user rather than producing a visible white scar.
 5. **Redraw** — reuse the original font if possible. **This is where it genuinely breaks:** embedded fonts in real PDFs are almost always *subsets* containing only the glyphs the document already uses. Type "Ø" into a run whose subset lacks it and there is no glyph to draw. Detect the miss, fall back to a metric-compatible substitute (Liberation family for Arial/Times/Courier metrics), and **tell the user the font was substituted.** Silent substitution that looks slightly wrong is worse than a visible warning.
 6. **Fit** — reflow only within the line's bbox. If the new text is wider, offer: shrink to fit / allow overflow / truncate. Never push surrounding content around.
 
 **Set product expectations accordingly.** This works well on single-column, digitally-generated, simple-font documents. It degrades on justified text (per-character positioning), tight kerning, and multi-column layouts, and it does nothing for scanned pages without OCR. Every serious tool including Acrobat has these limits. The UI should communicate confidence per run — e.g. runs that can be cleanly patched get a normal affordance, low-confidence ones get a warning on hover — rather than presenting a uniform illusion of full editability.
 
+**⚠️ Prerequisite before redaction ships as a safety claim, not just a spike finding.** The "text is genuinely gone" result above rests on MuPDF's own write → cold-reopen → re-extract round trip — honest, and arguably the most product-relevant check available since MuPDF *is* the client-side engine, but it is still one engine checking its own output. Before this feature is presented to users as a safety guarantee (as opposed to an internal finding), verify removal with a genuinely independent extractor (`pypdf`, `pdfminer`, `pdftotext`, or Acrobat's own text export — `pdftotext` was unavailable on the spike machine). This matters more than an ordinary verification gap: redaction is the one feature where being wrong has real consequences for a user who redacted something sensitive and was told it worked. **Track this as a release gate on the feature, not on the phase.**
+
 ### 2.5 Fonts
 
 A shared concern across text, signatures, watermarks, and text patching, so it gets its own module.
 
-- **Standard 14** always available (no embedding required).
+- **Standard 14** always available (no embedding required) — and this is also `FreeText`'s ceiling: **`FreeText` annotation appearance generation only resolves the standard 14 base fonts.** Size, color, family, and `setQuadding(0|1|2)` alignment all work with an auto-generated `/AP`. A custom registered font is **silently ignored** — no `/DR` dictionary gets created to resolve the name, and MuPDF's own `getDefaultAppearance()` reads back `Helv` regardless of what was requested. So `FreeText` is the ~50-line path only when the text tool needs base-14 fonts; a custom/self-hosted font must be drawn as content-stream text operators (the `Font` + `Text` + `Device` primitives — confirmed working end-to-end, including drawing, rendering, and measurement matching to 5 decimal places) or via a hand-built `/DR`, the ~300-line path. §6's font picker should not route custom fonts through the `FreeText` path.
 - **Curated self-hosted set**, subsetted and embedded on export: Inter, Roboto, Source Serif, Merriweather, JetBrains Mono, + 3–4 script faces for signatures. Self-hosted (not Google's CDN) so preview and export use byte-identical files and there's no third-party request per document.
 - **Metric-compatible substitutes** (Liberation Sans/Serif/Mono) for Arial/Times/Courier fallbacks in text patching.
 - **Preview must equal export.** The same font file loads via `FontFace` for the SVG preview and gets embedded on export. Measure with canvas `measureText`.
-- Subsetting matters: embedding a full CJK font adds ~10-16MB to every export.
-- **Spike item:** confirm arbitrary TTF embedding via `PDFDocument.addSimpleFont`. If ergonomics are poor, `pdf-lib` + `@pdf-lib/fontkit` is the designated fallback *for the font path only*.
+- **Confirmed: arbitrary TTF embedding works** (`new mupdf.Font(name, bytes)` + `doc.addSimpleFont`/`doc.addFont` on arbitrary TTFs). **But there is no automatic subsetting** — registering a font costs **57–65% of its raw byte size immediately**, measured at two very different scales (a 22.2MB font → ~14.9MB; a 755KB font → ~431KB), the signature of plain Flate compression of the whole font program. `doc.subsetFonts()` exists but made zero measurable difference for a freshly registered, not-yet-drawn font in three configurations. Subsetting matters in practice, not just in theory: embedding a full CJK font this way adds ~10–16MB to every export.
+- **DECISION: `pdf-lib` + `@pdf-lib/fontkit` is a runtime dependency**, scoped strictly to font subsetting/embedding for this custom-font path (see §8) — not a fallback, included. MuPDF remains the single engine for rendering, annotations, page composition, and save; this is a narrow carve-out for the one job MuPDF doesn't do automatically, not a second write path.
 
 ---
 
@@ -332,7 +339,8 @@ That's the entire MVP plus most of phase 6. **The MVP ships with no backend at a
 | OCR (scanned docs) | Tesseract WASM exists, but a 50-page scan takes minutes on a phone and needs ~100MB of language data. Server-side with a real binary is 10–50× faster. Offer client-side WASM as a fallback for single pages / offline. |
 | HTML → PDF | Needs a real browser engine (Playwright). Can't nest a browser in a browser. |
 | Very large documents | Optional escape hatch: if a doc exceeds the client budget (~150MB / ~800 pages), offer server-side processing with an explicit consent prompt. |
-| Encryption (fallback only) | Only if the phase-0 spike shows mupdf.js can't write encrypted PDFs and `qpdf-wasm` proves unworkable. |
+
+**Encryption's backend fallback never materializes.** This table originally had a conditional "Encryption (fallback only)" row here; Phase 0 confirmed MuPDF writes genuine AES-256 encrypted PDFs client-side (§2.3), so that row is removed rather than kept as a dead conditional.
 
 ### Round-trip shape
 
@@ -500,6 +508,8 @@ Solo, full-time, AI-assisted. Weeks are calendar weeks and **include** the respo
 
 ### Phase 0 — De-risking spikes · 4 days
 
+**Complete.** Full decision record: `docs/findings/00-phase-0-decisions.md`. Every item below resolved; the two items still open (radio-group semantics, Acrobat/Chrome human verification) are tracked there, not here.
+
 Throwaway code, written to answer questions. **Do this before building anything on top of assumptions.** Verify in mupdf.js specifically:
 
 1. Render throughput — a 300-page document, time to first page and steady-state page rate.
@@ -541,21 +551,21 @@ IndexedDB autosave + crash recovery · keyboard shortcuts · ⌘K palette · a11
 
 Fill existing fields (interactive DOM widgets) · create fields (text, multiline, dropdown, checkbox, radio, signature box) · properties panel · tab-order editor · AcroForm setup · flatten-form-on-export option.
 
-> Risk: sized by spike #6. If raw dictionary assembly proves worse than expected, this is 4 weeks, not 3.
+> **Confirmed at 3 weeks by the Phase 0 spike** (`docs/findings/04-raw-objects.md`) — field creation measured at ~9 lines/field plus ~20 lines of one-time AcroForm/DR wiring, with mupdf auto-generating `/AP` appearance streams (including two-state checkboxes) for free, so the estimate holds rather than needing the +1 week hedge the plan originally carried. Two things still gate calling this phase *done*, not just week 12: a half-day radio-group mini-spike at the start of the phase (untested parent/kid `/T`+`/AS` semantics), and human verification that the created fields are actually interactive in Acrobat and Chrome.
 
-### Phase 6 — Advanced document ops · weeks 12–15.5
+### Phase 6 — Advanced document ops · weeks 12–15
 
-**Text patching (~1.5 weeks of this)** · find & replace · watermark · page numbers/header/footer · Bates · metadata (Info + XMP) · compression with presets · password protect/remove · true redaction (content-stream surgery).
+**Text patching (~1 week of this, revised down from ~1.5 — see §2.4)** · find & replace · watermark · page numbers/header/footer · Bates · metadata (Info + XMP) · compression with presets · password protect/remove · true redaction (via `PDFPage.applyRedactions()`, not hand-rolled content-stream surgery — see §2.4; the Phase 0 spike proved a naive regex path unreliable and found MuPDF's own primitive instead).
 
-> Highest-variance phase in the plan. Ship the rest of phase 6 first so text editing can slip without blocking the release.
+> Highest-variance phase in the plan. Ship the rest of phase 6 first so text editing can slip without blocking the release. Redaction is a release gate on the feature (independent-extractor verification, §2.4), not on this phase's calendar slot.
 
-### Phase 7 — Conversion backend · weeks 15.5–19.5
+### Phase 7 — Conversion backend · weeks 15–19
 
 Fastify service · BullMQ + Redis · storage adapter + TTL sweeper · separate sandboxed worker container · `unoserver` · `ocrmypdf` · Playwright HTML→PDF · PDF→JPG (client-side, MuPDF) · job UI with progress · rate limiting · consent flows · Docker images · CI.
 
 > First phase with real infrastructure cost and real attack surface. Do the sandboxing in this phase, not after.
 
-### Phase 8 — Polish & launch · weeks 19.5–22
+### Phase 8 — Polish & launch · weeks 19–21.5
 
 Cross-browser matrix · real-device testing · **Artifex commercial license finalized** · load testing on the worker tier · error monitoring · analytics (privacy-respecting) · docs/help · marketing site · pricing/limits if applicable.
 
@@ -565,11 +575,13 @@ Cross-browser matrix · real-device testing · **Artifex commercial license fina
 |---|---|
 | **MVP (core editing)** | ~9 weeks |
 | **+ Forms** | ~12 weeks |
-| **+ Advanced** | ~15.5 weeks |
-| **+ Conversion** | ~19.5 weeks |
-| **Full parity, launch-ready** | **~22 weeks** |
+| **+ Advanced** | ~15 weeks |
+| **+ Conversion** | ~19 weeks |
+| **Full parity, launch-ready** | **~21.5 weeks** |
 
-**The three schedule risks, honestly:** (1) existing-text editing quality on real-world documents; (2) PDF→Office fidelity, which is industry-wide unsolved; (3) form-field creation if mupdf.js's raw-object ergonomics are poor. Phase 0 shrinks (3) to a known quantity in four days. (1) and (2) are quality risks more than schedule risks — they'll ship, the question is how good they are.
+Phase 6's estimate moved down by 0.5 week (text patching's `applyRedactions()`-based approach vs. the originally-planned hand-rolled surgery, §2.4); every phase after it shifts down by the same 0.5 week accordingly.
+
+**The three schedule risks, honestly:** (1) existing-text editing quality on real-world documents; (2) PDF→Office fidelity, which is industry-wide unsolved; (3) form-field creation, flagged as a risk *if* mupdf.js's raw-object ergonomics turned out poor. **Phase 0 resolved (3) favorably** — ergonomics were good, no dead ends, and the Phase 5 estimate holds unchanged (see above) rather than needing the +1 week hedge originally carried for it. (1) and (2) remain quality risks more than schedule risks — they'll ship, the question is how good they are.
 
 ---
 
@@ -596,10 +608,9 @@ Cross-browser matrix · real-device testing · **Artifex commercial license fina
 | `colord` | Color parsing/conversion for the picker. |
 | `fflate` | Zip for multi-file downloads (split output, PDF→JPG). |
 | `vue-sonner` | Toasts. |
-| `pdf-lib` + `@pdf-lib/fontkit` | **Conditional** — designated fallback for font embedding/subsetting only, pending spike #4. |
-| `qpdf-wasm` | **Conditional** — encryption fallback pending spike #5. |
+| `pdf-lib` + `@pdf-lib/fontkit` | **Included, not conditional** — MuPDF embeds whole font programs with no automatic subsetting (measured: 57–65% of raw TTF bytes on registration, `subsetFonts()` makes no measurable difference); `pdf-lib`/`fontkit` handle subsetting/embedding, scoped strictly to that path (§2.5, §8 test tooling note below). MuPDF stays the single engine for everything else. |
 
-Not included, deliberately: **`pdfjs-dist`** — MuPDF covers rendering; a second engine means two renderers to keep visually consistent. **`fabric` / `konva`** — see §1.3.
+Not included, deliberately: **`pdfjs-dist`** — MuPDF covers rendering; a second engine means two renderers to keep visually consistent. **`fabric` / `konva`** — see §1.3. **`qpdf-wasm`** — resolved out at Phase 0: MuPDF's own `saveToBuffer('encrypt=aes-256,...')` writes genuine AES-256 encrypted PDFs natively (§2.3), verified three independent ways, so no second WASM binary or lazy-chunk strategy is needed for encryption.
 
 ### Backend
 
@@ -609,7 +620,7 @@ Native/system: LibreOffice + `unoserver` (Python) · Tesseract + `ocrmypdf` (Pyt
 
 ### Testing
 
-`vitest` · `@vue/test-utils` · `@playwright/test` (e2e) · `fast-check` (property tests for the transform module) · `pngjs` + `pixelmatch` (golden-file image comparison) · `pdf-lib` and `tsx` as devDependencies for deterministic fixture generation.
+`vitest` · `@vue/test-utils` · `@playwright/test` (e2e) · `fast-check` (property tests for the transform module) · `pngjs` + `pixelmatch` (golden-file image comparison) · `pdf-lib` and `tsx` as devDependencies for deterministic fixture generation. (`pdf-lib` appears twice in this document for two unrelated reasons: here as a Node devDependency for building test fixtures, and in Frontend above as a runtime dependency for font subsetting — same package, different jobs.)
 
 **The golden-file rig is the most valuable test asset in this project.** Because MuPDF runs in Node, you can: fixture PDF + op log → export → render exported pages to PNG → pixel-compare against goldens. This is the only mechanism that catches overlay-preview drifting from baked output, which is the central risk of the deferred-bake architecture. Build it in phase 0.
 
@@ -646,7 +657,7 @@ The MVP is a static site: effectively free, and it scales to any traffic level w
 
 ## 10. Open questions to resolve before phase 1
 
-1. **Phase 0 spike results** — items 4, 5, and 6 each change a dependency or a phase estimate.
+1. **Phase 0 spike results — RESOLVED.** Full record: `docs/findings/00-phase-0-decisions.md`. `pdf-lib` is in, `qpdf-wasm` is out, form-field creation downgraded from 🔴 to 🟡 with the Phase 5 estimate confirmed. What's still genuinely open, and must not be treated as settled: a half-day radio-group mini-spike at the start of Phase 5, and human verification of native annotations/widgets/encrypted PDFs in Acrobat and Chrome — Phase 0 only had MuPDF and Apple's CoreGraphics renderer available in this environment.
 2. **AGPL vs. commercial license** — start the Artifex conversation by phase 5. It gates launch, not development.
 3. **Client-side size cap** — I've assumed ~150MB / ~800 pages. Worth validating against your expected documents on a mid-range phone, since you've committed to phone support.
 4. **PDF→Office quality bar** — decide what's acceptable after measuring LibreOffice against real documents in phase 7, before promising anything publicly.

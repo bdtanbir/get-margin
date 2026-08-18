@@ -41,11 +41,15 @@ try/catch-wrapped, **does not reproduce that claim**: `getObject().put('Rect', [
 on a Link annotation succeeds without crashing anything (though the write is inert —
 `getRect()` afterward still throws the same error, and `update()` returns `false` with no `/AP`
 produced, so the low-level put doesn't actually make the annotation function as a rect-based one
-either). The original "abort" was traced to a **different, earlier line** in the now-deleted
-ad-hoc probe: an *unwrapped* `link.getRect()` call, one statement before the `put()` that got
-blamed. That threw the exact same catchable `Error: Link annotations have no Rect property` —
-confirmed by `spikes/09-link-rect-abort.ts`'s Part 3, which reproduces the original probe's
-un-try/catched call verbatim and captures the real stack trace:
+either). The most likely explanation for the original "abort" is a **different, earlier line** in
+the now-deleted ad-hoc probe: an *unwrapped* `link.getRect()` call, one statement before the
+`put()` that got blamed. That throws the exact same catchable `Error: Link annotations have no
+Rect property` — consistent with `spikes/09-link-rect-abort.ts`'s Part 3, which reproduces an
+un-try/catched call in the same shape as the original probe's and captures the real stack trace.
+(The deleted probe itself no longer exists to compare against directly, so this is a plausible
+reconstruction, not a verified trace — the substantive claim that follows, that the low-level
+`put()` succeeds and the failure is an ordinary catchable `Error`, is independently demonstrated by
+the committed, runnable code below and stands on its own regardless of this historical account.)
 
 ```
 Error: Link annotations have no Rect property
@@ -87,11 +91,15 @@ hotspots by design (matches PDF spec: `/Link` annotations normally render nothin
 | Link | OK (annotation created) | **N/A — `setRect()` fails, never reaches `update()`** | N/A | N/A | NOT VERIFIED | NOT VERIFIED |
 | Stamp | OK | YES — red "DRAFT" rubber-stamp box (MuPDF's own default icon; I set no icon/contents) | YES | YES — identical | NOT VERIFIED | NOT VERIFIED |
 
-Evidence: `spikes/out-annots-mupdf-render.png` (mupdf's own `toPixmap` render of the saved+reloaded
-PDF) and `spikes/out-annots-coregraphics-render.png` (`qlmanage -t`, CoreGraphics/Quick Look —
-the same engine Preview uses, run headlessly). Both were visually inspected directly; they are
-indistinguishable in layout, color, and content for every working annotation type. **No
-cross-renderer disagreement was found for any type.**
+Evidence: `docs/findings/evidence/out-annots-mupdf-render.png` (mupdf's own `toPixmap` render of
+the saved+reloaded PDF) and `docs/findings/evidence/out-annots-coregraphics-render.png`
+(`qlmanage -t`, CoreGraphics/Quick Look — the same engine Preview uses, run headlessly). Both were
+visually inspected directly; they are indistinguishable in layout, color, and content for every
+working annotation type. **No cross-renderer disagreement was found for any type.** These three
+files (plus `docs/findings/evidence/out-annots.pdf`, the saved+reloaded PDF itself) were moved out
+of the now-deleted `spikes/` directory at Task 11 specifically because they are the only artifacts
+that let a human perform the still-outstanding Acrobat/Chrome verification — see the decision
+record's "Blocking issues for Phase 1" for that open item.
 
 Acrobat and Chrome were **not opened** — this environment has no GUI. Any claim about them would
 be fabricated; they are marked `NOT VERIFIED — requires human check`, not inferred as passing.
@@ -131,7 +139,7 @@ raw /Rect (reloaded)                   -> [ 71, 331, 201, 393 ]   (unchanged)
 in x: `72→71`, `200→201`). mupdf's binding transparently flips y on every get/set call.
 
 This was cross-confirmed a second, independent way (`spikes/05-annot-coordspace.ts`, Part B — real
-output): scanned `spikes/out-annots-mupdf-render.png` for the exact pixel rows of three
+output): scanned `docs/findings/evidence/out-annots-mupdf-render.png` for the exact pixel rows of three
 annotations (pure, unambiguous colors) and compared against two candidate formulas:
 
 ```
