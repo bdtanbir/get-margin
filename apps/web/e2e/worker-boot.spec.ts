@@ -78,7 +78,15 @@ test('worker boots, loads WASM, and opens a real PDF', async ({ page }, testInfo
 
   // Task 16 (A3): prove the canvas actually painted, not just that it
   // exists. Wait for the canvas element itself first...
-  const canvas = page.locator('canvas')
+  //
+  // Scoped to "Page 1" (Task 17): PageList is a virtualized, multi-page
+  // scroller — with a correctly sized viewport it legitimately mounts
+  // several page canvases at once (this fixture is 12 pages), so a bare
+  // `page.locator('canvas')` is a strict-mode violation once more than one
+  // is on screen. `[role="img"][aria-label="Page N"]` is PageCanvas's own
+  // accessible label (see PageCanvas.vue), the same scoping the Task 17
+  // scroll spec below uses.
+  const canvas = page.getByRole('img', { name: 'Page 1' }).locator('canvas')
   await expect(canvas).toBeVisible()
 
   // ...then wait for its pixels to actually be non-white. The canvas can
@@ -87,7 +95,9 @@ test('worker boots, loads WASM, and opens a real PDF', async ({ page }, testInfo
   // rather than sampling once immediately after visibility.
   const nonWhiteFraction = await page.waitForFunction(
     () => {
-      const el = document.querySelector('canvas')
+      const el = Array.from(document.querySelectorAll('canvas')).find(
+        (c) => c.closest('[role="img"]')?.getAttribute('aria-label') === 'Page 1',
+      )
       if (!el || el.width === 0 || el.height === 0) return false
       const ctx = el.getContext('2d')
       if (!ctx) return false
