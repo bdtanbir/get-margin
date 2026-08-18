@@ -108,7 +108,9 @@ Exactly as PLAN.md §1.2 specifies. `EditDocument` is a plain serialisable objec
 
 Three points where the design makes a call §1.2 left implicit:
 
-1. **The store exposes `applyOp` and getters. Nothing else.** No exported mutations, no `$patch` from components. This repo has no linter, so the invariant is enforced structurally instead: `edits.ts` is a **setup store** that returns `readonly()` state plus `applyOp` — the same pattern `stores/viewport.ts` already uses for `zoom` (commit `07d4ba1`). A component assigning to state is then a *type error*, not a convention. A unit test asserting the store's exported surface backs it up, so adding a second write path fails CI rather than eroding quietly.
+1. **The store exposes `applyOp` and getters. Nothing else.** No exported mutations, no `$patch` from components. This repo has no linter, so the invariant is enforced structurally instead: `edits.ts` is a **setup store** that exposes state as `computed()` getters plus `applyOp`.
+
+   `computed()` specifically, **not** `readonly()`. `stores/viewport.ts` documents the trap from Task 18: Pinia's setup-store type extraction treats any `isRef()`-true value as mutable state, and a `readonly()`-wrapped ref is still `isRef() === true` — only `computed()` is special-cased. So `readonly()` gives a runtime warning and a *clean* `vue-tsc` build, which is the worst combination: the write silently doesn't apply and CI stays green. Exposing `computed()` getters makes `edits.doc = x` a genuine compile-time error. A unit test asserting the store's exported surface backs this up, so a second write path fails CI rather than eroding quietly.
 2. **`withTransaction(label, fn)` is mandatory for drags, resizes, freehand strokes, and typing.** Typing commits on 400ms idle or blur. Without this, one drag is 60 undo steps.
 3. **History is capped at 200 entries** *and* a byte ceiling on accumulated patches, dropping oldest. Image ops carry large payloads; an entry count alone is not a memory bound.
 

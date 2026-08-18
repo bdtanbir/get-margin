@@ -515,7 +515,15 @@ export type InkObject = BaseObject & {
 
 export type MarkupObject = BaseObject & {
   kind: 'highlight' | 'underline' | 'strikeout'
-  /** 8 numbers per quad, PDF space, in MuPDF's quad point order. */
+  /**
+   * 8 numbers per quad, in MuPDF PAGE space (top-down, CropBox-origin
+   * normalised, /Rotate applied) -- NOT the raw bottom-up PDF space every
+   * `rect` above uses. This is deliberate: buildQuadIndex (Task 36)
+   * produces page space and setQuadPoints (Task 38) consumes it, so a
+   * conversion in either direction would be a round trip through the wrong
+   * space. `rect` on a MarkupObject still follows the usual rule and goes
+   * through toAnnotSpace.
+   */
   quads: number[][]
   color: Color
 }
@@ -3548,6 +3556,8 @@ function measurer(provider: FontProvider) {
 ```
 
 - [ ] **Step 7: Implement the browser font layer**
+
+Populate the `fontFamily` select in `inspectorFields.ts`, which Task 28 deliberately shipped with `options: []` because no fonts existed yet — fill it from the curated set added in Step 1, or the font picker renders as an empty dropdown.
 
 Create `apps/web/src/lib/fonts.ts` — `loadFont(family)` constructs a `FontFace` from `/fonts/<family>-Regular.ttf`, adds it to `document.fonts`, and caches the promise; `measureText(text, family, size)` measures via a canvas 2D context. `fontBytes(family)` fetches the same file as an `ArrayBuffer` for the worker. **Preview must equal export**: the same file feeds both, per spec §2.5.
 
