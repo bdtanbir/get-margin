@@ -5,9 +5,17 @@ import PageList from '@/features/viewport/PageList.vue'
 import ZoomPill from '@/features/viewport/ZoomPill.vue'
 import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
 import { useDocumentStore } from '@/stores/document'
+import { useViewportShortcuts } from '@/features/viewport/useViewportShortcuts'
 
 const doc = useDocumentStore()
 const panelOpen = ref(true)
+
+// Task 21: keyboard shortcuts are desktop-only (no physical keyboard
+// assumption on the mobile shell) and read-only (zoom/fit), matching the
+// read-only surface Phase 1 exposes. See useViewportShortcuts.ts for why
+// this alone is sufficient scoping — no extra "is this active" guard
+// needed here.
+useViewportShortcuts()
 
 // Amendment A2: PageList (features/viewport/PageList.vue) already owns a
 // ResizeObserver on its own scroller element and re-runs `vp.applyFit` on

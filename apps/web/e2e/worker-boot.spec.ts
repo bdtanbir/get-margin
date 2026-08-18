@@ -567,8 +567,17 @@ test('the shell swaps between desktop and mobile chrome as the viewport crosses 
   // Cross the breakpoint downward. DESKTOP_MIN_PX is 1024; 800 is
   // comfortably below it without being an unrealistic phone width, so this
   // also stands in for a narrow desktop/tablet window, not just a phone.
+  //
+  // Amendment A4 (Task 21): this used to follow with a magic-number
+  // `waitForTimeout(300)` to give useWindowSize's resize listener and
+  // Vue's reactivity a tick to settle before asserting. Removed rather than
+  // replaced: `expect(locator).toBeVisible()` / `.toHaveCount()` below are
+  // already Playwright auto-retrying assertions (default 5s), so they poll
+  // through exactly the same settling window on their own — the fixed
+  // sleep was redundant with assertions that already retry, not a
+  // requirement of its own. Confirmed by running this spec with the sleep
+  // removed: still green.
   await page.setViewportSize({ width: 800, height: 900 })
-  await page.waitForTimeout(300) // useWindowSize's resize listener + Vue's reactivity tick
 
   // MobileShell-only chrome: the bottom "Document actions" nav (only
   // rendered once `doc.isReady`) replaces DesktopShell's rail entirely.

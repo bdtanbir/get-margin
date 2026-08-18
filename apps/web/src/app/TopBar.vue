@@ -39,8 +39,17 @@ const icon = { light: Sun, dark: Moon, system: Monitor }
       </IconButton>
     </Tooltip>
 
-    <!-- Export lands in Phase 2; disabled rather than hidden so the layout is final. -->
-    <Button variant="primary" size="sm" disabled>
+    <!--
+      Export lands in Phase 2; disabled rather than hidden so the layout is
+      final. Amendment A4: compact mode drops the visible "Download" text,
+      leaving the button icon-only with no accessible name — inconsistent
+      with the `IconButton` `label` discipline used everywhere else in this
+      app (see IconButton.vue's own `label` prop comment). `aria-label`
+      fills that gap in both modes (harmless when the text is also
+      present: an explicit `aria-label` simply becomes the accessible name
+      instead of the text content, which is identical here).
+    -->
+    <Button variant="primary" size="sm" disabled aria-label="Download">
       <Download :size="15" :stroke-width="1.5" />
       <span v-if="!props.compact">Download</span>
     </Button>

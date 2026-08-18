@@ -20,13 +20,23 @@ export default defineConfig({
       // ...)` guard inside the test body is NOT sufficient on its own: the
       // `page` fixture it destructures is resolved by Playwright before the
       // test body runs at all, so the project still launches a browser for
-      // it first. `devices['iPhone 13']` defaults to WebKit, which isn't
-      // installed in this environment (only `playwright install chromium`
-      // was ever run) — the bare `pnpm e2e` command failed with "Executable
-      // doesn't exist" on this file under `phone` before this was added,
-      // confirming the in-body skip alone doesn't prevent the launch
-      // attempt. `testIgnore` here stops Playwright from ever trying to run
-      // this file under `phone`, regardless of WebKit's install state.
+      // it first. `devices['iPhone 13']` defaults to WebKit — when this
+      // comment was written it wasn't installed in this environment (only
+      // `playwright install chromium` had been run), and the bare `pnpm e2e`
+      // command failed with "Executable doesn't exist" on this file under
+      // `phone` before `testIgnore` was added, confirming the in-body skip
+      // alone doesn't prevent the launch attempt.
+      //
+      // Update (Task 21, amendment A2): `pnpm --filter @margin/web exec
+      // playwright install webkit` has since succeeded, so WebKit IS
+      // installed now and `phone` runs real WebKit for every other spec
+      // (e2e/viewer.spec.ts). `testIgnore` is kept here regardless — it was
+      // never only a WebKit-availability workaround, it also enforces this
+      // file's own "desktop only per its brief" design (Task 15a never
+      // intended `phone` coverage at all), which installing WebKit doesn't
+      // change. Removing it now would just make `phone` launch a browser
+      // per test here to immediately `test.skip` every one of them — legal,
+      // but pure overhead for a file that was never meant to run there.
       testIgnore: '**/worker-boot.spec.ts',
     },
   ],
