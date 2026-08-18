@@ -26,6 +26,9 @@ importers:
 
   packages/pdf-core:
     dependencies:
+      '@margin/transform':
+        specifier: workspace:*
+        version: link:../transform
       mupdf:
         specifier: ^1.26.0
         version: 1.28.0

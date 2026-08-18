@@ -8,7 +8,8 @@
     "fixtures": "tsx test/fixtures/cli.ts"
   },
   "dependencies": {
-    "mupdf": "^1.26.0"
+    "mupdf": "^1.26.0",
+    "@margin/transform": "workspace:*"
   },
   "devDependencies": {
     "pdf-lib": "^1.17.1",
