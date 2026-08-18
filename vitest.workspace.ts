@@ -1,4 +1,4 @@
-import { defineWorkspace } from 'vitest/config'
+import { defineWorkspace, configDefaults } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 
 export default defineWorkspace([
@@ -27,6 +27,18 @@ export default defineWorkspace([
       root: './apps/web',
       environment: 'jsdom',
       globals: true,
+      // Explicit exclude overrides Vitest's defaults entirely, so merge
+      // rather than replace — otherwise node_modules gets scanned too.
+      exclude: [...configDefaults.exclude, 'test/workers/**'],
+    },
+  },
+  {
+    test: {
+      name: 'web-node',
+      root: './apps/web',
+      environment: 'node',
+      include: ['test/workers/**/*.test.ts'],
+      testTimeout: 30_000,
     },
   },
 ])
