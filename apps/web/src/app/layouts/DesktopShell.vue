@@ -4,6 +4,7 @@ import TopBar from '../TopBar.vue'
 import PageList from '@/features/viewport/PageList.vue'
 import ZoomPill from '@/features/viewport/ZoomPill.vue'
 import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
+import ToolRail from '@/features/tools/ToolRail.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useViewportShortcuts } from '@/features/viewport/useViewportShortcuts'
 
@@ -32,7 +33,13 @@ useViewportShortcuts()
   <div class="flex h-dvh flex-col">
     <TopBar :panel-open="panelOpen" @toggle-panel="panelOpen = !panelOpen" />
     <div class="flex min-h-0 flex-1">
-      <!-- Phase 2 inserts the 64px tool rail here. -->
+      <!--
+        The rail is gated on a ready document for the same reason
+        ThumbnailPanel is: with no PDF open there is nothing for a tool to
+        act on, and an enabled-looking rail over the drop zone invites
+        clicks that cannot do anything.
+      -->
+      <ToolRail v-if="doc.isReady" />
       <ThumbnailPanel v-if="panelOpen && doc.isReady" />
       <!--
         Amendment A3: ZoomPill is floating chrome (`absolute`, positioned
