@@ -14,6 +14,7 @@ import { createXObjectCache, type XObjectCache } from './xobject.js'
 import { writeInk } from './objects/ink.js'
 import { writeLink } from './objects/link.js'
 import { writeMarkup } from './objects/markup.js'
+import { writeField } from './objects/field.js'
 import { migrateEditDocument } from './migrate.js'
 import { stripActiveContent, anythingStripped, type StrippedContent } from './sanitize.js'
 
@@ -83,6 +84,10 @@ WRITERS.signature = writeImage
 
 // Task 38. Native /QuadPoints annotations -- they stay editable and
 // removable in other PDF tools and do not damage the page.
+// Task 67. Form fields the USER created -- filling a field that already
+// exists in the source is not an object and does not come through here.
+WRITERS.field = writeField
+
 WRITERS.highlight = writeMarkup
 WRITERS.underline = writeMarkup
 WRITERS.strikeout = writeMarkup
@@ -255,4 +260,8 @@ export { createXObjectCache, type XObjectCache } from './xobject.js'
 export { writeInk } from './objects/ink.js'
 export { writeLink } from './objects/link.js'
 export { writeMarkup } from './objects/markup.js'
+export {
+  writeField, ensureAcroForm, pageAnnots, commonFlags, newWidget,
+  FIELD_READ_ONLY, FIELD_REQUIRED, TX_MULTILINE, BTN_NO_TOGGLE_OFF, BTN_RADIO, CH_COMBO,
+} from './objects/field.js'
 export { migrateEditDocument, LEGACY_SOURCE_ID } from './migrate.js'

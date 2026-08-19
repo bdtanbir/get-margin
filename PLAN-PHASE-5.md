@@ -14,9 +14,13 @@ They meet only in the write path. DOM inputs positioned over widget rects handle
 
 Copied from the spec and the pre-flight; every task inherits these.
 
-- **Widget `/Rect` is Convention B** (raw PDF user space, bottom-up, CropBox not normalised) and
-  reaches the file through `toAnnotSpace()`. **`getBounds()` returns Convention A** (top-down,
-  CropBox normalised, `/Rotate` applied) — the renderer's space. Findings 12 §4.
+- **Widget `/Rect` is Convention B** (raw PDF user space, bottom-up, CropBox not normalised) and is
+  written through `toContentSpace()`, the identity — **not** `toAnnotSpace()`, which is for mupdf's
+  setters and would put a field meant for the bottom of a page at its top. **`getBounds()` returns
+  Convention A** (top-down, CropBox normalised, `/Rotate` applied) — the renderer's space, which the
+  overlay consumes unconverted. Findings 12 §4 and its correction.
+- **Assert exact bounds, never containment.** A field written in the wrong space is still inside the
+  page box; three of four rotations pass a containment check.
 - **Never read a radio button's selection from `getValue()`.** It returns the group's value. Use
   `/AS`. Findings 12 §3.
 - **Radio kids require an explicit `/AP /N` with the button's export value and `Off` as its two
@@ -84,14 +88,15 @@ test `packages/pdf-core/test/write/field.test.ts`
       `/DA "/Helv 0 Tf 0 g"`, and `/DR /Font /Helv` (Helvetica Type1). **Idempotent** — a source
       document's own AcroForm must never be clobbered.
 - [ ] `writeField` for `fieldType: 'text'`: widget annotation dict with `/FT /Tx`, `/T`, `/V`,
-      `/DA`, `/F 4`, `/Rect` via `toAnnotSpace(object.rect, geometry)`, `/Ff` from `required`,
+      `/DA`, `/F 4`, `/Rect` via `toContentSpace(object.rect)`, `/Ff` from `required`,
       `readOnly`, `multiline`, `/MaxLen` when set. Push to `/AcroForm /Fields` and the page's
       `/Annots`.
 - [ ] Register `WRITERS.field = writeField` in `src/write/index.ts`.
 - [ ] Tests (all through save + reopen, per Global Constraints): a text field round-trips with the
       right name, type, and value; multiline and read-only flags survive; `/MaxLen` survives;
-      an existing `/AcroForm` is extended rather than replaced; a field on a `/Rotate 90` page and
-      on an offset-CropBox page lands inside the visible page box.
+      an existing `/AcroForm` is extended rather than replaced; a field on each of `/Rotate`
+      0/90/180/270 and on an offset-CropBox page reads back from `getBounds()` at **exactly** the
+      Convention A rect, not merely somewhere inside the page.
 - [ ] Gates, commit.
 
 ## Task 68: Checkbox, radio, and the appearance generator
