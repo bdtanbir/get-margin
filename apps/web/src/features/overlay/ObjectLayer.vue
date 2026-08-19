@@ -5,6 +5,7 @@ import RectObject from './objects/RectObject.vue'
 import EllipseObject from './objects/EllipseObject.vue'
 import LineObject from './objects/LineObject.vue'
 import ArrowObject from './objects/ArrowObject.vue'
+import WhiteoutObject from './objects/WhiteoutObject.vue'
 
 const props = defineProps<{ object: EditObject }>()
 
@@ -28,6 +29,7 @@ const COMPONENTS: Partial<Record<ObjectKind, Component>> = {
   ellipse: EllipseObject,
   line: LineObject,
   arrow: ArrowObject,
+  whiteout: WhiteoutObject,
 }
 
 const component = computed(() => COMPONENTS[props.object.kind])

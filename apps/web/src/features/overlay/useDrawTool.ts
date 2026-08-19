@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid'
 import { viewToPdf, rectFromPoints, directedRect, type Rect } from '@margin/transform'
-import type { ShapeObject, EditObject } from '@margin/pdf-core'
+import type { ShapeObject, WhiteoutObject, EditObject } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore, type ToolId } from '@/stores/tools'
@@ -13,8 +13,8 @@ import { useDragGesture } from './useDragGesture'
  */
 const MIN_DRAG_PT = 3
 
-/** Kinds this composable knows how to create. Tasks 30-35 extend it. */
-const DRAWABLE = ['rect', 'ellipse', 'line', 'arrow'] as const
+/** Kinds this composable knows how to create. Tasks 31-35 extend it. */
+const DRAWABLE = ['rect', 'ellipse', 'line', 'arrow', 'whiteout'] as const
 export type DrawableTool = (typeof DRAWABLE)[number]
 
 export function isDrawable(tool: ToolId): tool is DrawableTool {
@@ -28,6 +28,18 @@ export const SHAPE_DEFAULTS = {
   stroke: [0, 0, 0] as [number, number, number],
   strokeWidth: 2,
   fill: null,
+}
+
+/** Opaque white, the only default that makes the tool's name true on sight. */
+export const WHITEOUT_DEFAULTS = { fill: [1, 1, 1] as [number, number, number] }
+
+/**
+ * The kind-specific half of a newly drawn object. Whiteout carries a `fill`
+ * and no stroke; the four shapes carry stroke and fill. Splitting it here
+ * keeps the gesture code below identical for every drawable kind.
+ */
+export function draftDefaults(kind: ToolId) {
+  return kind === 'whiteout' ? WHITEOUT_DEFAULTS : SHAPE_DEFAULTS
 }
 
 function significant(rect: Rect, kind: DrawableTool): boolean {
@@ -73,8 +85,8 @@ export function useDrawTool(page: () => PageState, zoom: () => number) {
       onEnd: () => {
         tools.clearDraft()
         if (!significant(rect, tool)) return
-        const object: ShapeObject = {
-          ...SHAPE_DEFAULTS,
+        const object = {
+          ...draftDefaults(tool),
           id: nanoid(10),
           pageId: page().id,
           kind: tool,
@@ -83,7 +95,7 @@ export function useDrawTool(page: () => PageState, zoom: () => number) {
           z: edits.nextZ(),
           locked: false,
           opacity: 1,
-        }
+        } as ShapeObject | WhiteoutObject
         edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Draw')
         // Hand the new object straight to the select tool: the thing you
         // just drew is the thing you want to adjust.

@@ -8,7 +8,7 @@ import { useToolsStore } from '@/stores/tools'
 import ObjectLayer from './ObjectLayer.vue'
 import SelectionChrome from './SelectionChrome.vue'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
-import { useDrawTool, isDrawable, SHAPE_DEFAULTS } from './useDrawTool'
+import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -52,7 +52,7 @@ const draft = computed(() => {
   const d = tools.draft
   if (!d || d.pageId !== props.page.id || !isDrawable(tools.active)) return undefined
   return {
-    ...SHAPE_DEFAULTS,
+    ...draftDefaults(tools.active),
     id: '__draft__',
     pageId: d.pageId,
     kind: tools.active,

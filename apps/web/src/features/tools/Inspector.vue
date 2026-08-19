@@ -70,6 +70,23 @@ function handleInput(field: Field, e: Event): void {
     </p>
 
     <template v-else>
+      <!--
+        Spec 2.1. This copy is load-bearing, not decoration: people white out
+        SSNs and account numbers believing the data is gone, and it is not --
+        write/objects/whiteout.ts draws a cover and whiteout.test.ts asserts
+        the text underneath is still extractable. Saying so plainly, at the
+        moment the tool is in use, is the whole mitigation. Never soften this
+        to "hides", and never label the tool "redact".
+      -->
+      <p
+        v-if="selected.kind === 'whiteout'"
+        data-whiteout-notice
+        class="rounded-control border border-border bg-surface-sunken p-2 text-[12px] text-text-muted"
+      >
+        Whiteout covers content — it does not delete it. The text underneath can
+        still be copied out of the file.
+      </p>
+
       <div
         v-for="f in fields"
         :key="f.key"

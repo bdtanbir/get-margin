@@ -3,6 +3,7 @@ import { withDocument, withPage, SAVE_OPTIONS } from './session.js'
 import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectKind } from './types.js'
 import type { PageGeometry } from '@margin/transform'
 import { writeShape } from './objects/shape.js'
+import { writeWhiteout } from './objects/whiteout.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -27,6 +28,9 @@ WRITERS.rect = writeShape
 WRITERS.ellipse = writeShape
 WRITERS.line = writeShape
 WRITERS.arrow = writeShape
+
+// Task 30. Covers content; does not remove it -- see objects/whiteout.ts.
+WRITERS.whiteout = writeWhiteout
 
 /**
  * Build the exported document.
@@ -91,3 +95,4 @@ export { withDocument, withPage, SAVE_OPTIONS } from './session.js'
 export { toAnnotSpace, toContentSpace, num } from './coords.js'
 export { appendContent, addResource, fillColor, strokeColor, alphaState } from './content.js'
 export { writeShape } from './objects/shape.js'
+export { writeWhiteout } from './objects/whiteout.js'
