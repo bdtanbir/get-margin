@@ -1,7 +1,9 @@
 import {
-  PdfDocument, renderPage, replay, buildQuadIndex, listFields,
+  PdfDocument, renderPage, replay, buildQuadIndex, listFields, readMetadata, recompressImages,
+  findInPage, missingGlyphsFor,
   type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
-  type SourceField,
+  type SourceField, type Protection, type DocumentMetadata,
+  type CompressionPreset, type CompressionResult, type FindOptions, type Match,
 } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
@@ -226,13 +228,21 @@ export class PdfService {
     fonts?: Map<string, Uint8Array>,
     onProgress?: (done: number, total: number) => void,
     onStripped?: (found: StrippedContent) => void,
+    protection?: Protection,
   ): Uint8Array {
     const primary = this.#primarySource
     const src = primary ? this.#sources.get(primary) : undefined
     if (!src) throw new Error('no document open')
     // No edit document at all means "give me the file back" -- the caller
     // has nothing to replay.
-    if (!editDoc) return src
+    // No edit document AND no protection means "give me the file back".
+    // Protection alone is a reason to go through the write path: someone
+    // who opened a file and asked only for a password must get an
+    // encrypted file, not their original.
+    if (!editDoc && !protection) return src
+    if (!editDoc) {
+      throw new Error('Cannot protect a document with no edit state.')
+    }
     // `fonts` is only consulted for text objects; a document without any
     // never touches it, which is why it stays optional (Task 31). Under
     // exactOptionalPropertyTypes, `{ fonts: undefined }` is NOT the same as
@@ -246,6 +256,7 @@ export class PdfService {
       ...(fonts ? { fonts } : {}),
       ...(onProgress ? { onProgress } : {}),
       ...(onStripped ? { onStripped } : {}),
+      ...(protection ? { protection } : {}),
     })
   }
 
@@ -279,6 +290,79 @@ export class PdfService {
     const doc = this.#docFor(sourceId)
     if (!doc) throw new Error('no document open')
     return listFields(doc._raw(), page, `${sourceId ?? this.#primarySource ?? 'src-0'}:${page}`)
+  }
+
+  /**
+   * The description the source document carries.
+   *
+   * Read from the source rather than from an export copy, because the
+   * dialog opens on what the user's file already says -- an export copy
+   * would already have this build's Producer stamped on it.
+   */
+  metadata(): DocumentMetadata {
+    const doc = this.#doc
+    if (!doc) throw new Error('no document open')
+    return readMetadata(doc._raw())
+  }
+
+  /**
+   * Compress the export, returning both sizes so the UI can show the trade
+   * before committing to it.
+   *
+   * Runs over the EXPORTED bytes rather than the source, because that is
+   * what the user is about to download -- estimating against the original
+   * would quote a saving on a file that no longer exists.
+   */
+  compress(
+    preset: CompressionPreset,
+    editDoc?: EditDocument,
+    fonts?: Map<string, Uint8Array>,
+  ): CompressionResult {
+    const exported = this.save(editDoc, fonts)
+    return recompressImages(exported, preset)
+  }
+
+  /**
+   * Every match for `query` across the whole document.
+   *
+   * Runs IN THE WORKER rather than shipping quad indices to the main
+   * thread. A 300-page document would otherwise mean 300 round trips and
+   * 300 index payloads for a search that touches each page once -- and the
+   * worker already caches the indices it builds, so a second search over
+   * the same document costs no extraction at all.
+   *
+   * `limit` bounds the result set. A one-letter query on a long document
+   * matches tens of thousands of times, and neither the panel nor the
+   * highlight layer can use that many; the count is reported honestly as
+   * capped rather than the extras being dropped in silence.
+   */
+  find(query: string, options: FindOptions = {}, limit = 500): {
+    matches: Array<{ page: number } & Match>
+    capped: boolean
+  } {
+    const doc = this.#doc
+    if (!doc) throw new Error('no document open')
+    if (query === '') return { matches: [], capped: false }
+
+    const matches: Array<{ page: number } & Match> = []
+    for (let page = 0; page < doc.pageCount; page++) {
+      for (const match of findInPage(this.quadIndex(page), query, options)) {
+        if (matches.length >= limit) return { matches, capped: true }
+        matches.push({ page, ...match })
+      }
+    }
+    return { matches, capped: false }
+  }
+
+  /**
+   * Which characters a font cannot draw.
+   *
+   * Asked of the worker because only it has the font machinery. MuPDF
+   * returns glyph 0 -- the .notdef box -- rather than failing, so without
+   * this check a patch silently becomes a row of empty rectangles.
+   */
+  missingGlyphs(fontBytes: Uint8Array, family: string, text: string): string[] {
+    return missingGlyphsFor(fontBytes, family, text)
   }
 
   close(): void {

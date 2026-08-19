@@ -166,6 +166,18 @@ function reduce(draft: EditDocument, op: Op): void {
       draft.flattenForms = op.on
       break
 
+    case 'setMetadata':
+      // Undefined means "leave the source document's own description
+      // alone", which is a different state from "set every field to empty"
+      // -- the second is a deliberate erasure and the first is no opinion.
+      if (op.metadata === undefined) delete draft.metadata
+      else draft.metadata = { ...op.metadata }
+      break
+
+    case 'setStripMetadata':
+      draft.stripMetadata = op.strip
+      break
+
     case 'setTabOrder': {
       const page = draft.pages[op.pageId]
       if (!page) return

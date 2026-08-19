@@ -12,6 +12,7 @@ import InkCanvas from './InkCanvas.vue'
 import CropOverlay from '@/features/pages/CropOverlay.vue'
 import TextSelectionLayer from './TextSelectionLayer.vue'
 import MarkupObject from './objects/MarkupObject.vue'
+import RedactionObject from './objects/RedactionObject.vue'
 import { useTextSelection } from './useTextSelection'
 import { useSelectionStore } from '@/stores/selection'
 import { useViewportStore } from '@/stores/viewport'
@@ -20,6 +21,8 @@ import { getPdfClient } from '@/workers/pdfClient'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
 import FieldLayer from '@/features/forms/FieldLayer.vue'
+import FindHighlights from '@/features/find/FindHighlights.vue'
+import PatchEditor from '@/features/patch/PatchEditor.vue'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -36,7 +39,10 @@ const edits = useEditsStore()
 const viewBox = computed(() => svgViewBox(props.page.geometry))
 const rootTransform = computed(() => svgRootTransform(props.page.geometry))
 
-const MARKUP_KINDS = ['highlight', 'underline', 'strikeout'] as const
+// Kinds whose geometry is MuPDF PAGE space rather than raw PDF space, so
+// they render OUTSIDE the y-flipped root <g>. Redaction joins the markup
+// three because its quads come from the same buildQuadIndex.
+const MARKUP_KINDS = ['highlight', 'underline', 'strikeout', 'redaction'] as const
 const isMarkup = (kind: string): boolean =>
   (MARKUP_KINDS as readonly string[]).includes(kind)
 
@@ -73,10 +79,12 @@ const svgEl = ref<SVGSVGElement | null>(null)
  * markup tools, which is exactly when the user is pointing at TEXT rather
  * than drawing over it.
  */
+// The patch tool needs the quad index too -- it edits the lines that
+// index describes -- so it counts as a text-selecting mode for the
+// purpose of fetching one, even though it does not select.
+const SELECTING_TOOLS = ['select', 'highlight', 'underline', 'strikeout', 'redact', 'patch'] as const
 const selecting = computed(() =>
-  (['select', 'highlight', 'underline', 'strikeout'] as const).includes(
-    tools.active as 'select' | 'highlight' | 'underline' | 'strikeout',
-  ),
+  (SELECTING_TOOLS as readonly string[]).includes(tools.active),
 )
 
 /**
@@ -236,9 +244,16 @@ const draft = computed(() => {
         class="pointer-events-auto"
         @pointerdown="edits.select([o.id])"
       >
-        <MarkupObject :object="(o as never)" />
+        <RedactionObject v-if="o.kind === 'redaction'" :object="(o as never)" />
+        <MarkupObject v-else :object="(o as never)" />
       </g>
       <TextSelectionLayer :page="props.page" />
+      <!--
+        Above the text selection layer and below the objects: a search
+        result is a thing the DOCUMENT contains, so it should not obscure
+        what the user has drawn on top of it.
+      -->
+      <FindHighlights :page="props.page" />
     </svg>
 
     <!--
@@ -261,6 +276,16 @@ const draft = computed(() => {
     <SelectionToolbar :page="props.page" :zoom="props.zoom" />
     <TextEditor :page="props.page" :zoom="props.zoom" />
     <InkCanvas :page="props.page" :zoom="props.zoom" />
+    <!--
+      Only while the tool is active: a layer of per-line click targets over
+      every page would swallow every other interaction.
+    -->
+    <PatchEditor
+      v-if="tools.active === 'patch'"
+      :page="props.page"
+      :zoom="props.zoom"
+      :index="quadIndex"
+    />
     <!--
       Only on the anchor page: cropping is a page action and showing a
       dimmed crop surface on every mounted page at once would be noise.

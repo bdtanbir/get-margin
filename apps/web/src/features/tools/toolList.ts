@@ -2,6 +2,7 @@ import type { Component } from 'vue'
 import {
   MousePointer2, Type, Image, Square, Circle, Minus, ArrowRight,
   Pen, Eraser, Link2, Signature, Highlighter, Underline, Strikethrough, Crop, TextCursorInput,
+  SquareSlash, TextSelect,
 } from 'lucide-vue-next'
 import type { ToolId } from '@/stores/tools'
 
@@ -35,4 +36,13 @@ export const TOOLS: Array<{ id: ToolId; label: string; icon: Component }> = [
   // Six rail entries would make forms the visually dominant feature of a
   // product where they are one phase of eight.
   { id: 'field', label: 'Form field', icon: TextCursorInput },
+  // Deliberately NOT next to Whiteout. The two look similar and do opposite
+  // things -- one covers, one removes -- and putting them side by side in
+  // the rail would invite exactly the confusion the whiteout copy exists to
+  // prevent.
+  { id: 'redact', label: 'Redact', icon: SquareSlash },
+  // "Edit text" rather than "text": the Text tool ADDS text, this one
+  // replaces what the document already says, and the two are easy to
+  // confuse from an icon alone.
+  { id: 'patch', label: 'Edit text', icon: TextSelect },
 ]

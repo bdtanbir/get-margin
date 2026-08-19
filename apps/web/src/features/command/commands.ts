@@ -5,6 +5,7 @@ import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { usePageSelectionStore } from '@/stores/pageSelection'
 import { useViewportStore } from '@/stores/viewport'
+import { useDialogsStore } from '@/stores/dialogs'
 
 export type Command = {
   id: string
@@ -29,6 +30,7 @@ export function useCommands(): ComputedRef<Command[]> {
   const tools = useToolsStore()
   const selection = usePageSelectionStore()
   const vp = useViewportStore()
+  const dialogs = useDialogsStore()
 
   return computed<Command[]>(() => {
     const hasDocument = () => doc.isReady
@@ -82,6 +84,44 @@ export function useCommands(): ComputedRef<Command[]> {
     ]
 
     const documentCommands: Command[] = [
+      {
+        // Document-wide operations have no home in the tool rail: they act
+        // on the whole file rather than on a place in it, so the palette is
+        // where they live.
+        id: 'doc:stamp',
+        label: 'Watermark, page numbers, header, footer…',
+        group: 'Document',
+        available: hasDocument,
+        run: () => dialogs.show('stamp'),
+      },
+      {
+        id: 'doc:protect',
+        label: 'Protect with a password…',
+        group: 'Document',
+        available: hasDocument,
+        run: () => dialogs.show('protect'),
+      },
+      {
+        id: 'doc:metadata',
+        label: 'Document details…',
+        group: 'Document',
+        available: hasDocument,
+        run: () => dialogs.show('metadata'),
+      },
+      {
+        id: 'doc:compress',
+        label: 'Make the file smaller…',
+        group: 'Document',
+        available: hasDocument,
+        run: () => dialogs.show('compress'),
+      },
+      {
+        id: 'doc:find',
+        label: 'Find in document…',
+        group: 'Document',
+        available: hasDocument,
+        run: () => dialogs.show('find'),
+      },
       {
         id: 'doc:undo',
         label: 'Undo',

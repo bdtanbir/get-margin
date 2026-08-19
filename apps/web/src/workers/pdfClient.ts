@@ -1,7 +1,8 @@
 import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
 import type {
-  EditDocument, PageQuadIndex, SourceId, StrippedContent, SourceField,
+  EditDocument, PageQuadIndex, SourceId, StrippedContent, SourceField, Protection,
+  DocumentMetadata, CompressionPreset, CompressionResult, FindOptions, Match,
 } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
@@ -50,6 +51,7 @@ export type PdfClient = {
     fonts?: Map<string, Uint8Array>,
     onProgress?: (done: number, total: number) => void,
     onStripped?: (found: StrippedContent) => void,
+    protection?: Protection,
   ): Promise<Uint8Array>
   /**
    * Character-level text geometry for one page, cached in the worker. See
@@ -64,6 +66,22 @@ export type PdfClient = {
    * for a page that is already on screen.
    */
   listFields(sourceId: SourceId | undefined, page: number): Promise<SourceField[]>
+  /** The description the source document carries. See PdfService.metadata. */
+  metadata(): Promise<DocumentMetadata>
+  /** Every match across the document. See PdfService.find. */
+  find(
+    query: string,
+    options?: FindOptions,
+    limit?: number,
+  ): Promise<{ matches: Array<{ page: number } & Match>; capped: boolean }>
+  /** Characters the font cannot draw. See PdfService.missingGlyphs. */
+  missingGlyphs(fontBytes: Uint8Array, family: string, text: string): Promise<string[]>
+  /** Compress the export. See PdfService.compress. */
+  compress(
+    preset: CompressionPreset,
+    editDoc?: EditDocument,
+    fonts?: Map<string, Uint8Array>,
+  ): Promise<CompressionResult>
   /** Register another file for merging. See PdfService.addSource. */
   addSource(bytes: Uint8Array): Promise<{
     sourceId: SourceId
@@ -216,14 +234,38 @@ export function createPdfClient(): PdfClient {
       return remote.listFields(sourceId, page)
     },
 
-    async save(editDoc, fonts, onProgress, onStripped) {
+    async metadata() {
+      await ready
+      return remote.metadata()
+    },
+
+    async find(query, options, limit) {
+      await ready
+      return remote.find(query, options, limit)
+    },
+
+    async missingGlyphs(fontBytes, family, text) {
+      await ready
+      return remote.missingGlyphs(fontBytes, family, text)
+    },
+
+    async compress(preset, editDoc, fonts) {
+      await ready
+      return withTimeout(
+        remote.compress(preset, editDoc, fonts),
+        EXPORT_TIMEOUT_MS,
+        'Compressing took too long and was stopped.',
+      )
+    },
+
+    async save(editDoc, fonts, onProgress, onStripped, protection) {
       await ready
       // Comlink.proxy so the worker can CALL these rather than receiving a
       // structured clone of them (functions do not clone).
       const progress = onProgress ? Comlink.proxy(onProgress) : undefined
       const stripped = onStripped ? Comlink.proxy(onStripped) : undefined
       return withTimeout(
-        remote.save(editDoc, fonts, progress, stripped),
+        remote.save(editDoc, fonts, progress, stripped, protection),
         EXPORT_TIMEOUT_MS,
         'The export took too long and was stopped. Try again, or remove some edits.',
       )

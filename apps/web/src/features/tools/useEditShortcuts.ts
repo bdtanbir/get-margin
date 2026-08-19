@@ -2,6 +2,7 @@ import { useMagicKeys, whenever } from '@vueuse/core'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { useSelectionStore } from '@/stores/selection'
+import { useDialogsStore } from '@/stores/dialogs'
 
 /**
  * Undo / redo / delete-selection, plus Escape to return to the select tool.
@@ -35,6 +36,7 @@ function isTypingTarget(el: Element | null): boolean {
 export function useEditShortcuts(): void {
   const edits = useEditsStore()
   const tools = useToolsStore()
+  const dialogs = useDialogsStore()
   const selection = useSelectionStore()
 
   const keys = useMagicKeys({
@@ -70,10 +72,24 @@ export function useEditShortcuts(): void {
   whenever(keys['Meta+z']!, guard(() => { if (!keys.shift!.value) edits.undo() }))
   whenever(keys['Ctrl+z']!, guard(() => { if (!keys.shift!.value) edits.undo() }))
 
+  /**
+   * Find. NOT guarded by `typingSomewhere`, unlike the others: Cmd+F is the
+   * one shortcut people expect to work while their cursor is in a text
+   * box, and the browser's own find would open otherwise.
+   */
+  const openFind = (): void => {
+    dialogs.show('find')
+  }
+  whenever(keys['Meta+f']!, openFind)
+  whenever(keys['Ctrl+f']!, openFind)
+
   whenever(keys['Delete']!, guard(deleteSelection))
   whenever(keys['Backspace']!, guard(deleteSelection))
 
   whenever(keys['Escape']!, () => {
+    // A dialog owns Escape while it is open -- each traps focus and
+    // handles its own -- so this only reaches the canvas.
+    if (dialogs.open) return
     selection.clear()
     edits.clearSelection()
     tools.setTool('select')

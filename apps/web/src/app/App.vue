@@ -7,12 +7,19 @@ import MobileShell from './layouts/MobileShell.vue'
 import DropZone from '@/features/document/DropZone.vue'
 import PasswordPrompt from '@/features/document/PasswordPrompt.vue'
 import ErrorBoundary from './ErrorBoundary.vue'
+import StampDialog from '@/features/stamp/StampDialog.vue'
+import ProtectDialog from '@/features/protect/ProtectDialog.vue'
+import MetadataDialog from '@/features/metadata/MetadataDialog.vue'
+import CompressDialog from '@/features/compress/CompressDialog.vue'
+import FindPanel from '@/features/find/FindPanel.vue'
+import { useDialogsStore } from '@/stores/dialogs'
 import RestorePrompt from '@/features/document/RestorePrompt.vue'
 import CommandPalette from '@/features/command/CommandPalette.vue'
 
 useTheme()
 const { isDesktop } = useShell()
 const doc = useDocumentStore()
+const dialogs = useDialogsStore()
 
 /**
  * Record a boundary's catch on the document store, which is where every
@@ -72,5 +79,20 @@ function record(err: Error): void {
       reachable, which is why it is built last rather than beside them.
     -->
     <CommandPalette />
+    <!--
+      Document-wide dialogs, mounted once here rather than beside whatever
+      happens to open them. They act on the whole file, so there is no
+      component that owns them, and a single store value keeps the "at most
+      one modal" invariant that focus trapping already assumes.
+    -->
+    <StampDialog v-if="dialogs.isOpen('stamp')" @close="dialogs.close()" />
+    <ProtectDialog v-if="dialogs.isOpen('protect')" @close="dialogs.close()" />
+    <MetadataDialog v-if="dialogs.isOpen('metadata')" @close="dialogs.close()" />
+    <CompressDialog v-if="dialogs.isOpen('compress')" @close="dialogs.close()" />
+    <!--
+      A panel, not a dialog: searching is something you do WHILE reading,
+      and a modal would cover the document being searched.
+    -->
+    <FindPanel v-if="dialogs.isOpen('find')" @close="dialogs.close()" />
   </ErrorBoundary>
 </template>

@@ -3,14 +3,14 @@ import { computed } from 'vue'
 import { nanoid } from 'nanoid'
 import {
   Copy, Trash2, BringToFront, SendToBack, Lock, LockOpen,
-  Highlighter, Underline, Strikethrough,
+  Highlighter, Underline, Strikethrough, SquareSlash,
 } from 'lucide-vue-next'
 import { pdfRectToView } from '@margin/transform'
 import IconButton from '@/ui/IconButton.vue'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useSelectionStore } from '@/stores/selection'
-import type { MarkupObject, EditObject } from '@margin/pdf-core'
+import type { MarkupObject, RedactionObject, EditObject } from '@margin/pdf-core'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -137,6 +137,52 @@ function markup(kind: 'highlight' | 'underline' | 'strikeout'): void {
   edits.select([object.id])
 }
 
+/**
+ * Remove the selected text from the document.
+ *
+ * Shares the markup path's geometry exactly -- same quads, same rect
+ * derivation -- because it is the same gesture over the same selection. What
+ * differs is everything after export: markup annotates, this destroys.
+ *
+ * No confirmation dialog. The action is undoable in the editor like any
+ * other op, and the destruction happens at export; a modal here would train
+ * people to dismiss modals rather than tell them anything true. What DOES
+ * belong in front of them is the distinction from whiteout, which the tool
+ * label and the whiteout notice both carry.
+ */
+function redact(): void {
+  const quads = selection.selectedQuads
+  if (quads.length === 0) return
+
+  const [, y0, , y1] = props.page.geometry.cropBox
+  const pageH = y1 - y0
+  let minX = Infinity, minTop = Infinity, maxX = -Infinity, maxBottom = -Infinity
+  for (const q of quads) {
+    for (let i = 0; i < 8; i += 2) {
+      minX = Math.min(minX, q[i]!); maxX = Math.max(maxX, q[i]!)
+      minTop = Math.min(minTop, q[i + 1]!); maxBottom = Math.max(maxBottom, q[i + 1]!)
+    }
+  }
+
+  const object: RedactionObject = {
+    id: nanoid(10),
+    pageId: props.page.id,
+    kind: 'redaction',
+    quads: quads.map((q) => [...q]),
+    // A mark by default: a redaction nobody can see is one nobody can
+    // check, including the person who made it.
+    blackBox: true,
+    rect: { x: minX, y: pageH - maxBottom, w: maxX - minX, h: maxBottom - minTop },
+    rotation: 0,
+    z: edits.nextZ(),
+    locked: false,
+    opacity: 1,
+  }
+  edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Redact')
+  selection.clear()
+  edits.select([object.id])
+}
+
 function toggleLock(): void {
   const o = selected.value
   if (!o) return
@@ -174,6 +220,15 @@ function toggleLock(): void {
     </IconButton>
     <IconButton size="sm" label="Strikeout" @click="markup('strikeout')">
       <Strikethrough :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <!--
+      Separated and coloured, because it is the one control here that
+      destroys rather than annotates. Sitting flush with the markup buttons
+      would make it look like a fourth way of colouring text.
+    -->
+    <span class="mx-0.5 h-4 w-px bg-border" aria-hidden="true" />
+    <IconButton size="sm" label="Redact" data-redact class="text-danger" @click="redact()">
+      <SquareSlash :size="16" :stroke-width="1.5" />
     </IconButton>
   </div>
 

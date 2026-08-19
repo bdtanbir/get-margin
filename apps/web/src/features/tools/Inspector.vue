@@ -135,7 +135,8 @@ function handleInput(field: Field, e: Event): void {
         class="rounded-control border border-border bg-surface-sunken p-2 text-[12px] text-text-muted"
       >
         Whiteout covers content — it does not delete it. The text underneath can
-        still be copied out of the file.
+        still be copied out of the file. To remove text so it cannot be
+        recovered, select it and use <strong>Redact</strong>.
       </p>
 
       <!--

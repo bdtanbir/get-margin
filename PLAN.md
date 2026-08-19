@@ -618,9 +618,26 @@ the bundled body faces.
 
 ### Phase 6 — Advanced document ops · weeks 12–15
 
+**Built.** Design: `PHASE-6-DESIGN.md`. Plan: `PLAN-PHASE-6.md` (Tasks 79–94). Pre-flight:
+`docs/findings/14-phase-6-preflight.md`. Verification: `docs/findings/15-phase-6-verification.md`.
+
 **Text patching (~1 week of this, revised down from ~1.5 — see §2.4)** · find & replace · watermark · page numbers/header/footer · Bates · metadata (Info + XMP) · compression with presets · password protect/remove · true redaction (via `PDFPage.applyRedactions()`, not hand-rolled content-stream surgery — see §2.4; the Phase 0 spike proved a naive regex path unreliable and found MuPDF's own primitive instead).
 
-> Highest-variance phase in the plan. Ship the rest of phase 6 first so text editing can slip without blocking the release. Redaction is a release gate on the feature (independent-extractor verification, §2.4), not on this phase's calendar slot.
+**Redaction's release gate is met and stays met.** Two independent extractors — `pypdf` and
+`pdfminer.six`, sharing no code with MuPDF — verify eight cases on every commit, and the check fails
+loudly rather than skipping when its tooling is absent.
+
+Four things the pre-flight and this phase corrected in the spec: a **third** silent password trap
+(`encrypt=keep` is the save default, so removing a password needs `encrypt=none` or the file stays
+locked while extracting as empty); compression as specified **grows** files, so it became image
+recompression with a floor; the permission bits are exactly the PDF spec's; and **font subsetting is
+still not available** — MuPDF's `subsetFonts()` saves 88% and moves every glyph, while text
+extraction keeps working, so the cheap check passes on a broken document.
+
+**Outstanding**: the accumulated human checks, now including two about claims the product makes on
+safety — that a redacted file shows no trace in Acrobat, and that a protected file actually prompts
+for its password. Text patching covers rather than removes, and uses a bundled face rather than the
+document's own.
 
 ### Phase 7 — Conversion backend · weeks 15–19
 

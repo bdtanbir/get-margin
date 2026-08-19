@@ -8,6 +8,9 @@ export type ObjectKind =
   | 'ink' | 'highlight' | 'underline' | 'strikeout'
   | 'whiteout' | 'link' | 'signature'
   | 'field'
+  | 'stamp'
+  | 'redaction'
+  | 'textPatch'
 
 /** sRGB, each channel 0..1 — the range MuPDF's colour setters take. */
 export type Color = [number, number, number]
@@ -122,6 +125,106 @@ export type FieldObject = BaseObject & {
   fontSize: number
 }
 
+/**
+ * A watermark, page number, header, footer, or Bates number.
+ *
+ * ONE kind for all five, because they differ in position, template, and
+ * rotation -- not in how they are drawn. Five kinds would be five places to
+ * fix the same bug, and the stamp dialog already distinguishes them.
+ *
+ * `text` is the RESOLVED string for this page, not the template: tokens are
+ * substituted when the objects are generated, so replay is a pure function
+ * of the edit document and does not need to know the page count.
+ */
+export type StampObject = BaseObject & {
+  kind: 'stamp'
+  /** Which preset produced this, for the inspector and for editing it later. */
+  stampKind: 'watermark' | 'pageNumber' | 'header' | 'footer' | 'bates'
+  /** The resolved text for THIS page. See resolveTokens for the template. */
+  text: string
+  fontFamily: string
+  fontSize: number
+  color: Color
+  align: 'left' | 'center' | 'right'
+  /**
+   * Draw UNDER the page's existing content rather than over it. A watermark
+   * over a photograph is unreadable; under it is invisible. Both are
+   * wanted, so neither is a default the writer can pick.
+   */
+  behind: boolean
+}
+
+/**
+ * Text the user wants GONE, not covered.
+ *
+ * Quads rather than a rect, in MuPDF page space, exactly like MarkupObject
+ * -- and for the same reason: they come from buildQuadIndex, which produces
+ * that space, and applyRedactions consumes /QuadPoints rather than /Rect.
+ * The pre-flight redacted part of a word this way.
+ *
+ * The distinction from WhiteoutObject is the whole point and must never
+ * blur: whiteout COVERS content and leaves it extractable, which
+ * whiteout.test.ts asserts; this REMOVES it, which
+ * redact-independent.test.ts verifies with two extractors that share no
+ * code with MuPDF.
+ */
+export type RedactionObject = BaseObject & {
+  kind: 'redaction'
+  /** 8 numbers per quad, MuPDF page space. See MarkupObject. */
+  quads: number[][]
+  /**
+   * Draw a black box where the text was.
+   *
+   * Removal happens either way -- this is only whether the file SHOWS that
+   * it happened. Defaulting to false would make a redaction invisible to
+   * the user and to whoever they send the file to, which for this feature
+   * is the wrong kind of quiet.
+   */
+  blackBox: boolean
+}
+
+/**
+ * A replacement for a line of the DOCUMENT's own text.
+ *
+ * The hardest thing in the product (PLAN.md 2.4), and the one whose
+ * failure mode is worst: patching the wrong line damages a document while
+ * reporting success. Hence `originalHash`.
+ */
+export type TextPatchObject = BaseObject & {
+  kind: 'textPatch'
+  /** Index of the line in the page's extraction, at edit time. */
+  lineIndex: number
+  /**
+   * Hash of the line's text when the user edited it. THE GUARD: extraction
+   * is not guaranteed stable across MuPDF versions or option changes, so a
+   * mismatch means the text at this position is not what was edited, and
+   * the export refuses rather than covering whatever is there now.
+   */
+  originalHash: string
+  /** What it said, for the error message when the guard trips. */
+  originalText: string
+  text: string
+  fontFamily: string
+  /** 0 means "derive from the line's height". */
+  fontSize: number
+  color: Color
+  /**
+   * The colour to cover the original with, sampled from the rendered page
+   * at EDIT time -- the writer has no cheap way to render and sample, and
+   * the app already has the pixels on screen.
+   */
+  background: Color
+  /**
+   * How confident the background sample was, 0..1. Low means the area was
+   * varied -- a gradient, an image, a texture -- where a flat rectangle
+   * will leave a visible scar. Stored so the UI can warn BEFORE the user
+   * commits rather than after they export.
+   */
+  backgroundConfidence: number
+  /** Wider replacement text: shrink to fit, let it run, or cut it short. */
+  fit: 'shrink' | 'overflow' | 'truncate'
+}
+
 export type SignatureObject = BaseObject & {
   kind: 'signature'
   data: Uint8Array
@@ -131,6 +234,7 @@ export type SignatureObject = BaseObject & {
 export type EditObject =
   | TextObject | ImageObject | ShapeObject | WhiteoutObject
   | InkObject | MarkupObject | LinkObject | SignatureObject | FieldObject
+  | StampObject | RedactionObject | TextPatchObject
 
 export type SourceId = string
 
@@ -200,7 +304,24 @@ export type EditDocument = {
    * are gone from the exported file. Off by default for that reason.
    */
   flattenForms: boolean
+  /**
+   * The document description, or undefined to leave the source's alone.
+   *
+   * Unlike a password this IS safe to autosave: a title and author are
+   * document content, not a secret, and losing them on reload would be a
+   * worse trade than storing them.
+   */
+  metadata?: {
+    title: string
+    author: string
+    subject: string
+    keywords: string
+    creator: string
+  }
+  /** Remove all metadata on export. Takes precedence over `metadata`. */
+  stripMetadata?: boolean
 }
+
 
 export type Op =
   | { type: 'addObject'; object: EditObject }
@@ -238,6 +359,9 @@ export type Op =
   | { type: 'setFlattenForms'; on: boolean }
   /** Task 76 -- field names in tab order for one page. */
   | { type: 'setTabOrder'; pageId: PageId; order: string[] }
+  /** Task 86 -- the document description. */
+  | { type: 'setMetadata'; metadata: EditDocument['metadata'] }
+  | { type: 'setStripMetadata'; strip: boolean }
 
 export const EDIT_DOCUMENT_VERSION = 3
 

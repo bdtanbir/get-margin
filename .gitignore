@@ -12,3 +12,8 @@ spikes/
 apps/web/test-results/
 apps/web/playwright-report/
 apps/web/blob-report/
+
+# Independent PDF extractors for the redaction release gate (see
+# packages/pdf-core/test/write/redact-independent.test.ts). Local only:
+# CI recreates it, and the test fails loudly if it is missing.
+.venv-verify/

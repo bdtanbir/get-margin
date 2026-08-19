@@ -15,12 +15,25 @@ import { writeInk } from './objects/ink.js'
 import { writeLink } from './objects/link.js'
 import { writeMarkup } from './objects/markup.js'
 import { writeField } from './objects/field.js'
+import { writeStamp } from './objects/stamp.js'
+import { writeTextPatch } from './objects/patch.js'
 export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
 export { listFields, fieldKey, applyFieldValues, hasAcroForm } from './fields.js'
+export {
+  readMetadata, writeMetadata, stripMetadata, buildXmp, EMPTY_METADATA,
+  type DocumentMetadata,
+} from './metadata.js'
+export {
+  recompressImages, PRESETS as COMPRESSION_PRESETS,
+  type CompressionPreset, type CompressionResult,
+} from './compress.js'
 export type { SourceField, SourceFieldType } from './fields.js'
 import { migrateEditDocument } from './migrate.js'
 import { stripActiveContent, anythingStripped, type StrippedContent } from './sanitize.js'
 import { applyFieldValues } from './fields.js'
+import { applyRedactions } from './objects/redact.js'
+import { protectedSave, type Protection } from './protect.js'
+import { writeMetadata, stripMetadata } from './metadata.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -92,6 +105,16 @@ WRITERS.signature = writeImage
 // exists in the source is not an object and does not come through here.
 WRITERS.field = writeField
 
+// Task 79. Watermarks, page numbers, headers, footers, and Bates numbers
+// are CONTENT, not annotations -- the deliberate opposite of the ink and
+// markup writers above. A watermark a reader can select and delete is not a
+// watermark.
+WRITERS.stamp = writeStamp
+
+// Task 91. Cover-and-redraw over the document's own text. Refuses rather
+// than mispatching -- see objects/patch.ts.
+WRITERS.textPatch = writeTextPatch
+
 WRITERS.highlight = writeMarkup
 WRITERS.underline = writeMarkup
 WRITERS.strikeout = writeMarkup
@@ -128,6 +151,24 @@ export type ReplayOptions = {
    * can say so. Stripping happens whether or not this is supplied.
    */
   onStripped?: (found: StrippedContent) => void
+  /**
+   * Encrypt the exported file.
+   *
+   * Passed per call rather than stored on the EditDocument, because a
+   * password is a secret and the EditDocument is what autosave writes to
+   * IndexedDB. Keeping it here means the setting is lost on reload, which
+   * is the right trade against writing someone's password to disk.
+   */
+  protection?: Protection
+  /**
+   * The value written as /ModDate and XMP xmp:ModifyDate.
+   *
+   * Passed in rather than read from the clock, because replay must be a
+   * pure function of its inputs: a writer that stamped `new Date()` would
+   * make two exports of the same document differ, which would break the
+   * byte-identical guarantees the rest of this file works to keep.
+   */
+  modified?: string
 }
 
 export function replay(
@@ -157,6 +198,14 @@ export function replay(
   const hasTabOrder = editDoc.pageOrder.some(
     (id) => (editDoc.pages[id]?.tabOrder?.length ?? 0) > 0,
   )
+  // Protecting an otherwise-untouched document is an edit to its bytes,
+  // even though it is not an edit to its content. Without this the
+  // pass-through would hand back the original, unencrypted, having been
+  // asked for a password.
+  const protection = opts.protection
+  // Describing the document differently is an edit to it, so an otherwise
+  // untouched file must not come back through the pass-through unchanged.
+  const hasMetadata = editDoc.stripMetadata === true || editDoc.metadata !== undefined
 
   // See assemble(). Pages come back already in pageOrder, so from here on a
   // page is addressed by its POSITION, not its sourceIndex.
@@ -172,8 +221,8 @@ export function replay(
     // the user's own bytes rather than a re-serialisation.
     // e2e/download.spec.ts asserts this byte-for-byte.
     if (
-      unchanged && !hasObjects && !hasFills && !flatten && !hasTabOrder
-      && !anythingStripped(stripped)
+      unchanged && !hasObjects && !hasFills && !flatten && !hasTabOrder && !protection
+      && !hasMetadata && !anythingStripped(stripped)
     ) {
       const original = sources.get(Object.keys(editDoc.sources)[0]!)
       if (original) return original
@@ -201,6 +250,12 @@ export function replay(
     // within a page without imposing a meaningless order across pages.
     const byPage = new Map<string, EditObject[]>()
     for (const object of Object.values(editDoc.objects)) {
+      // Redactions are not a drawing operation and deliberately have no
+      // entry in WRITERS -- applyRedactions handles a whole page at once,
+      // after this loop. Registering a no-op writer for them would weaken
+      // the "unhandled kind fails the export" guarantee below into
+      // "unhandled kind might be intentional".
+      if (object.kind === 'redaction') continue
       const list = byPage.get(object.pageId)
       if (list) list.push(object)
       else byPage.set(object.pageId, [object])
@@ -264,16 +319,36 @@ export function replay(
       )
     }
 
+    // AFTER the ordinary writers: a redaction removes what the SOURCE
+    // document said, not what the user drew on top of it a moment ago. And
+    // before flatten, so a redacted form field is redacted before it is
+    // frozen into the page.
+    applyRedactions(raw, editDoc)
+
     // AFTER the fields exist and BEFORE they are baked: tab order IS
     // /Annots order, so it has to be applied while there is still an
     // /Annots array of widgets to order.
     applyTabOrder(raw, editDoc)
+
+    // Metadata before flatten and protection: both rewrite the document in
+    // ways that make later edits to the catalog awkward, and neither needs
+    // to see the description.
+    if (editDoc.stripMetadata) {
+      stripMetadata(raw)
+    } else if (editDoc.metadata) {
+      writeMetadata(raw, editDoc.metadata, opts.modified ?? 'D:20000101000000Z')
+    }
 
     // LAST, and on the assembled export copy only. bake() draws each
     // field's appearance into the page content and removes /AcroForm
     // wholesale -- it is not undoable, and doing it to the document being
     // edited would destroy the user's form rather than their copy of it.
     if (flatten) raw.bake(false, true)
+
+    // protectedSave verifies its own output rather than trusting a call
+    // that did not throw -- see protect.ts for the three silent ways a
+    // "protected" save produces an unprotected file.
+    if (protection) return protectedSave(raw, protection, SAVE_OPTIONS)
 
     return raw.saveToBuffer(SAVE_OPTIONS).asUint8Array()
   } finally {
@@ -286,11 +361,19 @@ export function replay(
 export { withDocument, withPage, SAVE_OPTIONS } from './session.js'
 export { assemble, isUntouched, type SourceBytes } from './assemble.js'
 export { applyPageBoxes, applyTabOrder } from './objects/page.js'
+export { applyRedactions } from './objects/redact.js'
 export {
   stripActiveContent, anythingStripped, nothingStripped, type StrippedContent,
 } from './sanitize.js'
+export {
+  protectedSave, removeProtection, unlock, permissionMask, grantedPermissions,
+  ProtectionFailed, PERMISSION_BITS,
+  type Protection, type PermissionName,
+} from './protect.js'
 export { toAnnotSpace, toContentSpace, num } from './coords.js'
-export { appendContent, addResource, fillColor, strokeColor, alphaState } from './content.js'
+export {
+  appendContent, prependContent, addResource, fillColor, strokeColor, alphaState,
+} from './content.js'
 export { writeShape } from './objects/shape.js'
 export { writeWhiteout } from './objects/whiteout.js'
 export { writeText, ASCENT_RATIO, LINE_HEIGHT } from './objects/text.js'
@@ -300,6 +383,10 @@ export { createXObjectCache, type XObjectCache } from './xobject.js'
 export { writeInk } from './objects/ink.js'
 export { writeLink } from './objects/link.js'
 export { writeMarkup } from './objects/markup.js'
+export { writeStamp, resolveTokens, batesNumber, type StampContext } from './objects/stamp.js'
+export {
+  writeTextPatch, hashText, missingGlyphs, missingGlyphsFor, PatchRefused,
+} from './objects/patch.js'
 export {
   writeField, ensureAcroForm, pageAnnots, commonFlags, newWidget,
   FIELD_READ_ONLY, FIELD_REQUIRED, TX_MULTILINE, BTN_NO_TOGGLE_OFF, BTN_RADIO, CH_COMBO,
