@@ -44,7 +44,7 @@ From the pre-flight; every task inherits these.
 - `src/write/protect.ts` — create: encryption + the mandatory self-check
 - `src/write/metadata.ts` — create: `/Info` + XMP together
 - `src/write/compress.ts` — create: image recompression with a size floor
-- `src/write/subset.ts` — create: pdf-lib + fontkit
+- ~~`src/write/subset.ts`~~ — attempted and abandoned; see Task 89
 - `src/text/find.ts` — create: normalised search over the quad index
 - `src/write/objects/patch.ts` — create: cover-and-redraw
 

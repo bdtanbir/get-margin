@@ -15,10 +15,9 @@ compression, password, redaction, find & replace. Most reuse machinery that alre
 **Text patching**, which `PLAN.md` §2.4 calls the hardest thing in the product. It goes last, alone,
 and if it slips nothing else is waiting on it.
 
-Font subsetting joins this phase, having been deferred from Phase 2 and again from Phase 4. The
-pre-flight measured it at ~20× (49–55% of a font's raw bytes down to 2–3%), and text patching's
-fallback path embeds a substitute face on any glyph miss — so what was an optimisation becomes a
-per-export cost the moment §2.4 ships.
+Font subsetting was scheduled into this phase, having been deferred from Phase 2 and again from
+Phase 4, on the strength of the pre-flight measuring it at ~20×. It was attempted and **deferred
+again** — see §8, and the correction in findings 14 §6. Exports still embed full faces.
 
 ## 1. The stamping family — watermark, page numbers, header/footer, Bates
 
