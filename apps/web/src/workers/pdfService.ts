@@ -159,10 +159,24 @@ export class PdfService {
     return total
   }
 
+  /**
+   * Passwords for sources that needed one, in memory only.
+   *
+   * The decrypted document is already in this worker's memory, so holding
+   * the password alongside it for the session costs no additional
+   * exposure -- and without it every export of a protected document comes
+   * out blank (see assemble.ts). Never persisted, and cleared with the
+   * document.
+   */
+  #passwords = new Map<SourceId, string>()
+
   authenticate(password: string): DocumentInfo {
     const doc = this.#doc
     if (!doc) throw new Error('no document open')
     if (!doc.authenticate(password)) throw new Error('Incorrect password')
+    // Kept so the EXPORT can decrypt this source. Without it every edited
+    // export of this document comes out with pages and no content.
+    if (this.#primarySource) this.#passwords.set(this.#primarySource, password)
     return this.#info()
   }
 
@@ -229,6 +243,7 @@ export class PdfService {
     onProgress?: (done: number, total: number) => void,
     onStripped?: (found: StrippedContent) => void,
     protection?: Protection,
+    removeProtection?: boolean,
   ): Uint8Array {
     const primary = this.#primarySource
     const src = primary ? this.#sources.get(primary) : undefined
@@ -239,7 +254,7 @@ export class PdfService {
     // Protection alone is a reason to go through the write path: someone
     // who opened a file and asked only for a password must get an
     // encrypted file, not their original.
-    if (!editDoc && !protection) return src
+    if (!editDoc && !protection && !removeProtection) return src
     if (!editDoc) {
       throw new Error('Cannot protect a document with no edit state.')
     }
@@ -257,6 +272,8 @@ export class PdfService {
       ...(onProgress ? { onProgress } : {}),
       ...(onStripped ? { onStripped } : {}),
       ...(protection ? { protection } : {}),
+      ...(removeProtection ? { removeProtection } : {}),
+      ...(this.#passwords.size > 0 ? { passwords: this.#passwords } : {}),
     })
   }
 
@@ -375,6 +392,7 @@ export class PdfService {
     // its full byte payload until it is dropped.
     this.#sources.clear()
     this.#primarySource = undefined
+    this.#passwords.clear()
     this.#quadCache.clear()
   }
 }

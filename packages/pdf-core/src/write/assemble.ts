@@ -27,10 +27,46 @@ export function isUntouched(editDoc: EditDocument, sourcePageCount: number): boo
   })
 }
 
-function open(sources: SourceBytes, id: SourceId): mupdf.PDFDocument {
+/**
+ * Passwords for sources that need one, by source id.
+ *
+ * Held only for the life of a call. A password is a secret and nothing
+ * here writes it anywhere; it exists so the writer can DECRYPT a document
+ * the user has already unlocked.
+ */
+export type SourcePasswords = Map<SourceId, string>
+
+function open(
+  sources: SourceBytes,
+  id: SourceId,
+  passwords?: SourcePasswords,
+): mupdf.PDFDocument {
   const bytes = sources.get(id)
   if (!bytes) throw new Error(`source "${id}" was not supplied to the export.`)
-  return mupdf.PDFDocument.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument
+  const raw = mupdf.PDFDocument.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument
+
+  /**
+   * AUTHENTICATE, or the export is blank.
+   *
+   * An encrypted document opens without a password -- its structure is
+   * readable -- but every content stream stays undecryptable, so writing
+   * it back out produces a file with pages and no content. Not an error,
+   * not a warning: a silently empty document that opens fine and says
+   * nothing. It affected any edit to a password-protected file and was
+   * found by testing "open a protected PDF, edit it, export".
+   */
+  if (raw.needsPassword()) {
+    const password = passwords?.get(id)
+    if (password === undefined || !raw.authenticatePassword(password)) {
+      raw.destroy()
+      throw new Error(
+        `"${id}" is password-protected and the password was not available to the export. ` +
+        `Reopen the document and enter it again.`,
+      )
+    }
+  }
+
+  return raw
 }
 
 /**
@@ -102,12 +138,16 @@ export type Assembled = { raw: mupdf.PDFDocument; unchanged: boolean }
  *   (outlines, page labels) cannot come across at all -- which the merge UI
  *   states rather than dropping silently.
  */
-export function assemble(sources: SourceBytes, editDoc: EditDocument): Assembled {
+export function assemble(
+  sources: SourceBytes,
+  editDoc: EditDocument,
+  passwords?: SourcePasswords,
+): Assembled {
   const sourceIds = Object.keys(editDoc.sources)
 
   if (sourceIds.length === 1) {
     const only = sourceIds[0]!
-    const raw = open(sources, only)
+    const raw = open(sources, only, passwords)
     try {
       // Checked with the document open, so the page count is known without
       // parsing the file twice.
@@ -141,7 +181,7 @@ export function assemble(sources: SourceBytes, editDoc: EditDocument): Assembled
       if (!page) throw new Error(`edit document references unknown page "${pageId}"`)
       let src = opened.get(page.sourceId)
       if (!src) {
-        src = open(sources, page.sourceId)
+        src = open(sources, page.sourceId, passwords)
         opened.set(page.sourceId, src)
         maps.set(page.sourceId, target.newGraftMap())
       }

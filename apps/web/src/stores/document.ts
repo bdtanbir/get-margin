@@ -64,6 +64,15 @@ type State = {
    * store, because those are undoable and these are not.
    */
   sources: Record<SourceId, SourceState>
+  /**
+   * Whether the opened file needed a password.
+   *
+   * Kept after authentication because nothing else distinguishes the
+   * document from an unprotected one afterwards -- and MuPDF's save
+   * default preserves the encryption, so without this the user has no way
+   * to ask for it to be dropped.
+   */
+  wasProtected: boolean
   error: string
 }
 
@@ -74,6 +83,7 @@ export const useDocumentStore = defineStore('document', {
     fileSize: 0,
     sourceHash: '',
     sources: {},
+    wasProtected: false,
     error: '',
   }),
 
@@ -226,6 +236,7 @@ export const useDocumentStore = defineStore('document', {
       // and the edit document itself. Clearing only one leaves a closed
       // document still reporting its pages.
       this.sources = {}
+      this.wasProtected = false
       pageStateCache.clear()
       useEditsStore().reset({}, [], {})
       // Field enumerations are keyed by sourceId, and source ids are reused
@@ -305,6 +316,11 @@ export const useDocumentStore = defineStore('document', {
       this.error = ''
       try {
         const info = await getPdfClient().authenticate(password)
+        // Remembered so the export can offer to REMOVE the password. Once
+        // authenticated nothing else distinguishes this document from an
+        // unprotected one, and MuPDF's save default keeps the encryption --
+        // so without this the user has no way to say "and drop it".
+        this.wasProtected = true
         const count = checkPageCount(info.pageCount)
         if (!count.ok) {
           this.status = 'error'
@@ -332,6 +348,7 @@ export const useDocumentStore = defineStore('document', {
       // of WASM on a reset from an already-empty state.
       await closeSharedDocument()
       pageStateCache.clear()
+      this.wasProtected = false
       // $reset() only clears THIS store; the pages live in the edit store,
       // the selection in its own, and the field enumerations in theirs.
       useEditsStore().reset({}, [], {})

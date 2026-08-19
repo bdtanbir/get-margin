@@ -1,6 +1,6 @@
 import * as mupdf from 'mupdf'
 import { withPage, SAVE_OPTIONS } from './session.js'
-import { assemble, isUntouched, type SourceBytes } from './assemble.js'
+import { assemble, isUntouched, type SourceBytes, type SourcePasswords } from './assemble.js'
 import { applyPageBoxes, applyTabOrder } from './objects/page.js'
 import { geometryFromPageObject } from '../geometry.js'
 import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectKind } from './types.js'
@@ -161,6 +161,22 @@ export type ReplayOptions = {
    */
   protection?: Protection
   /**
+   * Save the export with NO encryption, dropping whatever the source had.
+   *
+   * Needed because MuPDF's save default is `encrypt=keep`: an edited
+   * export of a protected document comes back still protected, which is a
+   * sensible default and leaves no way to say otherwise. Mutually
+   * exclusive with `protection`, which sets a new password instead.
+   */
+  removeProtection?: boolean
+  /**
+   * Passwords for sources that need one.
+   *
+   * Without these an encrypted source opens but cannot be DECRYPTED, and
+   * the export comes out with pages and no content -- see assemble.ts.
+   */
+  passwords?: SourcePasswords
+  /**
    * The value written as /ModDate and XMP xmp:ModifyDate.
    *
    * Passed in rather than read from the clock, because replay must be a
@@ -203,13 +219,16 @@ export function replay(
   // pass-through would hand back the original, unencrypted, having been
   // asked for a password.
   const protection = opts.protection
+  // Removing a password changes the file even when nothing else did, so
+  // the pass-through must not hand back the encrypted original.
+  const unprotect = opts.removeProtection === true && !protection
   // Describing the document differently is an edit to it, so an otherwise
   // untouched file must not come back through the pass-through unchanged.
   const hasMetadata = editDoc.stripMetadata === true || editDoc.metadata !== undefined
 
   // See assemble(). Pages come back already in pageOrder, so from here on a
   // page is addressed by its POSITION, not its sourceIndex.
-  const { raw, unchanged } = assemble(sources, editDoc)
+  const { raw, unchanged } = assemble(sources, editDoc, opts.passwords)
   try {
     // BEFORE the pass-through decision, not after: an unedited hostile file
     // would otherwise be handed straight back with its scripts intact.
@@ -222,7 +241,7 @@ export function replay(
     // e2e/download.spec.ts asserts this byte-for-byte.
     if (
       unchanged && !hasObjects && !hasFills && !flatten && !hasTabOrder && !protection
-      && !hasMetadata && !anythingStripped(stripped)
+      && !unprotect && !hasMetadata && !anythingStripped(stripped)
     ) {
       const original = sources.get(Object.keys(editDoc.sources)[0]!)
       if (original) return original
@@ -350,6 +369,11 @@ export function replay(
     // "protected" save produces an unprotected file.
     if (protection) return protectedSave(raw, protection, SAVE_OPTIONS)
 
+    // encrypt=none is NOT redundant. The default is encrypt=keep, so
+    // saving a document opened from encrypted bytes preserves the
+    // encryption -- and the caller asked for the opposite.
+    if (unprotect) return raw.saveToBuffer(`${SAVE_OPTIONS},encrypt=none`).asUint8Array()
+
     return raw.saveToBuffer(SAVE_OPTIONS).asUint8Array()
   } finally {
     // Disposal is a correctness requirement: omitting it hard-crashes the
@@ -359,7 +383,7 @@ export function replay(
 }
 
 export { withDocument, withPage, SAVE_OPTIONS } from './session.js'
-export { assemble, isUntouched, type SourceBytes } from './assemble.js'
+export { assemble, isUntouched, type SourceBytes, type SourcePasswords } from './assemble.js'
 export { applyPageBoxes, applyTabOrder } from './objects/page.js'
 export { applyRedactions } from './objects/redact.js'
 export {

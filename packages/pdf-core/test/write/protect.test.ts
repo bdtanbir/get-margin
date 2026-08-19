@@ -5,6 +5,8 @@ import {
   protectedSave, removeProtection, unlock, permissionMask, grantedPermissions,
   ProtectionFailed, PERMISSION_BITS, type PermissionName,
 } from '../../src/write/protect.js'
+import { replay } from '../../src/write/index.js'
+import { emptyEditDocument } from '../../src/write/types.js'
 import { generateFixtures, fixturePath } from '../fixtures/index.js'
 
 beforeAll(async () => { await generateFixtures() }, 60_000)
@@ -168,5 +170,114 @@ describe('removing protection', () => {
     try {
       expect(p.toStructuredText().asText()).toContain('Hello')
     } finally { p.destroy(); d.destroy() }
+  })
+})
+
+/**
+ * The other half of "password protect/remove".
+ *
+ * MuPDF's save default is `encrypt=keep`, so an edited export of a
+ * protected document comes back STILL protected. That is a defensible
+ * default and it leaves no way to say otherwise -- which is what
+ * removeProtection through replay is for.
+ */
+describe('exporting a protected document', () => {
+  const editDoc = (rotation = 0) => ({
+    ...emptyEditDocument(),
+    sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+    pageOrder: ['p0'],
+    pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation, cropBox: null } },
+  })
+
+  const passwords = new Map([['src-0', 'hunter2']])
+
+  it('hands an untouched protected file back unchanged', () => {
+    const locked = save()
+    const out = replay(new Map([['src-0', locked]]), editDoc(), { passwords })
+    expect(Buffer.from(out).equals(Buffer.from(locked))).toBe(true)
+    expect(needsPassword(out)).toBe(true)
+  })
+
+  // The default that made the remove option necessary.
+  it('keeps the protection through an ordinary edit', () => {
+    const out = replay(new Map([['src-0', save()]]), editDoc(90), { passwords })
+    expect(needsPassword(out)).toBe(true)
+  })
+
+  /**
+   * THE BUG THIS FOUND, and the reason `passwords` exists at all.
+   *
+   * An encrypted document OPENS without a password -- its structure is
+   * readable -- while every content stream stays undecryptable. Editing
+   * one therefore produced a file with pages and no content: no error, no
+   * warning, a silently empty document that opens fine and says nothing.
+   * It affected every edit to a protected file.
+   */
+  it('keeps the CONTENT through an ordinary edit', () => {
+    const out = replay(new Map([['src-0', save()]]), editDoc(90), { passwords })
+    const d = open(out)
+    d.authenticatePassword('hunter2')
+    const p = d.loadPage(0)
+    try {
+      expect(p.toStructuredText().asText()).toContain('Hello')
+    } finally { p.destroy(); d.destroy() }
+  })
+
+  /**
+   * And the guard, which is the other half. Failing loudly with something
+   * the user can act on beats producing a blank document that looks fine.
+   */
+  it('refuses rather than exporting a blank document when the password is missing', () => {
+    expect(() => replay(new Map([['src-0', save()]]), editDoc(90)))
+      .toThrow(/password-protected and the password was not available/)
+  })
+
+  it('refuses a wrong password rather than exporting a blank document', () => {
+    expect(() => replay(new Map([['src-0', save()]]), editDoc(90), {
+      passwords: new Map([['src-0', 'wrong']]),
+    })).toThrow(/password was not available/)
+  })
+
+  it('drops the protection when asked', () => {
+    const out = replay(new Map([['src-0', save()]]), editDoc(), {
+      removeProtection: true, passwords,
+    })
+    expect(needsPassword(out)).toBe(false)
+  })
+
+  /**
+   * Removing a password changes the file even when nothing else did, so
+   * the byte-identical pass-through must not hand back the encrypted
+   * original -- which is exactly what it would otherwise do.
+   */
+  it('defeats the pass-through, which would otherwise return the locked file', () => {
+    const locked = save()
+    const out = replay(new Map([['src-0', locked]]), editDoc(), {
+      removeProtection: true, passwords,
+    })
+    expect(Buffer.from(out).equals(Buffer.from(locked))).toBe(false)
+    expect(needsPassword(out)).toBe(false)
+  })
+
+  it('keeps the content readable after removal', () => {
+    const out = replay(new Map([['src-0', save()]]), editDoc(), {
+      removeProtection: true, passwords,
+    })
+    const d = open(out)
+    const p = d.loadPage(0)
+    try {
+      expect(p.toStructuredText().asText()).toContain('Hello')
+    } finally { p.destroy(); d.destroy() }
+  })
+
+  // Setting a new password supersedes; asking for both is contradictory
+  // and protection wins, since it is the more specific request.
+  it('prefers a new password over removal when given both', () => {
+    const out = replay(new Map([['src-0', save()]]), editDoc(), {
+      removeProtection: true, passwords,
+      protection: { userPassword: 'new', ownerPassword: '', permissions: ['print'] },
+    })
+    expect(needsPassword(out)).toBe(true)
+    expect(unlock(out, 'new')).not.toBeNull()
   })
 })

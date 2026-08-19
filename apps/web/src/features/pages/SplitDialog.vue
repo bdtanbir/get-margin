@@ -8,8 +8,7 @@ import { getPdfClient } from '@/workers/pdfClient'
 import { parseRanges, partName } from '@/lib/pageRanges'
 import { zipFiles } from '@/lib/zip'
 import { downloadBytes } from '@/lib/exportFile'
-import { fontsForExport } from '@/lib/fonts'
-import type { TextObject } from '@margin/pdf-core'
+import { fontsForExport, familiesUsed } from '@/lib/fonts'
 
 const doc = useDocumentStore()
 const edits = useEditsStore()
@@ -79,10 +78,7 @@ async function run(): Promise<void> {
 
   busy.value = true
   try {
-    const families = Object.values(edits.doc.objects)
-      .filter((o) => o.kind === 'text')
-      .map((o) => (o as TextObject).fontFamily)
-    const fonts = await fontsForExport(families)
+    const fonts = await fontsForExport(familiesUsed(Object.values(edits.doc.objects)))
 
     const parts = await Promise.all(
       parsed.map(async (pages) => ({

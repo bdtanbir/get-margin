@@ -11,10 +11,10 @@ import { useFieldsStore } from '@/stores/fields'
 import { useTheme } from '@/lib/theme'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
-import { fontsForExport } from '@/lib/fonts'
+import { fontsForExport, familiesUsed } from '@/lib/fonts'
 import PrivacyPage from '@/features/document/PrivacyPage.vue'
 import { anythingStripped } from '@margin/pdf-core'
-import type { TextObject, StrippedContent } from '@margin/pdf-core'
+import type { StrippedContent } from '@margin/pdf-core'
 
 const props = defineProps<{ compact?: boolean; panelOpen?: boolean }>()
 const emit = defineEmits<{ togglePanel: [] }>()
@@ -90,9 +90,7 @@ async function download(): Promise<void> {
     // The worker embeds font bytes it is given; it cannot fetch them
     // itself. Only the families actually in use are sent -- shipping all
     // five would add ~340KB of fetches to a document that uses one.
-    const families = Object.values(edits.doc.objects)
-      .filter((o) => o.kind === 'text')
-      .map((o) => (o as TextObject).fontFamily)
+    const families = familiesUsed(Object.values(edits.doc.objects))
     const fonts = await fontsForExport(families)
     const bytes = await getPdfClient().save(
       edits.doc,
@@ -245,6 +243,30 @@ async function download(): Promise<void> {
     <span v-if="saving && progress" class="sr-only" role="status" aria-live="polite">
       {{ progressLabel }}
     </span>
+
+    <!--
+      EXPORT FAILURES, shown here because nothing else shows them.
+      `doc.error` is rendered by DropZone, which only exists when NO
+      document is open -- so an export that failed while editing set an
+      error message that was displayed nowhere at all. The user pressed
+      Download, nothing happened, and the app said nothing. That hid a real
+      writer bug for an entire phase.
+    -->
+    <div
+      v-if="doc.error"
+      data-export-error
+      role="alert"
+      class="absolute right-3 top-16 z-50 max-w-sm rounded-panel border border-danger
+             bg-surface-raised p-3 text-[12px] text-danger shadow-high"
+    >
+      {{ doc.error }}
+      <button
+        type="button"
+        class="mt-2 block text-[12px] text-text-muted"
+        data-export-error-dismiss
+        @click="doc.error = ''"
+      >Dismiss</button>
+    </div>
 
     <div
       v-if="stripped"

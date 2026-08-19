@@ -1,6 +1,6 @@
 # Phase 6 verification — advanced document ops
 
-Tasks 79–94. **1,325 unit tests, 67 e2e** across desktop and phone, clean `tsc`, `vue-tsc`, and
+Tasks 79–94. **1,345 unit tests, 89 e2e** across desktop and phone, clean `tsc`, `vue-tsc`, and
 build.
 
 ## The headline: redaction's release gate is met, and stays met
@@ -107,6 +107,46 @@ and worth recording because neither was found by reading:
 The second was only exposed because a *different* bug — reading page identity from a store that
 needs registered sources — made the lookup fail everywhere at once. Both tests now start from a
 state the correct answer differs from.
+
+## What the completeness audit found after the phase "finished"
+
+Four defects, and the ordering matters: **the first one hid the second for the whole phase.**
+
+**1. Export errors were displayed nowhere.** `doc.error` is rendered by `DropZone`, which only exists
+while NO document is open. So an export that failed *while editing* set a message that nothing showed:
+the user pressed Download, nothing happened, and the app said nothing at all. Present since Phase 2's
+export path. Now shown in `TopBar` as a dismissible alert.
+
+**2. Adding a watermark broke Download.** `buildStamps` copied `settings.color` straight out of a Vue
+ref, so the stamp carried a reactive **Proxy** array — which `postMessage` cannot structure-clone, so
+the edit document never reached the worker. Every other object kind is built from module constants
+and never hit it. Invisible because of (1). The test uses `structuredClone`, which is exactly what
+`postMessage` does, and fails with `DataCloneError` without the fix — verified by reverting it.
+
+**3. Five call sites collected font families by filtering `kind === 'text'`.** Phase 6 added three
+kinds carrying a `fontFamily`, so stamps and patches asked the writer for fonts nobody had loaded.
+Replaced by one `familiesUsed` helper, because five copies of a rule is five chances to forget it.
+
+**4. Editing a password-protected document produced a BLANK export.** The worst of the four.
+An encrypted document *opens* without a password — its structure is readable — while every content
+stream stays undecryptable, so writing it back out produced a file with pages and no content: no
+error, no warning, a silently empty document that opens fine. It affected every edit to a protected
+file and had been there since Phase 1 added password support. `assemble` now authenticates, and
+**refuses loudly** when it cannot rather than exporting a blank.
+
+Two gaps in what the phase delivered, both now closed:
+
+- **`removeProtection` was exported, tested, and unreachable** — no UI called it, so "password
+  protect/**remove**" was half a feature. The document store now remembers a file arrived protected
+  (MuPDF's save default keeps encryption, so nothing else distinguishes it afterwards) and the
+  protect dialog offers removal.
+- **No e2e for any Phase 6 feature**, unlike every prior phase. `documentOps.spec.ts` now covers the
+  round trips on desktop and phone: watermark, page numbers, metadata, strip, redaction, protection,
+  find, compression, and patching.
+
+The lesson worth keeping: **an error nobody can see is worse than a crash.** Three of these four were
+found only after the invisible-error bug was fixed, and the fourth was found only by asking "does the
+feature list actually work end to end" rather than "did the tasks complete".
 
 ## Outstanding
 

@@ -1,3 +1,5 @@
+import type { EditObject } from '@margin/pdf-core'
+
 /**
  * The curated font set, shared by preview and export.
  *
@@ -128,6 +130,29 @@ export async function fontBytes(family: string): Promise<Uint8Array> {
  * five on every export would add ~340KB of fetches for a document that uses
  * one of them.
  */
+/**
+ * Every font family an edit document will ask the writer for.
+ *
+ * ONE place that knows which object kinds carry a font, because there
+ * were five call sites collecting them and each filtered on `kind ===
+ * 'text'` alone. Phase 6 added three more kinds with a fontFamily --
+ * stamps, text patches, and form fields -- and every one of those sites
+ * silently stopped supplying what the export needed: adding a watermark
+ * and pressing Download failed with "font Inter was not provided",
+ * because the collection did not know stamps had fonts.
+ *
+ * A kind added later has to be added here, once, rather than in five
+ * places nobody will remember to visit.
+ */
+export function familiesUsed(objects: Iterable<EditObject>): string[] {
+  const families = new Set<string>()
+  for (const object of objects) {
+    const family = (object as { fontFamily?: unknown }).fontFamily
+    if (typeof family === 'string' && family !== '') families.add(family)
+  }
+  return [...families]
+}
+
 export async function fontsForExport(
   families: Iterable<string>,
 ): Promise<Map<string, Uint8Array>> {

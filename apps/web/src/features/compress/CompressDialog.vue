@@ -6,8 +6,8 @@ import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
-import { fontsForExport } from '@/lib/fonts'
-import type { TextObject, CompressionPreset, CompressionResult } from '@margin/pdf-core'
+import { fontsForExport, familiesUsed } from '@/lib/fonts'
+import type { CompressionPreset, CompressionResult } from '@margin/pdf-core'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -51,9 +51,7 @@ async function estimate(): Promise<void> {
   error.value = ''
   result.value = undefined
   try {
-    const families = Object.values(edits.doc.objects)
-      .filter((o) => o.kind === 'text')
-      .map((o) => (o as TextObject).fontFamily)
+    const families = familiesUsed(Object.values(edits.doc.objects))
     const fonts = await fontsForExport(families)
     result.value = await getPdfClient().compress(preset.value, edits.doc, fonts)
   } catch (e) {

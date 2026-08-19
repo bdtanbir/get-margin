@@ -6,8 +6,8 @@ import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
-import { fontsForExport } from '@/lib/fonts'
-import type { TextObject, PermissionName } from '@margin/pdf-core'
+import { fontsForExport, familiesUsed } from '@/lib/fonts'
+import type { PermissionName } from '@margin/pdf-core'
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -62,15 +62,41 @@ const canApply = computed(() =>
   !busy.value && password.value !== '' && password.value === confirm.value,
 )
 
+/**
+ * Export with the password dropped.
+ *
+ * Offered only for a document that ARRIVED protected, because for any
+ * other one it would be a button that does nothing. MuPDF's save default
+ * is encrypt=keep, so an edited export of a protected file comes back
+ * still protected -- this is the only way to say otherwise, and without it
+ * "password protect/remove" was half a feature.
+ *
+ * This is not breaking encryption: the document is already open, which
+ * means its password was already given.
+ */
+async function removeProtection(): Promise<void> {
+  busy.value = true
+  error.value = ''
+  try {
+    const families = familiesUsed(Object.values(edits.doc.objects))
+    const fonts = await fontsForExport(families)
+    const bytes = await getPdfClient().save(edits.doc, fonts, undefined, undefined, undefined, true)
+    downloadBytes(bytes, pdfFileName(doc.fileName))
+    emit('close')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'The password could not be removed.'
+  } finally {
+    busy.value = false
+  }
+}
+
 async function apply(): Promise<void> {
   if (!canApply.value) return
   busy.value = true
   error.value = ''
   doc.error = ''
   try {
-    const families = Object.values(edits.doc.objects)
-      .filter((o) => o.kind === 'text')
-      .map((o) => (o as TextObject).fontFamily)
+    const families = familiesUsed(Object.values(edits.doc.objects))
     const fonts = await fontsForExport(families)
 
     const bytes = await getPdfClient().save(
@@ -114,6 +140,29 @@ async function apply(): Promise<void> {
       class="my-8 flex w-full max-w-md flex-col gap-4 rounded-panel bg-surface p-5 shadow-high"
     >
       <h2 class="text-[17px] font-medium">Protect with a password</h2>
+
+      <!--
+        Only for a document that arrived protected. On any other one this
+        would be a control that does nothing, and MuPDF's save default
+        keeps existing encryption -- so for a protected file it is the only
+        way to say "and drop it".
+      -->
+      <div
+        v-if="doc.wasProtected"
+        data-protect-remove-row
+        class="flex items-center justify-between gap-2 rounded-control border border-border
+               bg-surface-sunken p-2"
+      >
+        <span class="text-[12px] text-text-muted">
+          This document is password-protected. You can download it without one.
+        </span>
+        <Button
+          variant="ghost"
+          data-protect-remove
+          :loading="busy"
+          @click="removeProtection"
+        >Remove password</Button>
+      </div>
 
       <label class="flex flex-col gap-1">
         <span class="text-[13px] text-text-muted">Password to open the document</span>

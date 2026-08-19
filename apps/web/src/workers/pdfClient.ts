@@ -52,6 +52,7 @@ export type PdfClient = {
     onProgress?: (done: number, total: number) => void,
     onStripped?: (found: StrippedContent) => void,
     protection?: Protection,
+    removeProtection?: boolean,
   ): Promise<Uint8Array>
   /**
    * Character-level text geometry for one page, cached in the worker. See
@@ -258,14 +259,14 @@ export function createPdfClient(): PdfClient {
       )
     },
 
-    async save(editDoc, fonts, onProgress, onStripped, protection) {
+    async save(editDoc, fonts, onProgress, onStripped, protection, removeProtection) {
       await ready
       // Comlink.proxy so the worker can CALL these rather than receiving a
       // structured clone of them (functions do not clone).
       const progress = onProgress ? Comlink.proxy(onProgress) : undefined
       const stripped = onStripped ? Comlink.proxy(onStripped) : undefined
       return withTimeout(
-        remote.save(editDoc, fonts, progress, stripped, protection),
+        remote.save(editDoc, fonts, progress, stripped, protection, removeProtection),
         EXPORT_TIMEOUT_MS,
         'The export took too long and was stopped. Try again, or remove some edits.',
       )

@@ -73,7 +73,15 @@ export function buildStamps(
       opacity: settings.opacity,
       fontFamily: settings.fontFamily,
       fontSize: settings.fontSize,
-      color: settings.color,
+      // COPIED, not referenced. `settings` comes from a Vue ref, so its
+      // nested array is a reactive Proxy -- and a Proxy cannot be
+      // structure-cloned, so postMessage to the worker throws
+      // "could not be cloned" and the export dies before it starts.
+      //
+      // Every other object kind is built from module constants and never
+      // hit this. The failure was invisible for a phase because the error
+      // it set was displayed nowhere (see TopBar's export-error notice).
+      color: [...settings.color] as [number, number, number],
       align: alignFor(settings.position),
       behind: settings.behind,
     }

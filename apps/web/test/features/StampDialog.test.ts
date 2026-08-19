@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { ref } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import StampDialog from '@/features/stamp/StampDialog.vue'
 import { useEditsStore } from '@/stores/edits'
@@ -120,6 +121,24 @@ describe('buildStamps', () => {
     expect(out.every((s) => s.rotation === 45)).toBe(true)
     expect(out.every((s) => s.opacity === 0.25)).toBe(true)
     expect(out.every((s) => s.text === 'CONFIDENTIAL')).toBe(true)
+  })
+
+  /**
+   * THE BUG THIS CAUGHT. `settings` comes from a Vue ref, so its nested
+   * array is a reactive Proxy -- and a Proxy cannot be structure-cloned,
+   * so posting the edit document to the worker threw "could not be
+   * cloned" and the export died before it started.
+   *
+   * structuredClone is exactly what postMessage does, so asserting on it
+   * tests the real constraint rather than an approximation of it.
+   */
+  it('produces objects that can cross the worker boundary', () => {
+    // From a REF, which is what the dialog holds. A module constant would
+    // pass this whether or not the bug existed -- the Proxy only appears
+    // once the settings are reactive.
+    const reactive = ref({ ...PRESETS.watermark })
+    const out = buildStamps(reactive.value, pages, pages, 'r.pdf', 'd', () => 1)
+    expect(() => structuredClone(out)).not.toThrow()
   })
 
   it('gives every stamp a distinct id', () => {
