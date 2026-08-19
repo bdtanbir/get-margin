@@ -63,6 +63,27 @@ is: **reopen the output and assert `needsPassword() === true`** before telling t
 document is protected. Both traps are silent, both produce plausible files, and only that assertion
 separates them.
 
+### A third trap, found while building Task 83
+
+Removing a password has the mirror-image problem. MuPDF's save default is `encrypt=keep`, so
+authenticating a protected document and saving it normally produces a file that is **still
+encrypted**:
+
+```
+authenticate('p') then save 'compress'        -> needsPassword=TRUE,  text extracts as ""
+authenticate('p') then save 'compress,encrypt=none' -> needsPassword=false, text extracts fine
+'compress,decrypt' also works; 'compress,encrypt=keep' is the default and does not
+```
+
+A user told "password removed" would get a file that still demands the password they asked to be rid
+of — and because the text extracts as empty, it reads as a *corrupted* document rather than a locked
+one, which is a worse diagnosis to hand someone.
+
+`encrypt=none` is therefore not optional, and `removeProtection` verifies its own output the same way
+`protectedSave` does. All three traps now have tests that build the broken call by hand and assert it
+produces the wrong thing, so the guards are measured against what they guard rather than against an
+assumption about it.
+
 ## 3. Permission bits, mapped rather than assumed
 
 §2.2 says to treat `permissions=` as empirically derived because it is not a literal key in the wasm

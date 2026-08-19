@@ -13,6 +13,11 @@ export type {
 export { EDIT_DOCUMENT_VERSION, emptyEditDocument } from './write/types.js'
 export { listFields, fieldKey, hasAcroForm } from './write/fields.js'
 export { resolveTokens, batesNumber } from './write/objects/stamp.js'
+export {
+  protectedSave, removeProtection, unlock, permissionMask, grantedPermissions,
+  ProtectionFailed, PERMISSION_BITS,
+} from './write/protect.js'
+export type { Protection, PermissionName } from './write/protect.js'
 export type { StampContext } from './write/objects/stamp.js'
 export type { SourceField, SourceFieldType } from './write/fields.js'
 export { migrateEditDocument, LEGACY_SOURCE_ID } from './write/migrate.js'

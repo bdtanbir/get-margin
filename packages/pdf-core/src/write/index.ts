@@ -310,6 +310,11 @@ export { applyRedactions } from './objects/redact.js'
 export {
   stripActiveContent, anythingStripped, nothingStripped, type StrippedContent,
 } from './sanitize.js'
+export {
+  protectedSave, removeProtection, unlock, permissionMask, grantedPermissions,
+  ProtectionFailed, PERMISSION_BITS,
+  type Protection, type PermissionName,
+} from './protect.js'
 export { toAnnotSpace, toContentSpace, num } from './coords.js'
 export {
   appendContent, prependContent, addResource, fillColor, strokeColor, alphaState,
