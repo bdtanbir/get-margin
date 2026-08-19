@@ -97,6 +97,18 @@ export type ReplayOptions = {
    * name rather than substituting a face silently (see FontRegistry).
    */
   fonts?: FontProvider
+  /**
+   * Called after each page is written, with the number of pages done and
+   * the total that will be visited.
+   *
+   * NO YIELDING between pages, deliberately. The plan called for it so
+   * progress would paint, on the assumption that a busy worker blocks its
+   * own updates -- it does not: a worker's postMessage is queued to the MAIN
+   * thread's event loop, which is idle and paints normally while WASM churns
+   * here. Yielding would mean making this function async, and an async
+   * export is one an edit could interleave with.
+   */
+  onProgress?: (done: number, total: number) => void
 }
 
 export function replay(
@@ -132,7 +144,13 @@ export function replay(
       else byPage.set(object.pageId, [object])
     }
 
-    for (const pageId of editDoc.pageOrder) {
+    // Only pages carrying objects are visited, so that is what progress is
+    // measured against -- reporting against the document's full page count
+    // would show a bar that jumps to 100% and sits there.
+    const pagesToWrite = editDoc.pageOrder.filter((id) => (byPage.get(id)?.length ?? 0) > 0)
+    let done = 0
+
+    for (const pageId of pagesToWrite) {
       const objects = byPage.get(pageId)
       if (!objects || objects.length === 0) continue
 
@@ -155,9 +173,23 @@ export function replay(
               `no writer registered for object kind "${object.kind}" (object ${object.id})`,
             )
           }
-          writer({ raw, page, geometry, fonts, measure, xobject }, object)
+          try {
+            writer({ raw, page, geometry, fonts, measure, xobject }, object)
+          } catch (cause) {
+            // Name the object and the page. "Could not export this PDF" tells
+            // the user nothing they can act on; "the signature on page 3"
+            // tells them exactly which edit to remove and retry.
+            const reason = cause instanceof Error ? cause.message : String(cause)
+            throw new Error(
+              `Could not export the ${object.kind} on page ${sourceIndex + 1}: ${reason}`,
+              { cause },
+            )
+          }
         }
       })
+
+      done++
+      opts.onProgress?.(done, pagesToWrite.length)
     }
 
     return raw.saveToBuffer(SAVE_OPTIONS).asUint8Array()

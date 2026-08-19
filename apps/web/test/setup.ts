@@ -89,3 +89,27 @@ if (typeof HTMLCanvasElement !== 'undefined') {
     return { putImageData() {} }
   } as typeof HTMLCanvasElement.prototype.getContext
 }
+
+/**
+ * jsdom implements no `window.matchMedia`. `lib/theme.ts` calls it once, at
+ * module scope, to follow the OS's `prefers-color-scheme` — so ANY component
+ * test that mounts TopBar (and therefore useTheme) dies with the
+ * unhelpfully-generic "matchMedia is not a function" rather than anything
+ * about themes.
+ *
+ * Reports "not dark" and accepts listeners that never fire, which is the
+ * honest stand-in for a headless environment with no OS preference: a test
+ * that wants to exercise theme switching stubs this itself.
+ */
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia
+}

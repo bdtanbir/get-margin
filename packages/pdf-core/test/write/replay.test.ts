@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { replay, WRITERS } from '../../src/write/index.js'
-import { EDIT_DOCUMENT_VERSION, type EditDocument } from '../../src/write/types.js'
+import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject } from '../../src/write/types.js'
 import { PdfDocument } from '../../src/index.js'
 import { assertGolden } from '../golden.js'
 
@@ -92,5 +92,72 @@ describe('replay', () => {
       else delete WRITERS.rect
     }
     expect(seen).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('replay progress and error context', () => {
+  const src = (): Uint8Array => new Uint8Array(readFileSync(fixturePath('multi-page')))
+
+  function rect(id: string, pageId: string): EditObject {
+    return {
+      id, pageId, kind: 'rect',
+      rect: { x: 10, y: 10, w: 20, h: 20 },
+      rotation: 0, z: 1, locked: false, opacity: 1,
+      stroke: [0, 0, 0], strokeWidth: 1, fill: null,
+    } as EditObject
+  }
+
+  function doc(objects: EditObject[], pages = 2): EditDocument {
+    const pageOrder = Array.from({ length: pages }, (_, i) => `p${i}`)
+    return {
+      version: EDIT_DOCUMENT_VERSION, sourceHash: '',
+      pageOrder,
+      pages: Object.fromEntries(pageOrder.map((id, i) => [id, { sourceIndex: i }])),
+      objects: Object.fromEntries(objects.map((o) => [o.id, o])),
+      nextZ: 9,
+    }
+  }
+
+  it('reports progress once per page written', () => {
+    const seen: Array<[number, number]> = []
+    replay(src(), doc([rect('a', 'p0'), rect('b', 'p1')]), {
+      onProgress: (done, total) => seen.push([done, total]),
+    })
+    expect(seen).toEqual([[1, 2], [2, 2]])
+  })
+
+  // Reporting against the document's full page count would show a bar that
+  // jumps to 100% on the first page and sits there.
+  it('counts only the pages that carry objects', () => {
+    const seen: Array<[number, number]> = []
+    replay(src(), doc([rect('a', 'p1')]), {
+      onProgress: (done, total) => seen.push([done, total]),
+    })
+    expect(seen).toEqual([[1, 1]])
+  })
+
+  it('works without a progress callback', () => {
+    expect(() => replay(src(), doc([rect('a', 'p0')]))).not.toThrow()
+  })
+
+  // "Could not export this PDF" tells the user nothing they can act on.
+  it('names the failing object kind and its 1-based page number', () => {
+    const broken = {
+      ...rect('bad', 'p1'),
+      // A rect whose colour array is not a colour: the writer will throw
+      // somewhere inside MuPDF rather than validating up front.
+      stroke: 'not-a-colour',
+    } as unknown as EditObject
+    expect(() => replay(src(), doc([broken]))).toThrow(/rect on page 2/)
+  })
+
+  it('keeps the original failure as the cause', () => {
+    const broken = { ...rect('bad', 'p0'), stroke: 'not-a-colour' } as unknown as EditObject
+    try {
+      replay(src(), doc([broken]))
+      expect.unreachable('replay should have thrown')
+    } catch (e) {
+      expect((e as Error).cause).toBeDefined()
+    }
   })
 })
