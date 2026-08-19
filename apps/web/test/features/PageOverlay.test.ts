@@ -80,3 +80,33 @@ describe('PageOverlay', () => {
     expect(w.find('svg').classes()).toContain('pointer-events-none')
   })
 })
+
+// Task 37 added a full-page text hit-target. It must sit BELOW the <svg>:
+// objects are pointer-events-auto inside a pointer-events-none svg, so a
+// text surface stacked above them would make every object unselectable
+// under the select tool — the overlay's single most-used interaction.
+describe('PageOverlay layering', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useEditsStore().reset('h', ['p1', 'p2'], { p1: { sourceIndex: 0 }, p2: { sourceIndex: 1 } })
+  })
+
+  it('puts the text surface before the svg in document order', () => {
+    const w = mount(PageOverlay, { props: { page, zoom: 1 } })
+    const surface = w.find('[data-text-surface]')
+    const svg = w.find('svg')
+    expect(surface.exists()).toBe(true)
+    // DOCUMENT_POSITION_FOLLOWING: the svg comes after the surface, so the
+    // svg (and the objects inside it) paint and hit-test on top.
+    const relation = surface.element.compareDocumentPosition(svg.element)
+    expect(relation & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('still routes a pointerdown on an object to selecting that object', async () => {
+    const s = useEditsStore()
+    s.applyOp({ type: 'addObject', object: obj('a', 'p1') }, 'add')
+    const w = mount(PageOverlay, { props: { page, zoom: 1 } })
+    await w.get('[data-object-id="a"]').trigger('pointerdown')
+    expect(s.selection).toEqual(['a'])
+  })
+})

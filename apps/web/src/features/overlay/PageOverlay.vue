@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { svgViewBox, svgRootTransform } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import type { EditObject } from '@margin/pdf-core'
@@ -9,6 +9,10 @@ import ObjectLayer from './ObjectLayer.vue'
 import SelectionChrome from './SelectionChrome.vue'
 import TextEditor from './TextEditor.vue'
 import InkCanvas from './InkCanvas.vue'
+import TextSelectionLayer from './TextSelectionLayer.vue'
+import { useTextSelection } from './useTextSelection'
+import { useSelectionStore } from '@/stores/selection'
+import { getPdfClient } from '@/workers/pdfClient'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
 
@@ -35,6 +39,67 @@ const objects = computed(() =>
 
 const tools = useToolsStore()
 const draw = useDrawTool(() => props.page, () => props.zoom)
+
+const selection = useSelectionStore()
+const svgEl = ref<SVGSVGElement | null>(null)
+
+/**
+ * Text selection is available under the select tool and under the three
+ * markup tools, which is exactly when the user is pointing at TEXT rather
+ * than drawing over it.
+ */
+const selecting = computed(() =>
+  (['select', 'highlight', 'underline', 'strikeout'] as const).includes(
+    tools.active as 'select' | 'highlight' | 'underline' | 'strikeout',
+  ),
+)
+
+/**
+ * The quad index is fetched lazily, once per page, and only when the user
+ * is actually in a text-selecting mode -- extracting every glyph on a page
+ * the user is merely scrolling past would be pure waste.
+ */
+const quadIndex = ref<Awaited<ReturnType<ReturnType<typeof getPdfClient>['quadIndex']>> | undefined>(undefined)
+let requested = false
+
+async function ensureIndex(): Promise<void> {
+  if (requested || !selecting.value) return
+  requested = true
+  try {
+    const index = await getPdfClient().quadIndex(props.page.sourceIndex)
+    quadIndex.value = index
+    selection.setIndex(props.page.id, index)
+  } catch {
+    // Text extraction failing is not a reason to break the overlay: the
+    // page still renders and every drawing tool still works.
+    requested = false
+  }
+}
+
+watch(selecting, (on) => { if (on) void ensureIndex() }, { immediate: true })
+
+const text = useTextSelection(() => quadIndex.value, {
+  /**
+   * getScreenCTM().inverse() -- the browser owns this conversion (spec 1.4).
+   * The <svg>'s own user space IS page space, because the viewBox is the
+   * page's displayed extent in points; the y-flip lives on the inner <g>,
+   * which these quads deliberately sit outside of.
+   */
+  toPageSpace(clientX, clientY) {
+    const svg = svgEl.value
+    const ctm = svg?.getScreenCTM?.()
+    if (!svg || !ctm) return undefined
+    const point = svg.createSVGPoint()
+    point.x = clientX
+    point.y = clientY
+    const local = point.matrixTransform(ctm.inverse())
+    return { x: local.x, y: local.y }
+  },
+})
+
+onBeforeUnmount(() => {
+  if (selection.pageId === props.page.id) selection.clear()
+})
 
 /**
  * The capture surface exists only while a drawing tool is active. A
@@ -79,7 +144,22 @@ const draft = computed(() => {
     same geometry, so the two can never disagree about size.
   -->
   <div class="pointer-events-none absolute inset-0">
+    <!--
+      BELOW the <svg> in the stack, deliberately. Objects inside the svg are
+      pointer-events-auto over a pointer-events-none svg, so a click on an
+      object reaches the object and a click on bare page falls through to
+      this. Placing it above would make every object unselectable under the
+      select tool. Mounted only in text-selecting modes, so a drawing tool's
+      drag is never intercepted by it either.
+    -->
+    <div
+      v-if="selecting"
+      data-text-surface
+      class="pointer-events-auto absolute inset-0 cursor-text"
+      @pointerdown="text.onPointerDown"
+    />
     <svg
+      ref="svgEl"
       class="pointer-events-none absolute inset-0 size-full"
       :viewBox="viewBox"
       preserveAspectRatio="none"
@@ -102,7 +182,14 @@ const draft = computed(() => {
         />
         <ObjectLayer v-if="draft" :object="draft" />
       </g>
+      <!--
+        OUTSIDE the root <g>: these quads are already in MuPDF page space,
+        which is what the viewBox describes. Inside, the page transform would
+        be applied to them a second time.
+      -->
+      <TextSelectionLayer :page="props.page" />
     </svg>
+
     <!--
       Mounted only while a drawing tool is active, and AFTER the <svg> so it
       sits above the objects: while drawing, a pointerdown belongs to the new
