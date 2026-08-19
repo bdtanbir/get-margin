@@ -43,7 +43,7 @@ export type PdfClient = {
    * store keeps owning it, and any Uint8Array inside it (image/signature
    * payloads) must survive on the main thread for the next export.
    */
-  save(editDoc?: EditDocument): Promise<Uint8Array>
+  save(editDoc?: EditDocument, fonts?: Map<string, Uint8Array>): Promise<Uint8Array>
   close(): Promise<void>
   terminate(): void
 }
@@ -153,9 +153,9 @@ export function createPdfClient(): PdfClient {
       return await remote.render({ id, page, scale })
     },
 
-    async save(editDoc) {
+    async save(editDoc, fonts) {
       await ready
-      return remote.save(editDoc)
+      return remote.save(editDoc, fonts)
     },
 
     async close() {

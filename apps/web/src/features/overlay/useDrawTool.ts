@@ -1,9 +1,10 @@
 import { nanoid } from 'nanoid'
 import { viewToPdf, rectFromPoints, directedRect, type Rect } from '@margin/transform'
-import type { ShapeObject, WhiteoutObject, EditObject } from '@margin/pdf-core'
+import type { ShapeObject, WhiteoutObject, TextObject, EditObject } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore, type ToolId } from '@/stores/tools'
+import { DEFAULT_FAMILY } from '@/lib/fonts'
 import { useDragGesture } from './useDragGesture'
 
 /**
@@ -13,8 +14,8 @@ import { useDragGesture } from './useDragGesture'
  */
 const MIN_DRAG_PT = 3
 
-/** Kinds this composable knows how to create. Tasks 31-35 extend it. */
-const DRAWABLE = ['rect', 'ellipse', 'line', 'arrow', 'whiteout'] as const
+/** Kinds this composable knows how to create. Tasks 32-35 extend it. */
+const DRAWABLE = ['rect', 'ellipse', 'line', 'arrow', 'whiteout', 'text'] as const
 export type DrawableTool = (typeof DRAWABLE)[number]
 
 export function isDrawable(tool: ToolId): tool is DrawableTool {
@@ -33,18 +34,44 @@ export const SHAPE_DEFAULTS = {
 /** Opaque white, the only default that makes the tool's name true on sight. */
 export const WHITEOUT_DEFAULTS = { fill: [1, 1, 1] as [number, number, number] }
 
+export const TEXT_DEFAULTS = {
+  text: '',
+  fontFamily: DEFAULT_FAMILY,
+  fontSize: 14,
+  color: [0, 0, 0] as [number, number, number],
+  align: 'left' as const,
+}
+
+/** Minimum box a dragged-out text frame gets, so an empty one is still visible. */
+const TEXT_MIN_SIZE_PT = { w: 120, h: 20 }
+
 /**
  * The kind-specific half of a newly drawn object. Whiteout carries a `fill`
  * and no stroke; the four shapes carry stroke and fill. Splitting it here
  * keeps the gesture code below identical for every drawable kind.
  */
 export function draftDefaults(kind: ToolId) {
-  return kind === 'whiteout' ? WHITEOUT_DEFAULTS : SHAPE_DEFAULTS
+  if (kind === 'whiteout') return WHITEOUT_DEFAULTS
+  if (kind === 'text') return TEXT_DEFAULTS
+  return SHAPE_DEFAULTS
 }
 
 function significant(rect: Rect, kind: DrawableTool): boolean {
+  // Text is the exception: a single click is a legitimate way to place a
+  // caret, so it gets a default-sized box rather than being discarded.
+  if (kind === 'text') return true
   if (isDirected(kind)) return Math.hypot(rect.w, rect.h) >= MIN_DRAG_PT
   return rect.w >= MIN_DRAG_PT || rect.h >= MIN_DRAG_PT
+}
+
+/** A clicked (rather than dragged) text frame gets a usable default size. */
+function sizeFor(rect: Rect, kind: DrawableTool): Rect {
+  if (kind !== 'text') return rect
+  const w = Math.max(rect.w, TEXT_MIN_SIZE_PT.w)
+  const h = Math.max(rect.h, TEXT_MIN_SIZE_PT.h)
+  // The box's y is its BOTTOM edge, so growing it must extend downward from
+  // the click, not upward -- otherwise a click places a box above the cursor.
+  return { x: rect.x, y: rect.y + rect.h - h, w, h }
 }
 
 /**
@@ -90,17 +117,21 @@ export function useDrawTool(page: () => PageState, zoom: () => number) {
           id: nanoid(10),
           pageId: page().id,
           kind: tool,
-          rect,
+          rect: sizeFor(rect, tool),
           rotation: 0,
           z: edits.nextZ(),
           locked: false,
           opacity: 1,
-        } as ShapeObject | WhiteoutObject
+        } as ShapeObject | WhiteoutObject | TextObject
         edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Draw')
         // Hand the new object straight to the select tool: the thing you
         // just drew is the thing you want to adjust.
         tools.setTool('select')
         edits.select([object.id])
+        // A new text frame is empty, so drop the caret straight into it --
+        // requiring a second click to start typing is a dead end the user
+        // has no reason to expect.
+        if (tool === 'text') tools.startEditing(object.id)
       },
     })
     begin(e)

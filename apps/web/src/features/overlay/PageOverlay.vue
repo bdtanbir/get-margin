@@ -7,6 +7,7 @@ import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import ObjectLayer from './ObjectLayer.vue'
 import SelectionChrome from './SelectionChrome.vue'
+import TextEditor from './TextEditor.vue'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
 
@@ -96,6 +97,7 @@ const draft = computed(() => {
           :key="o.id"
           :object="o"
           @pointerdown="edits.select([o.id])"
+          @dblclick="o.kind === 'text' && tools.startEditing(o.id)"
         />
         <ObjectLayer v-if="draft" :object="draft" />
       </g>
@@ -118,5 +120,6 @@ const draft = computed(() => {
     -->
     <SelectionChrome :page="props.page" :zoom="props.zoom" />
     <SelectionToolbar :page="props.page" :zoom="props.zoom" />
+    <TextEditor :page="props.page" :zoom="props.zoom" />
   </div>
 </template>

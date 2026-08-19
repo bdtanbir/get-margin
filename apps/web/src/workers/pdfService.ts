@@ -102,11 +102,15 @@ export class PdfService {
    * bare Uint8Array is copied across the boundary and `#sourceBytes` survives.
    * The "can be called twice" test pins that.
    */
-  save(editDoc?: EditDocument): Uint8Array {
+  save(editDoc?: EditDocument, fonts?: Map<string, Uint8Array>): Uint8Array {
     const src = this.#sourceBytes
     if (!src) throw new Error('no document open')
     if (!editDoc || Object.keys(editDoc.objects).length === 0) return src
-    return replay(src, editDoc)
+    // `fonts` is only consulted for text objects; a document without any
+    // never touches it, which is why it stays optional (Task 31). Under
+    // exactOptionalPropertyTypes, `{ fonts: undefined }` is NOT the same as
+    // omitting the key, so the property is only set when there is one.
+    return replay(src, editDoc, fonts ? { fonts } : {})
   }
 
   close(): void {

@@ -4,11 +4,21 @@ import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectK
 import type { PageGeometry } from '@margin/transform'
 import { writeShape } from './objects/shape.js'
 import { writeWhiteout } from './objects/whiteout.js'
+import { writeText } from './objects/text.js'
+import { FontRegistry, createMeasurer, type FontProvider } from './fonts.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
   page: mupdf.PDFPage
   geometry: PageGeometry
+  /**
+   * Task 31 widened this context. Both members are always present -- a
+   * document with no text objects simply never touches them -- so every
+   * writer written before Task 31 stays valid unchanged.
+   */
+  fonts: FontRegistry
+  /** Advance width of `text` in points. See createMeasurer in fonts.ts. */
+  measure: (text: string, family: string, size: number) => number
 }
 
 export type ObjectWriter = (ctx: WriteContext, object: EditObject) => void
@@ -32,6 +42,11 @@ WRITERS.arrow = writeShape
 // Task 30. Covers content; does not remove it -- see objects/whiteout.ts.
 WRITERS.whiteout = writeWhiteout
 
+// Task 31. Content-stream operators, NOT a FreeText annotation: Phase 0
+// measured that FreeText silently ignores any font outside the standard 14,
+// and every bundled face is non-base-14.
+WRITERS.text = writeText
+
 /**
  * Build the exported document.
  *
@@ -40,7 +55,20 @@ WRITERS.whiteout = writeWhiteout
  * what keeps spec 1.5's deferred-bake invariant true. Runs entirely in the
  * worker, and is fully testable in Node with no browser.
  */
-export function replay(sourceBytes: Uint8Array, editDoc: EditDocument): Uint8Array {
+export type ReplayOptions = {
+  /**
+   * Font bytes by family name, for text objects. Optional: a document with
+   * no text needs none, and resolving one that was never supplied throws by
+   * name rather than substituting a face silently (see FontRegistry).
+   */
+  fonts?: FontProvider
+}
+
+export function replay(
+  sourceBytes: Uint8Array,
+  editDoc: EditDocument,
+  opts: ReplayOptions = {},
+): Uint8Array {
   if (editDoc.version > EDIT_DOCUMENT_VERSION) {
     throw new Error(
       `This document was edited by a newer version of get-margin ` +
@@ -48,7 +76,14 @@ export function replay(sourceBytes: Uint8Array, editDoc: EditDocument): Uint8Arr
     )
   }
 
+  const provider: FontProvider = opts.fonts ?? new Map()
+  const measure = createMeasurer(provider)
+
   return withDocument(sourceBytes, (doc, raw) => {
+    // One registry per replay call, so a family used on five pages is parsed
+    // and embedded once rather than five times.
+    const fonts = new FontRegistry(raw, provider)
+
     // Group objects by page once, then draw each page's objects in z order.
     // Sorting per page rather than globally keeps stacking well-defined
     // within a page without imposing a meaningless order across pages.
@@ -82,7 +117,7 @@ export function replay(sourceBytes: Uint8Array, editDoc: EditDocument): Uint8Arr
               `no writer registered for object kind "${object.kind}" (object ${object.id})`,
             )
           }
-          writer({ raw, page, geometry }, object)
+          writer({ raw, page, geometry, fonts, measure }, object)
         }
       })
     }
@@ -96,3 +131,5 @@ export { toAnnotSpace, toContentSpace, num } from './coords.js'
 export { appendContent, addResource, fillColor, strokeColor, alphaState } from './content.js'
 export { writeShape } from './objects/shape.js'
 export { writeWhiteout } from './objects/whiteout.js'
+export { writeText, ASCENT_RATIO, LINE_HEIGHT } from './objects/text.js'
+export { FontRegistry, createMeasurer, pdfString, type FontProvider } from './fonts.js'

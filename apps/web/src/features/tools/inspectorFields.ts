@@ -1,4 +1,5 @@
 import type { ObjectKind } from '@margin/pdf-core'
+import { FONTS } from '@/lib/fonts'
 
 export type Field =
   | { key: string; label: string; type: 'number'; min: number; max: number; step: number }
@@ -17,7 +18,13 @@ const SHAPE: Field[] = [
 ]
 
 const TEXT: Field[] = [
-  { key: 'fontFamily', label: 'Font', type: 'select', options: [] },
+  {
+    key: 'fontFamily', label: 'Font', type: 'select',
+    // Built from the curated set rather than hardcoded: a font added to
+    // lib/fonts.ts must appear in the picker, or it exists only to whoever
+    // reads the source.
+    options: FONTS.map((f) => ({ value: f.family, label: f.family })),
+  },
   { key: 'fontSize', label: 'Size', type: 'number', min: 4, max: 144, step: 1 },
   { key: 'color', label: 'Colour', type: 'color' },
   {

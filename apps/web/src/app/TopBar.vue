@@ -9,6 +9,8 @@ import { useEditsStore } from '@/stores/edits'
 import { useTheme } from '@/lib/theme'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
+import { fontsForExport } from '@/lib/fonts'
+import type { TextObject } from '@margin/pdf-core'
 
 const props = defineProps<{ compact?: boolean; panelOpen?: boolean }>()
 const emit = defineEmits<{ togglePanel: [] }>()
@@ -24,7 +26,14 @@ async function download(): Promise<void> {
   if (saving.value) return
   saving.value = true
   try {
-    const bytes = await getPdfClient().save(edits.doc)
+    // The worker embeds font bytes it is given; it cannot fetch them
+    // itself. Only the families actually in use are sent -- shipping all
+    // five would add ~340KB of fetches to a document that uses one.
+    const families = Object.values(edits.doc.objects)
+      .filter((o) => o.kind === 'text')
+      .map((o) => (o as TextObject).fontFamily)
+    const fonts = await fontsForExport(families)
+    const bytes = await getPdfClient().save(edits.doc, fonts)
     downloadBytes(bytes, pdfFileName(doc.fileName))
   } catch (e) {
     doc.error = e instanceof Error ? e.message : 'Could not export this PDF.'
