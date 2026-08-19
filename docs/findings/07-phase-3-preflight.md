@@ -50,6 +50,49 @@ and objects keep their coordinates automatically — the deferred-bake architect
 exactly where §1.5 said it would. Crop and rotate are the two ops that *do* invalidate a page
 bitmap and must trigger a re-render.
 
+## ⚠ `graftPage` silently drops annotations AND links
+
+The second trap, and the more dangerous one. Verified with the source proved to hold them first,
+so this is not a probe that tested nothing:
+
+| Stage | Annotations | Links |
+|---|---|---|
+| Source page (built, saved, reopened) | `['Ink']` | `['https://example.com/']` |
+| After `target.graftPage(-1, src, 0)` | `[]` | `[]` — raw `/Annots` is `null` |
+| After a plain in-place re-save | `['Ink']` | `['https://example.com/']` |
+
+`graftPage` copies page **content** and nothing else. A merge built naively on it destroys every
+highlight, ink stroke, link, and form field already in the user's file — silently, and in a way
+they will not notice until they look for them.
+
+Phase 2's own objects are unaffected (they are drawn from `EditDocument` *after* assembly), so this
+only bites on annotations that were already in the source file. That makes it easy to miss in
+testing with freshly-generated fixtures.
+
+### The fix, verified
+
+Graft the page, then graft its `/Annots` array across explicitly:
+
+```js
+const map = target.newGraftMap()
+target.graftPage(-1, src, srcIndex)
+const annots = srcPage.getObject().get('Annots')
+if (annots.isArray()) target.findPage(targetIndex).put('Annots', map.graftObject(annots))
+```
+
+Measured result: the Ink annotation comes back with its stroke list and its `/AP` dictionary
+intact, and the link with its URI. Merge is therefore losslessly achievable — but only if this
+second step is written deliberately, and it needs a regression test with a source that already has
+annotations.
+
+## Assembly strategy this implies
+
+| Case | Method | Why |
+|---|---|---|
+| No structural change, no objects | Return the original bytes | Preserves the byte-identity guarantee `e2e/download.spec.ts` asserts |
+| Single source, reordered / deleted / extracted | In place: `findPage` each kept page, `deletePage` all, `insertPage(-1, obj)` in the new order | Verified to produce `['Page 3','Page 1','Page 2']`, and lossless — annotations, outlines, and metadata all survive |
+| Multiple sources (merge) | `graftPage` **plus** the explicit `/Annots` graft above | The only way to combine documents; document-level structure (outlines, page labels) is still lost and that should be stated in the UI |
+
 ## Open design question this phase must answer first
 
 Page state is currently duplicated:
