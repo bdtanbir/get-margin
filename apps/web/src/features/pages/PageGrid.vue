@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RotateCcw, RotateCw, Trash2 } from 'lucide-vue-next'
+import { RotateCcw, RotateCw, Trash2, Scissors } from 'lucide-vue-next'
 import Thumbnail from '@/features/document/Thumbnail.vue'
 import IconButton from '@/ui/IconButton.vue'
 import { useDocumentStore, type PageId } from '@/stores/document'
@@ -8,6 +8,7 @@ import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
 import { usePageSelectionStore } from '@/stores/pageSelection'
 import { useDragReorder } from './useDragReorder'
+import SplitDialog from './SplitDialog.vue'
 
 const doc = useDocumentStore()
 const edits = useEditsStore()
@@ -30,6 +31,7 @@ function onClick(id: PageId, index: number, e: MouseEvent): void {
 }
 
 const listEl = ref<HTMLElement | null>(null)
+const splitting = ref(false)
 
 /**
  * Vertical midpoint of each tile, in client coordinates and in display
@@ -80,8 +82,14 @@ function remove(): void {
 
 <template>
   <div class="flex h-full flex-col">
+    <SplitDialog v-if="splitting" @close="splitting = false" />
     <header class="flex h-11 shrink-0 items-center gap-1 px-3 text-[13px] text-text-muted">
-      <span v-if="count === 0">{{ doc.pageCount }} {{ doc.pageCount === 1 ? 'page' : 'pages' }}</span>
+      <template v-if="count === 0">
+        <span class="mr-auto">{{ doc.pageCount }} {{ doc.pageCount === 1 ? 'page' : 'pages' }}</span>
+        <IconButton size="sm" label="Split or extract" data-open-split @click="splitting = true">
+          <Scissors :size="15" :stroke-width="1.5" />
+        </IconButton>
+      </template>
       <template v-else>
         <span class="mr-auto">{{ count }} selected</span>
         <IconButton size="sm" label="Rotate left" data-rotate-left @click="rotate(270)">
