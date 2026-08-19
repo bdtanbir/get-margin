@@ -8,6 +8,7 @@ import { writeText } from './objects/text.js'
 import { FontRegistry, createMeasurer, type FontProvider } from './fonts.js'
 import { writeImage } from './objects/image.js'
 import { createXObjectCache, type XObjectCache } from './xobject.js'
+import { writeInk } from './objects/ink.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -57,6 +58,10 @@ WRITERS.text = writeText
 // Task 32. Drawn as an XObject in the content stream, not an annotation:
 // an image is page content, and content is what survives flattening.
 WRITERS.image = writeImage
+
+// Task 33. A NATIVE Ink annotation, not content-stream paths: ink stays
+// selectable and removable in other PDF tools (the semantic split, spec 0).
+WRITERS.ink = writeInk
 
 /**
  * Build the exported document.
@@ -149,3 +154,4 @@ export { writeText, ASCENT_RATIO, LINE_HEIGHT } from './objects/text.js'
 export { FontRegistry, createMeasurer, pdfString, type FontProvider } from './fonts.js'
 export { writeImage } from './objects/image.js'
 export { createXObjectCache, type XObjectCache } from './xobject.js'
+export { writeInk } from './objects/ink.js'
