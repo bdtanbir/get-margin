@@ -26,6 +26,7 @@ on the one platform this project committed to and cannot emulate (a mid-range ph
 | Persistence | An older stored schema migrates; a newer one is refused with a message | `test/features/RestorePrompt.test.ts` |
 | Persistence | Edits survive a real page reload and come back on request | `e2e/autosave.spec.ts` |
 | Privacy | Every claim on the privacy page matches what the code stores | `test/features/PrivacyPage.test.ts` |
+| Privacy | Every key of the autosave record is explicitly accounted for, so a new one cannot appear undisclosed | `test/features/PrivacyPage.test.ts` |
 | Reach | Modal surfaces trap focus, close on Escape, and return focus | `test/lib/useFocusTrap.test.ts`, `test/features/a11y.test.ts` |
 | Reach | Every icon-only control has an accessible name | `test/features/a11y.test.ts` |
 | Reach | Every tool in the rail is reachable from the palette | `test/features/CommandPalette.test.ts` |
@@ -105,6 +106,35 @@ touch. Specifically unverified:
 - **Bookmarks and page labels are lost across a merge** — stated in the merge UI.
 - **A document with heavy annotations at 300 pages** is unmeasured; the perf fixture is 300
   near-empty pages.
+
+## A second gap, found while auditing Phase 4 after Phase 5 shipped
+
+The sanitizer hole above was found by reading Phase 4 against the spec. This one was found by
+reading it against the code that came *after* it, and it is the more interesting failure.
+
+Phase 5 added `fieldValues` to the edit document. That document is what autosave writes to
+IndexedDB — so from the moment forms shipped, **the answers someone types into a tax form were being
+persisted to disk**, and the privacy page went on listing three stored things and asserting that
+"anything identifying you" was not among them. The claim was true when written and false by the time
+anyone read it.
+
+Also wrong, and wrong from the start rather than by drift: the record has always carried the
+**file name** (`SavedEdit.name`), which the page never mentioned. `2024-tax-return-jane-doe.pdf` is
+personal data.
+
+Both are now named, along with the honest correction that anything the *user* writes — text they
+add, answers they fill in — is stored until they clear it. The "Clear everything stored" button
+already covered it; the page simply did not say so.
+
+The structural fix matters more than the wording. Every existing test pinned a claim the page
+already made, so none of them could notice a new category of stored data appearing. There is now a
+map from every key of the autosave record and the edit document to whether the page must mention it
+and why — checked against the schema's **runtime** keys, so adding a field fails the suite until
+someone decides. Verified by adding a key and watching it fail.
+
+The general form, which is the same lesson as the sanitizer gap: **a test that enumerates the
+claims you made cannot tell you about the claim you should have made.** Guard the boundary, not the
+prose.
 
 ## The honest call on the milestone
 

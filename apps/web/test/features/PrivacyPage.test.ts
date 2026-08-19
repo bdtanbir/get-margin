@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PrivacyPage from '@/features/document/PrivacyPage.vue'
 import { MAX_BYTES, MAX_PAGES } from '@/lib/limits'
+import { emptyEditDocument } from '@margin/pdf-core'
 
 const clearEdits = vi.fn(async () => {})
 const clearSignatures = vi.fn(async () => {})
@@ -88,5 +89,78 @@ describe('PrivacyPage', () => {
     const w = page()
     await w.get('[data-privacy-close]').trigger('click')
     expect(w.emitted('close')).toBeTruthy()
+  })
+
+  it('names the answers typed into form fields', () => {
+    expect(page().text()).toMatch(/form fields/i)
+  })
+
+  it('names the stored file name', () => {
+    expect(page().text()).toMatch(/name of each file/i)
+  })
+
+  /**
+   * NOT a claim that nothing identifying is stored -- which is false the
+   * moment someone types their name into a text box or a form field. A
+   * privacy page that overclaims on the part a user can check is not worth
+   * reading on the parts they cannot.
+   */
+  it('does not claim that nothing identifying is stored', () => {
+    expect(page().text()).not.toMatch(/anything identifying you/i)
+  })
+})
+
+/**
+ * THE STRUCTURAL GUARD, and the reason it exists.
+ *
+ * Every test above pins a claim the page already makes. None of them could
+ * notice a NEW category of stored data appearing -- which is exactly what
+ * happened: Phase 5 added `fieldValues` to the autosaved document, so the
+ * answers someone types into a tax form began being written to IndexedDB,
+ * and this page went on listing three things and claiming nothing
+ * identifying was kept.
+ *
+ * This forces a DECISION rather than a wording. Adding a key to the
+ * autosave record fails here until someone says, in this map, whether the
+ * privacy page has to mention it and why.
+ */
+describe('the privacy page covers everything actually stored', () => {
+  /** Top-level keys of SavedEdit, and what the page owes each one. */
+  const RECORD_KEYS: Record<string, { mustAppear: RegExp | null; because: string }> = {
+    hash: { mustAppear: /fingerprint/i, because: 'a fingerprint of the file identifies the record' },
+    name: { mustAppear: /name of each file/i, because: 'the file name is personal data' },
+    savedAt: { mustAppear: null, because: 'a timestamp on data already disclosed' },
+    doc: { mustAppear: /Your edits/i, because: 'the edit document is the payload' },
+  }
+
+  /** Top-level keys of EditDocument, which travels inside `doc`. */
+  const DOC_KEYS: Record<string, { mustAppear: RegExp | null; because: string }> = {
+    version: { mustAppear: null, because: 'a schema number, not user data' },
+    sources: { mustAppear: /name of each file/i, because: 'holds each file name and hash' },
+    pageOrder: { mustAppear: /page changes/i, because: 'page structure the user chose' },
+    pages: { mustAppear: /page changes/i, because: 'rotation and crop the user chose' },
+    objects: { mustAppear: /Annotations, shapes, text/i, because: 'everything the user drew or typed' },
+    nextZ: { mustAppear: null, because: 'a counter, not user data' },
+    fieldValues: { mustAppear: /form fields/i, because: 'form answers are frequently personal' },
+    flattenForms: { mustAppear: null, because: 'an export preference, not user data' },
+  }
+
+  const text = () => mount(PrivacyPage).text()
+
+  it('accounts for every key of the autosave record', () => {
+    // SavedEdit's shape, spelled here because a type has no runtime keys.
+    expect(Object.keys(RECORD_KEYS).sort()).toEqual(['doc', 'hash', 'name', 'savedAt'])
+  })
+
+  it('accounts for every key of the edit document it stores', () => {
+    expect(Object.keys(DOC_KEYS).sort()).toEqual(Object.keys(emptyEditDocument()).sort())
+  })
+
+  it('says something about every key that holds user data', () => {
+    const body = text()
+    for (const [key, rule] of Object.entries({ ...RECORD_KEYS, ...DOC_KEYS })) {
+      if (!rule.mustAppear) continue
+      expect(body, `${key}: ${rule.because}`).toMatch(rule.mustAppear)
+    }
   })
 })

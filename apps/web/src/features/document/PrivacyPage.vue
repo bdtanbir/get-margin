@@ -69,11 +69,22 @@ const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`
         <h3 class="text-[14px] font-medium">What is stored on this device</h3>
         <ul class="flex list-disc flex-col gap-2 pl-5 text-[13px] text-text-muted">
           <li>
-            <strong>Your edits.</strong> Annotations, shapes, text and page changes are
-            saved as you work, so a crashed tab does not lose an hour of it. They are
-            matched back to a file by a fingerprint of its contents — which means
-            <em>the PDF itself is never stored</em>, only what you did to it. You are
-            asked before anything is restored.
+            <strong>Your edits.</strong> Annotations, shapes, text you type and page
+            changes are saved as you work, so a crashed tab does not lose an hour of it.
+            They are matched back to a file by a fingerprint of its contents — which
+            means <em>the PDF itself is never stored</em>, only what you did to it. You
+            are asked before anything is restored.
+          </li>
+          <li>
+            <strong>Answers you type into a PDF's form fields</strong>, which are saved
+            the same way and for the same reason. On a real form that is often your
+            name, address, or an account number, so it is worth saying plainly rather
+            than leaving it inside "your edits". Clearing below removes them.
+          </li>
+          <li>
+            <strong>The name of each file you open</strong> — the name only, so the
+            restore prompt can tell you which document it found edits for. Not its
+            contents.
           </li>
           <li>
             <strong>Saved signatures</strong>, and only if you tick the box that says so.
@@ -86,9 +97,20 @@ const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`
       <section class="flex flex-col gap-2">
         <h3 class="text-[14px] font-medium">What is not stored</h3>
         <p class="text-[13px] text-text-muted">
-          The PDFs themselves, their text, their images, and anything identifying you.
-          Files up to {{ mb(MAX_BYTES) }} and {{ MAX_PAGES }} pages are held in memory
-          while open and discarded when you close the tab.
+          The PDF files themselves — their pages, their text, and their images. Files up
+          to {{ mb(MAX_BYTES) }} and {{ MAX_PAGES }} pages are held in memory while open
+          and discarded when you close the tab. There are no accounts, no analytics, and
+          no identifiers of any kind.
+        </p>
+        <!--
+          Deliberately NOT a claim that nothing identifying is stored. It
+          would be false the moment someone types their name into a text box
+          or a form field, and a privacy page that overclaims on the part
+          the user can check is not worth reading on the parts they cannot.
+        -->
+        <p class="text-[13px] text-text-muted">
+          Anything <em>you</em> write, though — text you add, and answers you fill in —
+          is part of your edits above, and is saved on this device until you clear it.
         </p>
       </section>
 
