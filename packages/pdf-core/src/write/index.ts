@@ -15,6 +15,7 @@ import { writeInk } from './objects/ink.js'
 import { writeLink } from './objects/link.js'
 import { writeMarkup } from './objects/markup.js'
 import { writeField } from './objects/field.js'
+export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
 import { migrateEditDocument } from './migrate.js'
 import { stripActiveContent, anythingStripped, type StrippedContent } from './sanitize.js'
 

@@ -2,6 +2,7 @@ import * as mupdf from 'mupdf'
 import type { ObjectWriter, WriteContext } from '../index.js'
 import type { FieldObject } from '../types.js'
 import { toContentSpace } from '../coords.js'
+import { twoStateAppearance } from '../fieldAppearance.js'
 
 /**
  * Field flag bits, named rather than spelled as numbers at the call site.
@@ -144,6 +145,161 @@ function writeTextField(ctx: WriteContext, o: FieldObject): void {
 }
 
 /**
+ * A black border, without which an unchecked box renders invisibly.
+ *
+ * Phase 0's finding, and still a live trap: the field is structurally
+ * correct and simply blank, so it reads as a missing control rather than an
+ * empty one.
+ */
+function putBorder(raw: mupdf.PDFDocument, w: mupdf.PDFObject): void {
+  const mk = raw.newDictionary()
+  const bc = raw.newArray()
+  bc.push(0)
+  mk.put('BC', bc)
+  w.put('MK', mk)
+}
+
+/** A checkbox: a single two-state button, on-state "Yes". */
+function writeCheckbox(ctx: WriteContext, o: FieldObject): void {
+  const acro = ensureAcroForm(ctx.raw)
+  const w = newWidget(ctx, o)
+  const on = o.value === true
+
+  w.put('FT', ctx.raw.newName('Btn'))
+  w.put('T', ctx.raw.newString(o.name))
+  w.put('Ff', commonFlags(o))
+  w.put('V', ctx.raw.newName(on ? 'Yes' : 'Off'))
+  w.put('AS', ctx.raw.newName(on ? 'Yes' : 'Off'))
+  putBorder(ctx.raw, w)
+  w.put('AP', twoStateAppearance(ctx.raw, o.rect.w, o.rect.h, 'Yes'))
+
+  const ref = ctx.raw.addObject(w)
+  acro.get('Fields').push(ref)
+  pageAnnots(ctx.raw, ctx.page).push(ref)
+}
+
+/**
+ * The parent field of a radio group, found if it exists and created if not.
+ *
+ * Looked up by scanning /AcroForm /Fields rather than threaded through the
+ * write context, because the writer contract is one call per object and a
+ * group's buttons may be spread across pages. The scan is O(fields) per
+ * button, on a document that has at most a handful.
+ */
+function radioParent(ctx: WriteContext, group: string): mupdf.PDFObject {
+  const acro = ensureAcroForm(ctx.raw)
+  const fields = acro.get('Fields')
+
+  let found: mupdf.PDFObject | null = null
+  fields.forEach((f) => {
+    if (found) return
+    if (f.isDictionary() && f.get('T').isString() && f.get('T').asString() === group) found = f
+  })
+  if (found) return found
+
+  const parent = ctx.raw.newDictionary()
+  parent.put('FT', ctx.raw.newName('Btn'))
+  parent.put('T', ctx.raw.newString(group))
+  parent.put('Ff', BTN_RADIO | BTN_NO_TOGGLE_OFF)
+  parent.put('V', ctx.raw.newName('Off'))
+  parent.put('Kids', ctx.raw.newArray())
+  const ref = ctx.raw.addObject(parent)
+  fields.push(ref)
+  return ref
+}
+
+/**
+ * One button of a radio group.
+ *
+ * Unlike every other type here, the field and the widget are separate
+ * objects: the group is one field with N kid widgets, which is what makes
+ * the buttons mutually exclusive. Only the PARENT goes in /AcroForm
+ * /Fields; the kids go in the page's /Annots.
+ *
+ * The /AP is not decoration. mupdf reads a kid's on-state name from the
+ * keys of its /AP /N dictionary, so this is where the button's identity
+ * lives -- see fieldAppearance.ts and findings 12 1 for what happens
+ * without it, which is that every button in the group becomes the same
+ * button and toggling one turns on all of them, silently.
+ */
+function writeRadio(ctx: WriteContext, o: FieldObject): void {
+  const group = o.group ?? o.name
+  const state = o.exportValue ?? o.id
+  if (state === 'Off') {
+    // "Off" is the universal unselected state; a button claiming it as its
+    // ON state can never be distinguished from being off.
+    throw new Error('a radio button cannot use "Off" as its export value')
+  }
+
+  const parent = radioParent(ctx, group)
+  const kid = newWidget(ctx, o)
+  kid.put('Parent', parent)
+  kid.put('AS', ctx.raw.newName(o.value === true ? state : 'Off'))
+  putBorder(ctx.raw, kid)
+  kid.put('AP', twoStateAppearance(ctx.raw, o.rect.w, o.rect.h, state))
+
+  const ref = ctx.raw.addObject(kid)
+  parent.get('Kids').push(ref)
+  pageAnnots(ctx.raw, ctx.page).push(ref)
+
+  // The group's value lives on the parent, which is why a kid's own
+  // getValue() reports it (findings 12 3).
+  if (o.value === true) parent.put('V', ctx.raw.newName(state))
+}
+
+/**
+ * A dropdown or a list box.
+ *
+ * The two differ by one flag. A combo box shows one row and opens; a list
+ * box shows several at once. Same field type, same options, same value.
+ */
+function writeChoice(ctx: WriteContext, o: FieldObject): void {
+  const acro = ensureAcroForm(ctx.raw)
+  const w = newWidget(ctx, o)
+
+  w.put('FT', ctx.raw.newName('Ch'))
+  w.put('T', ctx.raw.newString(o.name))
+  w.put('DA', ctx.raw.newString(`/Helv ${o.fontSize} Tf 0 g`))
+  w.put('Ff', commonFlags(o) | (o.fieldType === 'dropdown' ? CH_COMBO : 0))
+
+  const opt = ctx.raw.newArray()
+  for (const option of o.options) opt.push(ctx.raw.newString(option))
+  w.put('Opt', opt)
+
+  // A value that is not one of the options would be a field no viewer can
+  // display consistently, so it is dropped rather than written.
+  if (typeof o.value === 'string' && o.options.includes(o.value)) {
+    w.put('V', ctx.raw.newString(o.value))
+  }
+
+  const ref = ctx.raw.addObject(w)
+  acro.get('Fields').push(ref)
+  pageAnnots(ctx.raw, ctx.page).push(ref)
+}
+
+/**
+ * A signature field: a PLACE for a signature, and not a signature.
+ *
+ * /FT /Sig with no /V. get-margin does not do cryptographic signing, and a
+ * field that carried anything resembling a signature value would be a
+ * meaningful lie about what the document asserts. What this creates is the
+ * box another tool -- or a pen, after printing -- fills in.
+ */
+function writeSignatureField(ctx: WriteContext, o: FieldObject): void {
+  const acro = ensureAcroForm(ctx.raw)
+  const w = newWidget(ctx, o)
+
+  w.put('FT', ctx.raw.newName('Sig'))
+  w.put('T', ctx.raw.newString(o.name))
+  w.put('Ff', commonFlags(o))
+  putBorder(ctx.raw, w)
+
+  const ref = ctx.raw.addObject(w)
+  acro.get('Fields').push(ref)
+  pageAnnots(ctx.raw, ctx.page).push(ref)
+}
+
+/**
  * One writer for every field type, dispatched on `fieldType`.
  *
  * Unlike the shape writers, these do not share an implementation -- a
@@ -163,7 +319,20 @@ export const writeField: ObjectWriter = (ctx, object) => {
     case 'text':
       writeTextField(ctx, o)
       return
+    case 'checkbox':
+      writeCheckbox(ctx, o)
+      return
+    case 'radio':
+      writeRadio(ctx, o)
+      return
+    case 'dropdown':
+    case 'listbox':
+      writeChoice(ctx, o)
+      return
+    case 'signature':
+      writeSignatureField(ctx, o)
+      return
     default:
-      throw new Error(`unsupported field type "${o.fieldType}"`)
+      throw new Error(`unsupported field type "${o.fieldType as string}"`)
   }
 }
