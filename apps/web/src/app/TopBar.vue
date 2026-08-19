@@ -7,6 +7,7 @@ import Tooltip from '@/ui/Tooltip.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useAutosaveStore } from '@/stores/autosave'
+import { useFieldsStore } from '@/stores/fields'
 import { useTheme } from '@/lib/theme'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
@@ -21,6 +22,15 @@ const emit = defineEmits<{ togglePanel: [] }>()
 const doc = useDocumentStore()
 const edits = useEditsStore()
 const autosave = useAutosaveStore()
+const fields = useFieldsStore()
+
+/**
+ * Offer to flatten only when there is a form to flatten -- either one the
+ * app has seen in the source, or one the user built.
+ */
+const hasForms = computed(() =>
+  fields.anyFound() || Object.values(edits.doc.objects).some((o) => o.kind === 'field'),
+)
 const { choice, cycle } = useTheme()
 const icon = { light: Sun, dark: Moon, system: Monitor }
 
@@ -186,6 +196,30 @@ async function download(): Promise<void> {
       </IconButton>
     </Tooltip>
     <PrivacyPage v-if="privacyOpen" @close="privacyOpen = false" />
+
+    <!--
+      OFF by default, and it has to be: flattening is a one-way door. The
+      fields are gone from the exported file, and a user who wanted a
+      fillable form back has to redo the work. The label says what happens
+      rather than naming the operation, because "flatten" is a word from
+      the format and not from the user's problem.
+    -->
+    <label
+      v-if="hasForms"
+      class="flex items-center gap-1.5 text-[12px] text-text-muted"
+      data-flatten-forms
+    >
+      <input
+        type="checkbox"
+        class="accent-accent"
+        :checked="edits.doc.flattenForms"
+        @change="edits.applyOp(
+          { type: 'setFlattenForms', on: ($event.target as HTMLInputElement).checked },
+          ($event.target as HTMLInputElement).checked ? 'Flatten form' : 'Keep form fields',
+        )"
+      >
+      Lock form answers
+    </label>
 
     <Tooltip content="Download PDF" side="bottom">
       <Button

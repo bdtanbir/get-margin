@@ -70,10 +70,24 @@ export const useFieldsStore = defineStore('fields', () => {
     return request
   }
 
+  /**
+   * Whether any page enumerated so far carries a form field.
+   *
+   * Deliberately reports on what has been LOOKED AT, not on the document
+   * as a whole -- enumerating every page of a 300-page file to decide
+   * whether to show one checkbox would be a page load per page. The
+   * consequence is honest either way: an option to flatten forms is noise
+   * on a document with no form the app has seen, and appears as soon as
+   * one scrolls into view.
+   */
+  function anyFound(): boolean {
+    return Object.values(byPage.value).some((f) => f.length > 0)
+  }
+
   function reset(): void {
     byPage.value = {}
     inFlight.clear()
   }
 
-  return { fields, load, reset }
+  return { fields, load, anyFound, reset }
 })
