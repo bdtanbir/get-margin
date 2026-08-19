@@ -9,6 +9,7 @@ export type ObjectKind =
   | 'whiteout' | 'link' | 'signature'
   | 'field'
   | 'stamp'
+  | 'redaction'
 
 /** sRGB, each channel 0..1 — the range MuPDF's colour setters take. */
 export type Color = [number, number, number]
@@ -152,6 +153,35 @@ export type StampObject = BaseObject & {
   behind: boolean
 }
 
+/**
+ * Text the user wants GONE, not covered.
+ *
+ * Quads rather than a rect, in MuPDF page space, exactly like MarkupObject
+ * -- and for the same reason: they come from buildQuadIndex, which produces
+ * that space, and applyRedactions consumes /QuadPoints rather than /Rect.
+ * The pre-flight redacted part of a word this way.
+ *
+ * The distinction from WhiteoutObject is the whole point and must never
+ * blur: whiteout COVERS content and leaves it extractable, which
+ * whiteout.test.ts asserts; this REMOVES it, which
+ * redact-independent.test.ts verifies with two extractors that share no
+ * code with MuPDF.
+ */
+export type RedactionObject = BaseObject & {
+  kind: 'redaction'
+  /** 8 numbers per quad, MuPDF page space. See MarkupObject. */
+  quads: number[][]
+  /**
+   * Draw a black box where the text was.
+   *
+   * Removal happens either way -- this is only whether the file SHOWS that
+   * it happened. Defaulting to false would make a redaction invisible to
+   * the user and to whoever they send the file to, which for this feature
+   * is the wrong kind of quiet.
+   */
+  blackBox: boolean
+}
+
 export type SignatureObject = BaseObject & {
   kind: 'signature'
   data: Uint8Array
@@ -161,7 +191,7 @@ export type SignatureObject = BaseObject & {
 export type EditObject =
   | TextObject | ImageObject | ShapeObject | WhiteoutObject
   | InkObject | MarkupObject | LinkObject | SignatureObject | FieldObject
-  | StampObject
+  | StampObject | RedactionObject
 
 export type SourceId = string
 

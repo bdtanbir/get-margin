@@ -22,6 +22,7 @@ export type { SourceField, SourceFieldType } from './fields.js'
 import { migrateEditDocument } from './migrate.js'
 import { stripActiveContent, anythingStripped, type StrippedContent } from './sanitize.js'
 import { applyFieldValues } from './fields.js'
+import { applyRedactions } from './objects/redact.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -208,6 +209,12 @@ export function replay(
     // within a page without imposing a meaningless order across pages.
     const byPage = new Map<string, EditObject[]>()
     for (const object of Object.values(editDoc.objects)) {
+      // Redactions are not a drawing operation and deliberately have no
+      // entry in WRITERS -- applyRedactions handles a whole page at once,
+      // after this loop. Registering a no-op writer for them would weaken
+      // the "unhandled kind fails the export" guarantee below into
+      // "unhandled kind might be intentional".
+      if (object.kind === 'redaction') continue
       const list = byPage.get(object.pageId)
       if (list) list.push(object)
       else byPage.set(object.pageId, [object])
@@ -271,6 +278,12 @@ export function replay(
       )
     }
 
+    // AFTER the ordinary writers: a redaction removes what the SOURCE
+    // document said, not what the user drew on top of it a moment ago. And
+    // before flatten, so a redacted form field is redacted before it is
+    // frozen into the page.
+    applyRedactions(raw, editDoc)
+
     // AFTER the fields exist and BEFORE they are baked: tab order IS
     // /Annots order, so it has to be applied while there is still an
     // /Annots array of widgets to order.
@@ -293,6 +306,7 @@ export function replay(
 export { withDocument, withPage, SAVE_OPTIONS } from './session.js'
 export { assemble, isUntouched, type SourceBytes } from './assemble.js'
 export { applyPageBoxes, applyTabOrder } from './objects/page.js'
+export { applyRedactions } from './objects/redact.js'
 export {
   stripActiveContent, anythingStripped, nothingStripped, type StrippedContent,
 } from './sanitize.js'
