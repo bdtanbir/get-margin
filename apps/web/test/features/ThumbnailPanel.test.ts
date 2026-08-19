@@ -12,6 +12,14 @@ import { seedDocument } from '../helpers/seedDocument'
 // elsewhere in the app. A green Thumbnail suite alone cannot catch either
 // wiring gap — Thumbnail only proves it EMITS `select`, not that anything
 // listens.
+/**
+ * The thumbnails only. PageGrid's header also renders buttons (split, and
+ * the rotate/delete actions once pages are selected), so indexing
+ * `findAll('button')` positionally silently shifts the moment the header
+ * gains a control -- which it did.
+ */
+const thumbnails = (w: ReturnType<typeof mount>) => w.findAll('[data-page-tile] button')
+
 vi.mock('../../src/workers/pdfClient.js', () => ({
   getPdfClient: () => ({
     open: vi.fn(), authenticate: vi.fn(), render: vi.fn(),
@@ -42,7 +50,7 @@ describe('ThumbnailPanel', () => {
     seed()
     const w = mount(ThumbnailPanel)
     // Three buttons, one per page in pageOrder.
-    expect(w.findAll('button').length).toBe(3)
+    expect(thumbnails(w).length).toBe(3)
   })
 
   it('moves the viewport anchor when a thumbnail is clicked', async () => {
@@ -51,7 +59,7 @@ describe('ThumbnailPanel', () => {
     const w = mount(ThumbnailPanel)
     expect(vp.anchorIndex).toBe(0)
     // Click the third thumbnail (display position 3, index 2).
-    await w.findAll('button')[2]!.trigger('click')
+    await thumbnails(w)[2]!.trigger('click')
     expect(vp.anchorIndex).toBe(2)
   })
 
@@ -60,7 +68,7 @@ describe('ThumbnailPanel', () => {
     const vp = useViewportStore()
     vp.setAnchor(1)
     const w = mount(ThumbnailPanel)
-    const buttons = w.findAll('button')
+    const buttons = thumbnails(w)
     expect(buttons[0]!.attributes('aria-current')).toBeUndefined()
     expect(buttons[1]!.attributes('aria-current')).toBe('true')
     expect(buttons[2]!.attributes('aria-current')).toBeUndefined()
@@ -72,7 +80,7 @@ describe('ThumbnailPanel', () => {
     const w = mount(ThumbnailPanel)
     vp.setAnchor(2)
     await w.vm.$nextTick()
-    const buttons = w.findAll('button')
+    const buttons = thumbnails(w)
     expect(buttons[2]!.attributes('aria-current')).toBe('true')
     expect(buttons[0]!.attributes('aria-current')).toBeUndefined()
   })
@@ -82,7 +90,7 @@ describe('ThumbnailPanel', () => {
     const doc = seed()
     expect(doc.pages.p0!.sourceIndex).toBe(2)
     const w = mount(ThumbnailPanel)
-    expect(w.findAll('button')[0]!.text()).toContain('1')
+    expect(thumbnails(w)[0]!.text()).toContain('1')
   })
 
   it('shows the page count in the header', () => {
