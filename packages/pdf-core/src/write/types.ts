@@ -10,6 +10,7 @@ export type ObjectKind =
   | 'field'
   | 'stamp'
   | 'redaction'
+  | 'textPatch'
 
 /** sRGB, each channel 0..1 — the range MuPDF's colour setters take. */
 export type Color = [number, number, number]
@@ -182,6 +183,48 @@ export type RedactionObject = BaseObject & {
   blackBox: boolean
 }
 
+/**
+ * A replacement for a line of the DOCUMENT's own text.
+ *
+ * The hardest thing in the product (PLAN.md 2.4), and the one whose
+ * failure mode is worst: patching the wrong line damages a document while
+ * reporting success. Hence `originalHash`.
+ */
+export type TextPatchObject = BaseObject & {
+  kind: 'textPatch'
+  /** Index of the line in the page's extraction, at edit time. */
+  lineIndex: number
+  /**
+   * Hash of the line's text when the user edited it. THE GUARD: extraction
+   * is not guaranteed stable across MuPDF versions or option changes, so a
+   * mismatch means the text at this position is not what was edited, and
+   * the export refuses rather than covering whatever is there now.
+   */
+  originalHash: string
+  /** What it said, for the error message when the guard trips. */
+  originalText: string
+  text: string
+  fontFamily: string
+  /** 0 means "derive from the line's height". */
+  fontSize: number
+  color: Color
+  /**
+   * The colour to cover the original with, sampled from the rendered page
+   * at EDIT time -- the writer has no cheap way to render and sample, and
+   * the app already has the pixels on screen.
+   */
+  background: Color
+  /**
+   * How confident the background sample was, 0..1. Low means the area was
+   * varied -- a gradient, an image, a texture -- where a flat rectangle
+   * will leave a visible scar. Stored so the UI can warn BEFORE the user
+   * commits rather than after they export.
+   */
+  backgroundConfidence: number
+  /** Wider replacement text: shrink to fit, let it run, or cut it short. */
+  fit: 'shrink' | 'overflow' | 'truncate'
+}
+
 export type SignatureObject = BaseObject & {
   kind: 'signature'
   data: Uint8Array
@@ -191,7 +234,7 @@ export type SignatureObject = BaseObject & {
 export type EditObject =
   | TextObject | ImageObject | ShapeObject | WhiteoutObject
   | InkObject | MarkupObject | LinkObject | SignatureObject | FieldObject
-  | StampObject | RedactionObject
+  | StampObject | RedactionObject | TextPatchObject
 
 export type SourceId = string
 

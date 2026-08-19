@@ -16,6 +16,7 @@ import { writeLink } from './objects/link.js'
 import { writeMarkup } from './objects/markup.js'
 import { writeField } from './objects/field.js'
 import { writeStamp } from './objects/stamp.js'
+import { writeTextPatch } from './objects/patch.js'
 export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
 export { listFields, fieldKey, applyFieldValues, hasAcroForm } from './fields.js'
 export {
@@ -109,6 +110,10 @@ WRITERS.field = writeField
 // markup writers above. A watermark a reader can select and delete is not a
 // watermark.
 WRITERS.stamp = writeStamp
+
+// Task 91. Cover-and-redraw over the document's own text. Refuses rather
+// than mispatching -- see objects/patch.ts.
+WRITERS.textPatch = writeTextPatch
 
 WRITERS.highlight = writeMarkup
 WRITERS.underline = writeMarkup
@@ -379,6 +384,7 @@ export { writeInk } from './objects/ink.js'
 export { writeLink } from './objects/link.js'
 export { writeMarkup } from './objects/markup.js'
 export { writeStamp, resolveTokens, batesNumber, type StampContext } from './objects/stamp.js'
+export { writeTextPatch, hashText, missingGlyphs, PatchRefused } from './objects/patch.js'
 export {
   writeField, ensureAcroForm, pageAnnots, commonFlags, newWidget,
   FIELD_READ_ONLY, FIELD_REQUIRED, TX_MULTILINE, BTN_NO_TOGGLE_OFF, BTN_RADIO, CH_COMBO,

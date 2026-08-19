@@ -8,7 +8,7 @@ export type {
   ObjectKind, Color, EditObject, EditDocument, Op,
   TextObject, ImageObject, ShapeObject, WhiteoutObject,
   InkObject, MarkupObject, LinkObject, SignatureObject,
-  FieldObject, FieldType, FieldValue, StampObject, RedactionObject,
+  FieldObject, FieldType, FieldValue, StampObject, RedactionObject, TextPatchObject,
 } from './write/types.js'
 export { EDIT_DOCUMENT_VERSION, emptyEditDocument } from './write/types.js'
 export { listFields, fieldKey, hasAcroForm } from './write/fields.js'
@@ -24,6 +24,7 @@ export {
 export type { DocumentMetadata } from './write/metadata.js'
 export { recompressImages, PRESETS as COMPRESSION_PRESETS } from './write/compress.js'
 export { findInPage } from './text/find.js'
+export { hashText, missingGlyphs, PatchRefused } from './write/objects/patch.js'
 export type { Match, FindOptions } from './text/find.js'
 export type { CompressionPreset, CompressionResult } from './write/compress.js'
 export type { StampContext } from './write/objects/stamp.js'
