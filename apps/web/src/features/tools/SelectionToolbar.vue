@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { nanoid } from 'nanoid'
-import { Copy, Trash2, BringToFront, SendToBack, Lock, LockOpen } from 'lucide-vue-next'
+import {
+  Copy, Trash2, BringToFront, SendToBack, Lock, LockOpen,
+  Highlighter, Underline, Strikethrough,
+} from 'lucide-vue-next'
 import { pdfRectToView } from '@margin/transform'
 import IconButton from '@/ui/IconButton.vue'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
+import { useSelectionStore } from '@/stores/selection'
+import type { MarkupObject, EditObject } from '@margin/pdf-core'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
+const selection = useSelectionStore()
 
 /** How far above the selection box the toolbar floats, in CSS pixels. */
 const GAP_PX = 44
@@ -70,6 +76,67 @@ function sendToBack(): void {
   edits.applyOp({ type: 'reorder', id: o.id, z: bottom - 1 }, 'Send to back')
 }
 
+/**
+ * Markup actions appear when TEXT is selected rather than an object, which
+ * is a different toolbar with a different anchor: it follows the selected
+ * text, not an object's box.
+ */
+const textSelected = computed(
+  () => selection.pageId === props.page.id && selection.hasSelection,
+)
+
+const MARKUP_COLOURS = {
+  highlight: [1, 0.9, 0.2] as [number, number, number],
+  underline: [0, 0.35, 0.9] as [number, number, number],
+  strikeout: [0.85, 0.1, 0.1] as [number, number, number],
+}
+
+/** Where the text-markup toolbar floats: just above the first selected quad. */
+const textStyle = computed(() => {
+  const q = selection.selectedQuads[0]
+  if (!q) return {}
+  // Quads are in page space (points, top-down), and the overlay's box is the
+  // page at `zoom` scale, so view pixels are points * zoom directly.
+  const left = Math.min(q[0], q[4]) * props.zoom
+  const top = Math.min(q[1], q[3]) * props.zoom
+  return { left: `${left}px`, top: `${top - GAP_PX}px` }
+})
+
+function markup(kind: 'highlight' | 'underline' | 'strikeout'): void {
+  const quads = selection.selectedQuads
+  if (quads.length === 0) return
+
+  // The object's `rect` is raw bottom-up PDF space like every other object,
+  // while its `quads` stay in MuPDF page space -- see the MarkupObject type
+  // and write/objects/markup.ts. The rect is selection geometry only; the
+  // exported annotation derives its own box from the quads.
+  const [, y0, , y1] = props.page.geometry.cropBox
+  const pageH = y1 - y0
+  let minX = Infinity, minTop = Infinity, maxX = -Infinity, maxBottom = -Infinity
+  for (const q of quads) {
+    for (let i = 0; i < 8; i += 2) {
+      minX = Math.min(minX, q[i]!); maxX = Math.max(maxX, q[i]!)
+      minTop = Math.min(minTop, q[i + 1]!); maxBottom = Math.max(maxBottom, q[i + 1]!)
+    }
+  }
+
+  const object: MarkupObject = {
+    id: nanoid(10),
+    pageId: props.page.id,
+    kind,
+    quads: quads.map((q) => [...q]),
+    color: MARKUP_COLOURS[kind],
+    rect: { x: minX, y: pageH - maxBottom, w: maxX - minX, h: maxBottom - minTop },
+    rotation: 0,
+    z: edits.nextZ(),
+    locked: false,
+    opacity: 1,
+  }
+  edits.applyOp({ type: 'addObject', object: object as EditObject }, `Add ${kind}`)
+  selection.clear()
+  edits.select([object.id])
+}
+
 function toggleLock(): void {
   const o = selected.value
   if (!o) return
@@ -86,6 +153,30 @@ function toggleLock(): void {
     resizing, not the controls that unlock, delete, or reorder it. A toolbar
     that locks itself out is a trap with no exit.
   -->
+  <!--
+    The text-markup toolbar, shown while TEXT is selected. Separate from the
+    object toolbar below because it anchors to the selected text rather than
+    to an object's box, and the two selections are mutually exclusive.
+  -->
+  <div
+    v-if="textSelected"
+    data-markup-toolbar
+    class="pointer-events-auto absolute z-30 flex items-center gap-0.5 rounded-control
+           border border-border bg-surface-raised px-1 py-0.5 shadow-high"
+    :style="textStyle"
+    @pointerdown.stop
+  >
+    <IconButton size="sm" label="Highlight" @click="markup('highlight')">
+      <Highlighter :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <IconButton size="sm" label="Underline" @click="markup('underline')">
+      <Underline :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <IconButton size="sm" label="Strikeout" @click="markup('strikeout')">
+      <Strikethrough :size="16" :stroke-width="1.5" />
+    </IconButton>
+  </div>
+
   <div
     v-if="selected"
     data-selection-toolbar

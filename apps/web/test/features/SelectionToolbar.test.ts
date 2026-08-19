@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useEditsStore } from '@/stores/edits'
+import { useSelectionStore } from '@/stores/selection'
 import type { PageState } from '@/stores/document'
 import type { EditObject } from '@margin/pdf-core'
 
@@ -85,6 +86,87 @@ describe('SelectionToolbar', () => {
     edits.select(['o1'])
     const before = edits.historySize
     await mountFor().get('[aria-label="Bring to front"]').trigger('click')
+    expect(edits.historySize).toBe(before + 1)
+  })
+})
+
+// Task 38: turning a TEXT selection into a native markup annotation.
+describe('SelectionToolbar markup actions', () => {
+  let edits: ReturnType<typeof useEditsStore>
+  let selection: ReturnType<typeof useSelectionStore>
+
+  /** Two characters on one line, in MuPDF page space (top-down). */
+  const index = {
+    lines: [{
+      bbox: [10, 100, 30, 120] as [number, number, number, number],
+      text: 'ab', font: 'Helvetica', size: 10,
+      chars: [
+        { char: 'a', quad: [10, 100, 20, 100, 10, 120, 20, 120] as never },
+        { char: 'b', quad: [20, 100, 30, 100, 20, 120, 30, 120] as never },
+      ],
+    }],
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    edits = useEditsStore()
+    selection = useSelectionStore()
+    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    selection.setIndex('p1', index)
+  })
+
+  const mountFor = () => mount(SelectionToolbar, { props: { page, zoom: 1 } })
+
+  function selectText(): void {
+    selection.begin({ line: 0, char: 0 })
+    selection.extend({ line: 0, char: 1 })
+  }
+
+  it('shows no markup toolbar without a text selection', () => {
+    expect(mountFor().find('[data-markup-toolbar]').exists()).toBe(false)
+  })
+
+  it('shows the three markup actions when text is selected', () => {
+    selectText()
+    const w = mountFor()
+    expect(w.find('[data-markup-toolbar]').exists()).toBe(true)
+    for (const label of ['Highlight', 'Underline', 'Strikeout']) {
+      expect(w.find(`[aria-label="${label}"]`).exists()).toBe(true)
+    }
+  })
+
+  it.each(['Highlight', 'Underline', 'Strikeout'] as const)(
+    'creates a %s object from the selected quads',
+    async (label) => {
+      selectText()
+      await mountFor().get(`[aria-label="${label}"]`).trigger('click')
+      const object = Object.values(edits.doc.objects)[0]!
+      expect(object.kind).toBe(label.toLowerCase())
+      expect((object as { quads: number[][] }).quads).toEqual([[10, 100, 30, 100, 10, 120, 30, 120]])
+    },
+  )
+
+  // Quads stay in MuPDF page space; the object's rect is raw bottom-up PDF
+  // space like every other object. Two spaces in one object is deliberate.
+  it('stores the rect in bottom-up PDF space while the quads stay top-down', async () => {
+    selectText()
+    await mountFor().get('[aria-label="Highlight"]').trigger('click')
+    const object = Object.values(edits.doc.objects)[0]!
+    // Quads span y 100..120 top-down on a 792pt page -> rect bottom at 672.
+    expect(object.rect).toEqual({ x: 10, y: 672, w: 20, h: 20 })
+  })
+
+  it('clears the text selection and selects the new object', async () => {
+    selectText()
+    await mountFor().get('[aria-label="Highlight"]').trigger('click')
+    expect(selection.hasSelection).toBe(false)
+    expect(edits.selection).toEqual([Object.keys(edits.doc.objects)[0]])
+  })
+
+  it('is one undo step', async () => {
+    selectText()
+    const before = edits.historySize
+    await mountFor().get('[aria-label="Highlight"]').trigger('click')
     expect(edits.historySize).toBe(before + 1)
   })
 })

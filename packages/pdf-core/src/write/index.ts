@@ -10,6 +10,7 @@ import { writeImage } from './objects/image.js'
 import { createXObjectCache, type XObjectCache } from './xobject.js'
 import { writeInk } from './objects/ink.js'
 import { writeLink } from './objects/link.js'
+import { writeMarkup } from './objects/markup.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -74,6 +75,12 @@ WRITERS.link = writeLink
 // writer also means they share the embed-once XObject cache, so one signature
 // applied to every page of a contract embeds once.
 WRITERS.signature = writeImage
+
+// Task 38. Native /QuadPoints annotations -- they stay editable and
+// removable in other PDF tools and do not damage the page.
+WRITERS.highlight = writeMarkup
+WRITERS.underline = writeMarkup
+WRITERS.strikeout = writeMarkup
 
 /**
  * Build the exported document.
@@ -168,3 +175,4 @@ export { writeImage } from './objects/image.js'
 export { createXObjectCache, type XObjectCache } from './xobject.js'
 export { writeInk } from './objects/ink.js'
 export { writeLink } from './objects/link.js'
+export { writeMarkup } from './objects/markup.js'

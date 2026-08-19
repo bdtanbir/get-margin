@@ -10,6 +10,7 @@ import SelectionChrome from './SelectionChrome.vue'
 import TextEditor from './TextEditor.vue'
 import InkCanvas from './InkCanvas.vue'
 import TextSelectionLayer from './TextSelectionLayer.vue'
+import MarkupObject from './objects/MarkupObject.vue'
 import { useTextSelection } from './useTextSelection'
 import { useSelectionStore } from '@/stores/selection'
 import { getPdfClient } from '@/workers/pdfClient'
@@ -31,11 +32,26 @@ const edits = useEditsStore()
 const viewBox = computed(() => svgViewBox(props.page.geometry))
 const rootTransform = computed(() => svgRootTransform(props.page.geometry))
 
-const objects = computed(() =>
+const MARKUP_KINDS = ['highlight', 'underline', 'strikeout'] as const
+const isMarkup = (kind: string): boolean =>
+  (MARKUP_KINDS as readonly string[]).includes(kind)
+
+const onPage = computed(() =>
   Object.values(edits.doc.objects)
     .filter((o) => o.pageId === props.page.id)
     .sort((a, b) => a.z - b.z),
 )
+
+const objects = computed(() => onPage.value.filter((o) => !isMarkup(o.kind)))
+
+/**
+ * Markup objects render OUTSIDE the y-flipped root <g>: their quads are in
+ * MuPDF PAGE space (top-down), unlike every other object's raw bottom-up
+ * rect. Putting them inside would flip them onto the mirror image of the
+ * text they mark -- which is precisely the bug the export path's
+ * markup.test.ts pins on the other side.
+ */
+const markup = computed(() => onPage.value.filter((o) => isMarkup(o.kind)))
 
 const tools = useToolsStore()
 const draw = useDrawTool(() => props.page, () => props.zoom)
@@ -187,6 +203,16 @@ const draft = computed(() => {
         which is what the viewBox describes. Inside, the page transform would
         be applied to them a second time.
       -->
+      <g
+        v-for="o in markup"
+        :key="o.id"
+        :data-object-id="o.id"
+        :opacity="o.opacity"
+        class="pointer-events-auto"
+        @pointerdown="edits.select([o.id])"
+      >
+        <MarkupObject :object="(o as never)" />
+      </g>
       <TextSelectionLayer :page="props.page" />
     </svg>
 
