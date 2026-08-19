@@ -347,3 +347,28 @@ describe('PdfService.render across sources', () => {
     expect(() => svc.render({ id: 2, page: 0, scale: 1, sourceId: added.sourceId })).not.toThrow()
   })
 })
+
+// Task 70. The fill overlay reads fields from the SOURCE document, because
+// the page it draws over is the source page as rendered.
+describe('PdfService.listFields', () => {
+  it('returns nothing for a document with no form', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    expect(svc.listFields(undefined, 0)).toEqual([])
+  })
+
+  it('throws by name when no document is open', () => {
+    expect(() => new PdfService().listFields(undefined, 0)).toThrow(/no document open/)
+  })
+
+  it('reads a merged source’s fields through the same handle cache as render', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+    // Both sources are formless, so this asserts the plumbing rather than
+    // the contents: the call must resolve the secondary handle and not
+    // silently answer for the primary.
+    expect(() => svc.listFields(added.sourceId, 5)).not.toThrow()
+    expect(svc.listFields(added.sourceId, 5)).toEqual([])
+  })
+})

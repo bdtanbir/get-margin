@@ -16,6 +16,8 @@ import { writeLink } from './objects/link.js'
 import { writeMarkup } from './objects/markup.js'
 import { writeField } from './objects/field.js'
 export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
+export { listFields, fieldKey } from './fields.js'
+export type { SourceField, SourceFieldType } from './fields.js'
 import { migrateEditDocument } from './migrate.js'
 import { stripActiveContent, anythingStripped, type StrippedContent } from './sanitize.js'
 

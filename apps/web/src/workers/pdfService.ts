@@ -1,6 +1,7 @@
 import {
-  PdfDocument, renderPage, replay, buildQuadIndex,
+  PdfDocument, renderPage, replay, buildQuadIndex, listFields,
   type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
+  type SourceField,
 } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
@@ -260,6 +261,24 @@ export class PdfService {
     const index = buildQuadIndex(doc, page)
     this.#quadCache.set(page, index)
     return index
+  }
+
+  /**
+   * The form fields on one page of one source.
+   *
+   * Reads from the SOURCE document, not from an assembled export copy: the
+   * fill overlay draws over the page as rendered, and the page as rendered
+   * is the source page. Uses the same #docFor handle cache as render(), so
+   * a merged document's fields are readable without reopening per call.
+   *
+   * `pageRef` keys unnamed fields and names the source page rather than the
+   * document page -- a document page can be reordered or duplicated, and
+   * two document pages cloned from one source page show the same widget.
+   */
+  listFields(sourceId: SourceId | undefined, page: number): SourceField[] {
+    const doc = this.#docFor(sourceId)
+    if (!doc) throw new Error('no document open')
+    return listFields(doc._raw(), page, `${sourceId ?? this.#primarySource ?? 'src-0'}:${page}`)
   }
 
   close(): void {
