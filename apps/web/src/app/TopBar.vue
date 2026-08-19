@@ -6,6 +6,7 @@ import IconButton from '@/ui/IconButton.vue'
 import Tooltip from '@/ui/Tooltip.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
+import { useAutosaveStore } from '@/stores/autosave'
 import { useTheme } from '@/lib/theme'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
@@ -17,6 +18,7 @@ const emit = defineEmits<{ togglePanel: [] }>()
 
 const doc = useDocumentStore()
 const edits = useEditsStore()
+const autosave = useAutosaveStore()
 const { choice, cycle } = useTheme()
 const icon = { light: Sun, dark: Moon, system: Monitor }
 
@@ -126,6 +128,19 @@ async function download(): Promise<void> {
         <component :is="icon[choice]" :size="17" :stroke-width="1.5" />
       </IconButton>
     </Tooltip>
+
+    <!--
+      Autosave state, said plainly. An editor that saves silently leaves
+      the user unsure whether closing the tab is safe, and it is the signal
+      e2e waits on rather than guessing at the debounce.
+    -->
+    <span
+      v-if="autosave.state"
+      :data-autosave-state="autosave.state"
+      class="text-[12px] text-text-subtle"
+      role="status"
+      aria-live="polite"
+    >{{ autosave.state === 'saving' ? 'Saving…' : 'Saved' }}</span>
 
     <!--
       Undo/redo as buttons as well as shortcuts: the mobile shell has no

@@ -168,3 +168,45 @@ describe('useAutosaveStore', () => {
     })
   })
 })
+
+// Caught by e2e first: discarding a restore re-saved the emptied document,
+// so reopening the same file offered to restore nothing at all.
+describe('nothing worth saving', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    seedPages(2)
+  })
+
+  afterEach(() => {
+    useAutosaveStore().stop()
+    vi.useRealTimers()
+  })
+
+  it('does not save a document with no objects and no history', async () => {
+    const store = useAutosaveStore()
+    store.start()
+    await store.flush()
+    expect(putEdit).not.toHaveBeenCalled()
+  })
+
+  it('saves once something has actually been edited', async () => {
+    const edits = useEditsStore()
+    const store = useAutosaveStore()
+    store.start()
+    edits.applyOp({ type: 'addObject', object: rect('o1') }, 'Draw')
+    await store.flush()
+    expect(putEdit).toHaveBeenCalledTimes(1)
+  })
+
+  // A page delete leaves no objects behind but is certainly worth keeping.
+  it('saves a structural edit that leaves no objects', async () => {
+    const edits = useEditsStore()
+    const store = useAutosaveStore()
+    store.start()
+    edits.applyOp({ type: 'deletePages', pageIds: ['p1'] }, 'Delete')
+    await store.flush()
+    expect(putEdit).toHaveBeenCalledTimes(1)
+  })
+})

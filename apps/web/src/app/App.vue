@@ -7,6 +7,7 @@ import MobileShell from './layouts/MobileShell.vue'
 import DropZone from '@/features/document/DropZone.vue'
 import PasswordPrompt from '@/features/document/PasswordPrompt.vue'
 import ErrorBoundary from './ErrorBoundary.vue'
+import RestorePrompt from '@/features/document/RestorePrompt.vue'
 
 useTheme()
 const { isDesktop } = useShell()
@@ -60,5 +61,10 @@ function record(err: Error): void {
   <DropZone v-else-if="doc.status !== 'ready'" />
   <ErrorBoundary v-else label="The editor" @captured="record">
     <component :is="isDesktop ? DesktopShell : MobileShell" />
+    <!--
+      Outside the shells so it survives the desktop/mobile swap, and inside
+      the boundary so a failure in it is caught like any other.
+    -->
+    <RestorePrompt />
   </ErrorBoundary>
 </template>
