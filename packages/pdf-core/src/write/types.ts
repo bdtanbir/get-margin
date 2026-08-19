@@ -261,6 +261,22 @@ export type EditDocument = {
    * are gone from the exported file. Off by default for that reason.
    */
   flattenForms: boolean
+  /**
+   * The document description, or undefined to leave the source's alone.
+   *
+   * Unlike a password this IS safe to autosave: a title and author are
+   * document content, not a secret, and losing them on reload would be a
+   * worse trade than storing them.
+   */
+  metadata?: {
+    title: string
+    author: string
+    subject: string
+    keywords: string
+    creator: string
+  }
+  /** Remove all metadata on export. Takes precedence over `metadata`. */
+  stripMetadata?: boolean
 }
 
 

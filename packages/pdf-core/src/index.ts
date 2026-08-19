@@ -18,6 +18,10 @@ export {
   ProtectionFailed, PERMISSION_BITS,
 } from './write/protect.js'
 export type { Protection, PermissionName } from './write/protect.js'
+export {
+  readMetadata, writeMetadata, stripMetadata, buildXmp, EMPTY_METADATA,
+} from './write/metadata.js'
+export type { DocumentMetadata } from './write/metadata.js'
 export type { StampContext } from './write/objects/stamp.js'
 export type { SourceField, SourceFieldType } from './write/fields.js'
 export { migrateEditDocument, LEGACY_SOURCE_ID } from './write/migrate.js'

@@ -18,12 +18,17 @@ import { writeField } from './objects/field.js'
 import { writeStamp } from './objects/stamp.js'
 export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
 export { listFields, fieldKey, applyFieldValues, hasAcroForm } from './fields.js'
+export {
+  readMetadata, writeMetadata, stripMetadata, buildXmp, EMPTY_METADATA,
+  type DocumentMetadata,
+} from './metadata.js'
 export type { SourceField, SourceFieldType } from './fields.js'
 import { migrateEditDocument } from './migrate.js'
 import { stripActiveContent, anythingStripped, type StrippedContent } from './sanitize.js'
 import { applyFieldValues } from './fields.js'
 import { applyRedactions } from './objects/redact.js'
 import { protectedSave, type Protection } from './protect.js'
+import { writeMetadata, stripMetadata } from './metadata.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -146,6 +151,15 @@ export type ReplayOptions = {
    * is the right trade against writing someone's password to disk.
    */
   protection?: Protection
+  /**
+   * The value written as /ModDate and XMP xmp:ModifyDate.
+   *
+   * Passed in rather than read from the clock, because replay must be a
+   * pure function of its inputs: a writer that stamped `new Date()` would
+   * make two exports of the same document differ, which would break the
+   * byte-identical guarantees the rest of this file works to keep.
+   */
+  modified?: string
 }
 
 export function replay(
@@ -180,6 +194,9 @@ export function replay(
   // pass-through would hand back the original, unencrypted, having been
   // asked for a password.
   const protection = opts.protection
+  // Describing the document differently is an edit to it, so an otherwise
+  // untouched file must not come back through the pass-through unchanged.
+  const hasMetadata = editDoc.stripMetadata === true || editDoc.metadata !== undefined
 
   // See assemble(). Pages come back already in pageOrder, so from here on a
   // page is addressed by its POSITION, not its sourceIndex.
@@ -196,7 +213,7 @@ export function replay(
     // e2e/download.spec.ts asserts this byte-for-byte.
     if (
       unchanged && !hasObjects && !hasFills && !flatten && !hasTabOrder && !protection
-      && !anythingStripped(stripped)
+      && !hasMetadata && !anythingStripped(stripped)
     ) {
       const original = sources.get(Object.keys(editDoc.sources)[0]!)
       if (original) return original
@@ -303,6 +320,15 @@ export function replay(
     // /Annots order, so it has to be applied while there is still an
     // /Annots array of widgets to order.
     applyTabOrder(raw, editDoc)
+
+    // Metadata before flatten and protection: both rewrite the document in
+    // ways that make later edits to the catalog awkward, and neither needs
+    // to see the description.
+    if (editDoc.stripMetadata) {
+      stripMetadata(raw)
+    } else if (editDoc.metadata) {
+      writeMetadata(raw, editDoc.metadata, opts.modified ?? 'D:20000101000000Z')
+    }
 
     // LAST, and on the assembled export copy only. bake() draws each
     // field's appearance into the page content and removes /AcroForm
