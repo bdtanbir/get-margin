@@ -15,6 +15,9 @@ export type ToolId =
   // inspector rather than costing six more rail entries in a product where
   // forms are one phase of eight.
   | 'field'
+  // Task 82. Text-selection driven, like the markup tools -- and the only
+  // one of them that REMOVES what it covers.
+  | 'redact'
 
 /** An object being dragged out but not yet committed. */
 export type Draft = { pageId: string; rect: Rect }

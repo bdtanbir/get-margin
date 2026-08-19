@@ -12,6 +12,7 @@ import InkCanvas from './InkCanvas.vue'
 import CropOverlay from '@/features/pages/CropOverlay.vue'
 import TextSelectionLayer from './TextSelectionLayer.vue'
 import MarkupObject from './objects/MarkupObject.vue'
+import RedactionObject from './objects/RedactionObject.vue'
 import { useTextSelection } from './useTextSelection'
 import { useSelectionStore } from '@/stores/selection'
 import { useViewportStore } from '@/stores/viewport'
@@ -36,7 +37,10 @@ const edits = useEditsStore()
 const viewBox = computed(() => svgViewBox(props.page.geometry))
 const rootTransform = computed(() => svgRootTransform(props.page.geometry))
 
-const MARKUP_KINDS = ['highlight', 'underline', 'strikeout'] as const
+// Kinds whose geometry is MuPDF PAGE space rather than raw PDF space, so
+// they render OUTSIDE the y-flipped root <g>. Redaction joins the markup
+// three because its quads come from the same buildQuadIndex.
+const MARKUP_KINDS = ['highlight', 'underline', 'strikeout', 'redaction'] as const
 const isMarkup = (kind: string): boolean =>
   (MARKUP_KINDS as readonly string[]).includes(kind)
 
@@ -73,10 +77,9 @@ const svgEl = ref<SVGSVGElement | null>(null)
  * markup tools, which is exactly when the user is pointing at TEXT rather
  * than drawing over it.
  */
+const SELECTING_TOOLS = ['select', 'highlight', 'underline', 'strikeout', 'redact'] as const
 const selecting = computed(() =>
-  (['select', 'highlight', 'underline', 'strikeout'] as const).includes(
-    tools.active as 'select' | 'highlight' | 'underline' | 'strikeout',
-  ),
+  (SELECTING_TOOLS as readonly string[]).includes(tools.active),
 )
 
 /**
@@ -236,7 +239,8 @@ const draft = computed(() => {
         class="pointer-events-auto"
         @pointerdown="edits.select([o.id])"
       >
-        <MarkupObject :object="(o as never)" />
+        <RedactionObject v-if="o.kind === 'redaction'" :object="(o as never)" />
+        <MarkupObject v-else :object="(o as never)" />
       </g>
       <TextSelectionLayer :page="props.page" />
     </svg>

@@ -30,10 +30,18 @@ describe('ToolRail', () => {
     expect(useToolsStore().active).toBe('whiteout')
   })
 
+  /**
+   * Narrowed in Phase 6, when a real redaction shipped -- see
+   * whiteoutHonesty.test.ts for the full reasoning. The claim that matters
+   * is that WHITEOUT is not called redaction, not that the word is absent.
+   */
   it('names the whiteout tool honestly — never "redact"', () => {
-    const html = mount(ToolRail).html().toLowerCase()
-    expect(html).toContain('whiteout')
-    expect(html).not.toContain('redact')
+    const labels = mount(ToolRail).findAll('button')
+      .map((b) => (b.attributes('aria-label') ?? '').toLowerCase())
+    expect(labels).toContain('whiteout')
+    // Exactly one control may carry the word, and it is the one that
+    // genuinely removes text.
+    expect(labels.filter((l) => l.includes('redact'))).toEqual(['redact'])
   })
 })
 

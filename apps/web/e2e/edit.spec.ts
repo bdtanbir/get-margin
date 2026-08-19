@@ -107,9 +107,22 @@ test.describe('editing', () => {
 
   test('never names the whiteout tool "redact"', async ({ page }) => {
     await openFixture(page)
-    // Spec 2.1: the tool covers content and does not remove it; calling it
-    // redaction is a real user-harm risk.
+    // Spec 2.1: whiteout covers content and does not remove it, so calling
+    // it redaction is a real user-harm risk.
+    //
+    // NARROWED in Phase 6, when a tool that genuinely removes text shipped.
+    // The original form banned the word from the whole page, which was
+    // right while nothing could legitimately carry it. Now exactly one
+    // control may, and the claim that matters is the narrower one: the
+    // control named Whiteout is not the control named Redact.
     await expect(page.getByRole('button', { name: 'Whiteout' }).first()).toBeVisible()
-    expect((await page.content()).toLowerCase()).not.toContain('redact')
+    await expect(page.getByRole('button', { name: 'Redact' }).first()).toBeVisible()
+
+    const named = await page.getByRole('button').evaluateAll((buttons) =>
+      buttons
+        .map((b) => (b.getAttribute('aria-label') ?? '').toLowerCase())
+        .filter((label) => label.includes('redact')),
+    )
+    expect(named).toEqual(['redact'])
   })
 })

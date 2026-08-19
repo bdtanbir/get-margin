@@ -58,13 +58,43 @@ describe('whiteout honesty', () => {
     expect(mount(Inspector).text()).toContain('still be copied out')
   })
 
-  it('never says "redact" anywhere in the inspector', () => {
-    edits.select(['w1'])
-    expect(visibleMarkup(mount(Inspector))).not.toContain('redact')
+  /**
+   * NARROWED in Phase 6, when a real redaction shipped.
+   *
+   * The original assertion was that the word "redact" appeared nowhere in
+   * the inspector or the rail. That was right while no genuine redaction
+   * existed: the only thing the word could have referred to was whiteout,
+   * and that would have been the user-harm risk this file guards.
+   *
+   * There is now a tool that actually removes text, verified by two
+   * extractors that share no code with MuPDF. So the word is allowed --
+   * pointing someone from whiteout TO it is the honest thing to do -- and
+   * what must remain true is the narrower, real claim: whiteout itself is
+   * never called redaction.
+   */
+  it('never calls the whiteout tool "redact"', () => {
+    const rail = mount(ToolRail)
+    const labels = rail.findAll('button').map((b) => (b.attributes('aria-label') ?? '').toLowerCase())
+    // A Redact entry may exist. A whiteout entry named "redact" may not.
+    expect(labels).toContain('whiteout')
+    expect(labels.filter((l) => l.includes('redact'))).toEqual(['redact'])
   })
 
-  it('never says "redact" anywhere in the tool rail', () => {
-    expect(visibleMarkup(mount(ToolRail))).not.toContain('redact')
+  it('never describes whiteout as removing anything', () => {
+    edits.select(['w1'])
+    const notice = mount(Inspector).get('[data-whiteout-notice]').text().toLowerCase()
+    expect(notice).toContain('does not delete it')
+    expect(notice).not.toMatch(/whiteout (removes|deletes|redacts)/)
+  })
+
+  /**
+   * The other half, and new: now that a real one exists, the notice has
+   * somewhere to send people. Saying "this does not delete" without saying
+   * what does is half an answer.
+   */
+  it('points at the tool that does remove text', () => {
+    edits.select(['w1'])
+    expect(mount(Inspector).get('[data-whiteout-notice]').text()).toContain('Redact')
   })
 
   it('does not show the notice for other kinds', () => {
