@@ -1,7 +1,8 @@
 import {
-  PdfDocument, renderPage, replay, buildQuadIndex, listFields, readMetadata,
+  PdfDocument, renderPage, replay, buildQuadIndex, listFields, readMetadata, recompressImages,
   type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
   type SourceField, type Protection, type DocumentMetadata,
+  type CompressionPreset, type CompressionResult,
 } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
@@ -301,6 +302,23 @@ export class PdfService {
     const doc = this.#doc
     if (!doc) throw new Error('no document open')
     return readMetadata(doc._raw())
+  }
+
+  /**
+   * Compress the export, returning both sizes so the UI can show the trade
+   * before committing to it.
+   *
+   * Runs over the EXPORTED bytes rather than the source, because that is
+   * what the user is about to download -- estimating against the original
+   * would quote a saving on a file that no longer exists.
+   */
+  compress(
+    preset: CompressionPreset,
+    editDoc?: EditDocument,
+    fonts?: Map<string, Uint8Array>,
+  ): CompressionResult {
+    const exported = this.save(editDoc, fonts)
+    return recompressImages(exported, preset)
   }
 
   close(): void {

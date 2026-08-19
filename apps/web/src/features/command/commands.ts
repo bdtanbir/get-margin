@@ -109,6 +109,13 @@ export function useCommands(): ComputedRef<Command[]> {
         run: () => dialogs.show('metadata'),
       },
       {
+        id: 'doc:compress',
+        label: 'Make the file smaller…',
+        group: 'Document',
+        available: hasDocument,
+        run: () => dialogs.show('compress'),
+      },
+      {
         id: 'doc:undo',
         label: 'Undo',
         group: 'Document',

@@ -22,6 +22,10 @@ export {
   readMetadata, writeMetadata, stripMetadata, buildXmp, EMPTY_METADATA,
   type DocumentMetadata,
 } from './metadata.js'
+export {
+  recompressImages, PRESETS as COMPRESSION_PRESETS,
+  type CompressionPreset, type CompressionResult,
+} from './compress.js'
 export type { SourceField, SourceFieldType } from './fields.js'
 import { migrateEditDocument } from './migrate.js'
 import { stripActiveContent, anythingStripped, type StrippedContent } from './sanitize.js'

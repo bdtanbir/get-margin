@@ -2,7 +2,7 @@ import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
 import type {
   EditDocument, PageQuadIndex, SourceId, StrippedContent, SourceField, Protection,
-  DocumentMetadata,
+  DocumentMetadata, CompressionPreset, CompressionResult,
 } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
@@ -68,6 +68,12 @@ export type PdfClient = {
   listFields(sourceId: SourceId | undefined, page: number): Promise<SourceField[]>
   /** The description the source document carries. See PdfService.metadata. */
   metadata(): Promise<DocumentMetadata>
+  /** Compress the export. See PdfService.compress. */
+  compress(
+    preset: CompressionPreset,
+    editDoc?: EditDocument,
+    fonts?: Map<string, Uint8Array>,
+  ): Promise<CompressionResult>
   /** Register another file for merging. See PdfService.addSource. */
   addSource(bytes: Uint8Array): Promise<{
     sourceId: SourceId
@@ -223,6 +229,15 @@ export function createPdfClient(): PdfClient {
     async metadata() {
       await ready
       return remote.metadata()
+    },
+
+    async compress(preset, editDoc, fonts) {
+      await ready
+      return withTimeout(
+        remote.compress(preset, editDoc, fonts),
+        EXPORT_TIMEOUT_MS,
+        'Compressing took too long and was stopped.',
+      )
     },
 
     async save(editDoc, fonts, onProgress, onStripped, protection) {
