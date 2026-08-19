@@ -6,6 +6,7 @@ import ZoomPill from '@/features/viewport/ZoomPill.vue'
 import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
 import ToolRail from '@/features/tools/ToolRail.vue'
 import Inspector from '@/features/tools/Inspector.vue'
+import ImagePicker from '@/features/tools/ImagePicker.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useViewportShortcuts } from '@/features/viewport/useViewportShortcuts'
 
@@ -32,6 +33,8 @@ useViewportShortcuts()
 
 <template>
   <div class="flex h-dvh flex-col">
+    <!-- Hidden file input for the Image tool; see ImagePicker.vue. -->
+    <ImagePicker v-if="doc.isReady" />
     <TopBar :panel-open="panelOpen" @toggle-panel="panelOpen = !panelOpen" />
     <div class="flex min-h-0 flex-1">
       <!--

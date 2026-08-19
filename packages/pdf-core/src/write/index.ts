@@ -6,6 +6,8 @@ import { writeShape } from './objects/shape.js'
 import { writeWhiteout } from './objects/whiteout.js'
 import { writeText } from './objects/text.js'
 import { FontRegistry, createMeasurer, type FontProvider } from './fonts.js'
+import { writeImage } from './objects/image.js'
+import { createXObjectCache, type XObjectCache } from './xobject.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -19,6 +21,11 @@ export type WriteContext = {
   fonts: FontRegistry
   /** Advance width of `text` in points. See createMeasurer in fonts.ts. */
   measure: (text: string, family: string, size: number) => number
+  /**
+   * Task 32, the third and final widening. Embed-once memo for image
+   * XObjects, keyed by payload -- see xobject.ts.
+   */
+  xobject: XObjectCache
 }
 
 export type ObjectWriter = (ctx: WriteContext, object: EditObject) => void
@@ -46,6 +53,10 @@ WRITERS.whiteout = writeWhiteout
 // measured that FreeText silently ignores any font outside the standard 14,
 // and every bundled face is non-base-14.
 WRITERS.text = writeText
+
+// Task 32. Drawn as an XObject in the content stream, not an annotation:
+// an image is page content, and content is what survives flattening.
+WRITERS.image = writeImage
 
 /**
  * Build the exported document.
@@ -83,6 +94,9 @@ export function replay(
     // One registry per replay call, so a family used on five pages is parsed
     // and embedded once rather than five times.
     const fonts = new FontRegistry(raw, provider)
+    // Per document, not per page: the SAME image placed on ten pages is one
+    // embedded stream referenced ten times.
+    const xobject = createXObjectCache()
 
     // Group objects by page once, then draw each page's objects in z order.
     // Sorting per page rather than globally keeps stacking well-defined
@@ -117,7 +131,7 @@ export function replay(
               `no writer registered for object kind "${object.kind}" (object ${object.id})`,
             )
           }
-          writer({ raw, page, geometry, fonts, measure }, object)
+          writer({ raw, page, geometry, fonts, measure, xobject }, object)
         }
       })
     }
@@ -133,3 +147,5 @@ export { writeShape } from './objects/shape.js'
 export { writeWhiteout } from './objects/whiteout.js'
 export { writeText, ASCENT_RATIO, LINE_HEIGHT } from './objects/text.js'
 export { FontRegistry, createMeasurer, pdfString, type FontProvider } from './fonts.js'
+export { writeImage } from './objects/image.js'
+export { createXObjectCache, type XObjectCache } from './xobject.js'

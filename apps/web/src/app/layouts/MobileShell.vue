@@ -7,6 +7,7 @@ import ZoomPill from '@/features/viewport/ZoomPill.vue'
 import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
 import ToolStrip from '@/features/tools/ToolStrip.vue'
 import InspectorSheet from '@/features/tools/InspectorSheet.vue'
+import ImagePicker from '@/features/tools/ImagePicker.vue'
 import IconButton from '@/ui/IconButton.vue'
 import { useDocumentStore } from '@/stores/document'
 
@@ -20,6 +21,8 @@ const pagesOpen = ref(false)
 
 <template>
   <div class="flex h-dvh flex-col">
+    <!-- Hidden file input for the Image tool; see ImagePicker.vue. -->
+    <ImagePicker v-if="doc.isReady" />
     <TopBar compact />
     <!--
       Amendment A3 (Task 21, supersedes the Task 20 version of this
