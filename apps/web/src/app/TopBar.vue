@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Download, Sun, Moon, Monitor, PanelLeft, Undo2, Redo2 } from 'lucide-vue-next'
+import { Download, Sun, Moon, Monitor, PanelLeft, Undo2, Redo2, ShieldCheck } from 'lucide-vue-next'
 import Button from '@/ui/Button.vue'
 import IconButton from '@/ui/IconButton.vue'
 import Tooltip from '@/ui/Tooltip.vue'
@@ -11,6 +11,7 @@ import { useTheme } from '@/lib/theme'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
 import { fontsForExport } from '@/lib/fonts'
+import PrivacyPage from '@/features/document/PrivacyPage.vue'
 import type { TextObject, StrippedContent } from '@margin/pdf-core'
 
 const props = defineProps<{ compact?: boolean; panelOpen?: boolean }>()
@@ -42,6 +43,7 @@ const progress = ref<{ done: number; total: number } | undefined>(undefined)
  * discover it themselves.
  */
 const stripped = ref<StrippedContent | undefined>(undefined)
+const privacyOpen = ref(false)
 
 const strippedMessage = computed(() => {
   const s = stripped.value
@@ -169,6 +171,13 @@ async function download(): Promise<void> {
         <Redo2 :size="16" :stroke-width="1.5" />
       </IconButton>
     </Tooltip>
+
+    <Tooltip content="Privacy" side="bottom">
+      <IconButton label="Privacy" size="sm" data-open-privacy @click="privacyOpen = true">
+        <ShieldCheck :size="16" :stroke-width="1.5" />
+      </IconButton>
+    </Tooltip>
+    <PrivacyPage v-if="privacyOpen" @close="privacyOpen = false" />
 
     <Tooltip content="Download PDF" side="bottom">
       <Button
