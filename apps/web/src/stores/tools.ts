@@ -7,6 +7,9 @@ export type ToolId =
   | 'select' | 'text' | 'image' | 'rect' | 'ellipse' | 'line' | 'arrow'
   | 'ink' | 'whiteout' | 'link' | 'signature'
   | 'highlight' | 'underline' | 'strikeout'
+  // Task 48. A PAGE tool, not an object tool: it changes the page's frame
+  // rather than adding anything to it.
+  | 'crop'
 
 /** An object being dragged out but not yet committed. */
 export type Draft = { pageId: string; rect: Rect }

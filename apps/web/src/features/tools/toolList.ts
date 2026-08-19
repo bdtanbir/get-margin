@@ -1,7 +1,7 @@
 import type { Component } from 'vue'
 import {
   MousePointer2, Type, Image, Square, Circle, Minus, ArrowRight,
-  Pen, Eraser, Link2, Signature, Highlighter, Underline, Strikethrough,
+  Pen, Eraser, Link2, Signature, Highlighter, Underline, Strikethrough, Crop,
 } from 'lucide-vue-next'
 import type { ToolId } from '@/stores/tools'
 
@@ -30,4 +30,5 @@ export const TOOLS: Array<{ id: ToolId; label: string; icon: Component }> = [
   { id: 'highlight', label: 'Highlight', icon: Highlighter },
   { id: 'underline', label: 'Underline', icon: Underline },
   { id: 'strikeout', label: 'Strikeout', icon: Strikethrough },
+  { id: 'crop', label: 'Crop', icon: Crop },
 ]
