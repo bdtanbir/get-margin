@@ -77,7 +77,7 @@ describe('image writer', () => {
   const geom = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
 
   it('draws the image at the stored PDF coordinates', () => {
-    const out = replay(bytes('multi-page'), docWith([imageObject('i1', solidPng(255, 0, 0))]))
+    const out = replay(new Map([['src-0', bytes('multi-page')]]), docWith([imageObject('i1', solidPng(255, 0, 0))]))
     const c = pdfToView({ x: 160, y: 360 }, geom, 1)
     const px = sample(out, c.x, c.y)
     expect(px.r).toBeGreaterThan(200)
@@ -100,7 +100,7 @@ describe('image writer', () => {
     }
     const data = new Uint8Array(PNG.sync.write(png, { deflateLevel: 0 }))
     const rect = { x: 100, y: 300, w: 100, h: 100 }
-    const out = replay(bytes('multi-page'), docWith([imageObject('i1', data, rect)]))
+    const out = replay(new Map([['src-0', bytes('multi-page')]]), docWith([imageObject('i1', data, rect)]))
     // PDF y=380 is near the TOP of the box, which is the image's top half.
     const top = pdfToView({ x: 150, y: 380 }, geom, 1)
     const bottom = pdfToView({ x: 150, y: 320 }, geom, 1)
@@ -110,8 +110,8 @@ describe('image writer', () => {
 
   it('grows the exported file by roughly the image payload', () => {
     const data = noisePng(1)
-    const bare = replay(bytes('multi-page'), docWith([]))
-    const out = replay(bytes('multi-page'), docWith([imageObject('i1', data)]))
+    const bare = replay(new Map([['src-0', bytes('multi-page')]]), docWith([]))
+    const out = replay(new Map([['src-0', bytes('multi-page')]]), docWith([imageObject('i1', data)]))
     // 160x160 of RGB noise cannot compress below ~50KB.
     expect(out.byteLength).toBeGreaterThan(bare.byteLength + 50_000)
   })
@@ -127,8 +127,8 @@ describe('image writer', () => {
   it('embeds one shared XObject for repeated placements of the same bytes', () => {
     const data = noisePng(2)
     const place = (id: string, x: number) => imageObject(id, data, { x, y: 300, w: 60, h: 60 })
-    const one = replay(bytes('multi-page'), docWith([place('i1', 100)]))
-    const four = replay(bytes('multi-page'), docWith(
+    const one = replay(new Map([['src-0', bytes('multi-page')]]), docWith([place('i1', 100)]))
+    const four = replay(new Map([['src-0', bytes('multi-page')]]), docWith(
       [place('i1', 100), place('i2', 200), place('i3', 300), place('i4', 400)],
     ))
     // Three extra placements add three short content fragments (well under
@@ -139,8 +139,8 @@ describe('image writer', () => {
   it('shares the XObject across pages, not just within one', () => {
     const data = noisePng(3)
     const rect = { x: 100, y: 300, w: 60, h: 60 }
-    const onePage = replay(bytes('multi-page'), docWith([imageObject('i1', data, rect, 'p0')]))
-    const twoPages = replay(bytes('multi-page'), docWith([
+    const onePage = replay(new Map([['src-0', bytes('multi-page')]]), docWith([imageObject('i1', data, rect, 'p0')]))
+    const twoPages = replay(new Map([['src-0', bytes('multi-page')]]), docWith([
       imageObject('i1', data, rect, 'p0'),
       imageObject('i2', data, rect, 'p1'),
     ]))
@@ -153,8 +153,8 @@ describe('image writer', () => {
 
   it('embeds two DIFFERENT images separately', () => {
     const rect = (x: number) => ({ x, y: 300, w: 60, h: 60 })
-    const one = replay(bytes('multi-page'), docWith([imageObject('i1', noisePng(4), rect(100))]))
-    const two = replay(bytes('multi-page'), docWith([
+    const one = replay(new Map([['src-0', bytes('multi-page')]]), docWith([imageObject('i1', noisePng(4), rect(100))]))
+    const two = replay(new Map([['src-0', bytes('multi-page')]]), docWith([
       imageObject('i1', noisePng(4), rect(100)),
       imageObject('i2', noisePng(5), rect(200)),
     ]))
@@ -163,7 +163,7 @@ describe('image writer', () => {
   })
 
   it('honours opacity', () => {
-    const out = replay(bytes('multi-page'), docWith([{
+    const out = replay(new Map([['src-0', bytes('multi-page')]]), docWith([{
       ...imageObject('i1', solidPng(255, 0, 0)), opacity: 0.5,
     } as EditObject]))
     const c = pdfToView({ x: 160, y: 360 }, geom, 1)

@@ -180,14 +180,18 @@ describe('Phase 2 golden suite', () => {
   })
 
   it.each(TARGETS)('exports every object kind onto $name', (target) => {
-    expect(() => replay(bytes(target.fixture), everyKind(target), { fonts: FONTS })).not.toThrow()
+    expect(() => replay(new Map([['src-0', bytes(target.fixture)]]), everyKind(target), { fonts: FONTS })).not.toThrow()
   })
 
   it.each(TARGETS)('matches the reviewed golden for $name', async (target) => {
+    // Page 0 of the OUTPUT, not of the source: since Task 44 the edit
+    // document's pageOrder is the exported document, so a one-page edit
+    // produces a one-page file. The rendered content is the same page it
+    // always was, which is why the existing goldens still match.
     await assertGolden(
       `export-all-${target.name}`,
-      replay(bytes(target.fixture), everyKind(target), { fonts: FONTS }),
-      { page: target.page },
+      replay(new Map([['src-0', bytes(target.fixture)]]), everyKind(target), { fonts: FONTS }),
+      { page: 0 },
     )
   })
 
@@ -197,14 +201,14 @@ describe('Phase 2 golden suite', () => {
     const src = bytes(target.fixture)
     const before = src.slice()
     const editDoc = everyKind(target)
-    const a = replay(src, editDoc, { fonts: FONTS })
-    const b = replay(src, editDoc, { fonts: FONTS })
+    const a = replay(new Map([['src-0', src]]), editDoc, { fonts: FONTS })
+    const b = replay(new Map([['src-0', src]]), editDoc, { fonts: FONTS })
     expect(src).toEqual(before)
     expect(a.byteLength).toBe(b.byteLength)
   })
 
   it.each(TARGETS)('produces a reopenable document for $name', (target) => {
-    const out = replay(bytes(target.fixture), everyKind(target), { fonts: FONTS })
+    const out = replay(new Map([['src-0', bytes(target.fixture)]]), everyKind(target), { fonts: FONTS })
     const doc = PdfDocument.open(out)
     try {
       expect(doc.pageCount).toBeGreaterThan(0)
@@ -213,10 +217,10 @@ describe('Phase 2 golden suite', () => {
 
   it.each(TARGETS)('keeps ink and markup as native annotations on $name', (target) => {
     const editDoc = everyKind(target)
-    const out = replay(bytes(target.fixture), editDoc, { fonts: FONTS })
+    const out = replay(new Map([['src-0', bytes(target.fixture)]]), editDoc, { fonts: FONTS })
     const doc = PdfDocument.open(out)
     try {
-      const page = doc._raw().loadPage(target.page)
+      const page = doc._raw().loadPage(0)
       try {
         const types = page.getAnnotations().map((a) => a.getType())
         // The semantic split: these stay editable in other PDF tools rather

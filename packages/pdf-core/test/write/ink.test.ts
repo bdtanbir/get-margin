@@ -62,23 +62,23 @@ describe('ink writer', () => {
   const geom = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
 
   it('exports a native Ink annotation, not content-stream paths', () => {
-    const annots = annotationsOf(replay(bytes('simple-text'), docWith([inkObject([LINE])])))
+    const annots = annotationsOf(replay(new Map([['src-0', bytes('simple-text')]]), docWith([inkObject([LINE])])))
     expect(annots).toHaveLength(1)
     expect(annots[0]!.type).toBe('Ink')
   })
 
   it('gives the annotation an appearance stream', () => {
     // Without /AP a viewer that does not synthesise one shows nothing.
-    expect(annotationsOf(replay(bytes('simple-text'), docWith([inkObject([LINE])])))[0]!.hasAP).toBe(true)
+    expect(annotationsOf(replay(new Map([['src-0', bytes('simple-text')]]), docWith([inkObject([LINE])])))[0]!.hasAP).toBe(true)
   })
 
   it('keeps each stroke separate rather than joining them into one', () => {
-    const annots = annotationsOf(replay(bytes('simple-text'), docWith([inkObject([LINE, SECOND])])))
+    const annots = annotationsOf(replay(new Map([['src-0', bytes('simple-text')]]), docWith([inkObject([LINE, SECOND])])))
     expect(annots[0]!.strokes).toBe(2)
   })
 
   it('renders visible ink along the stroke path', () => {
-    const out = replay(bytes('simple-text'), docWith([inkObject([LINE])]))
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([inkObject([LINE])]))
     const c = pdfToView({ x: 200, y: 400 }, geom, 1)
     const px = sample(out, c.x, c.y)
     expect(px.r).toBeGreaterThan(150)
@@ -93,7 +93,7 @@ describe('ink writer', () => {
     // One stroke high on the page. If y were unflipped it would render near
     // the bottom instead.
     const high = [100, 700, 300, 700]
-    const out = replay(bytes('simple-text'), docWith([inkObject([high])]))
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([inkObject([high])]))
     const at = pdfToView({ x: 200, y: 700 }, geom, 1)
     const mirrored = pdfToView({ x: 200, y: 92 }, geom, 1)
     expect(sample(out, at.x, at.y).r).toBeGreaterThan(150)
@@ -108,7 +108,7 @@ describe('ink writer', () => {
     try { g = doc.pageGeometry(0) } finally { doc.close() }
     const [x0, y0] = g.cropBox
     const stroke = [x0 + 100, y0 + 200, x0 + 300, y0 + 200]
-    const out = replay(bytes('rotated'), docWith([inkObject([stroke])]))
+    const out = replay(new Map([['src-0', bytes('rotated')]]), docWith([inkObject([stroke])]))
     const c = pdfToView({ x: x0 + 200, y: y0 + 200 }, g, 1)
     const px = sample(out, c.x, c.y)
     expect(px.r).toBeGreaterThan(150)
@@ -116,7 +116,7 @@ describe('ink writer', () => {
   })
 
   it('ignores a trailing unpaired coordinate rather than throwing', () => {
-    const out = replay(bytes('simple-text'), docWith([inkObject([[100, 400, 200, 400, 300]])]))
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([inkObject([[100, 400, 200, 400, 300]])]))
     expect(annotationsOf(out)[0]!.type).toBe('Ink')
   })
 })

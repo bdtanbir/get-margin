@@ -31,7 +31,7 @@ describe('replay', () => {
     const src = bytes('multi-page')
     // multi-page.pdf is 12 pages -- pinned by the existing
     // apps/web/test/workers/pdfService.test.ts, which asserts the same count.
-    const out = replay(src, emptyEdits(12))
+    const out = replay(new Map([['src-0', src]]), emptyEdits(12))
     const doc = PdfDocument.open(out)
     try {
       expect(doc.pageCount).toBe(12)
@@ -45,13 +45,13 @@ describe('replay', () => {
     // Reuses the Phase 0 golden rig: same committed baseline the read path
     // is already checked against, so a write-path regression that alters
     // untouched pages fails here.
-    await assertGolden('simple-text-p0', replay(src, emptyEdits(1)))
+    await assertGolden('simple-text-p0', replay(new Map([['src-0', src]]), emptyEdits(1)))
   })
 
   it('rejects an EditDocument written by a newer schema version', () => {
     const src = bytes('simple-text')
     const edits = { ...emptyEdits(1), version: EDIT_DOCUMENT_VERSION + 1 }
-    expect(() => replay(src, edits)).toThrow(/version/i)
+    expect(() => replay(new Map([['src-0', src]]), edits)).toThrow(/version/i)
   })
 
   it('throws rather than silently skipping an unknown object kind', () => {
@@ -59,7 +59,7 @@ describe('replay', () => {
     const edits = emptyEdits(1)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     edits.objects.x1 = { id: 'x1', pageId: 'p0', kind: 'nope' } as any
-    expect(() => replay(src, edits)).toThrow(/nope/)
+    expect(() => replay(new Map([['src-0', src]]), edits)).toThrow(/nope/)
   })
 
   it('throws when an object names a page the edit document does not define', () => {
@@ -68,7 +68,7 @@ describe('replay', () => {
     edits.pageOrder.push('ghost')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     edits.objects.x1 = { id: 'x1', pageId: 'ghost', kind: 'rect', z: 1 } as any
-    expect(() => replay(src, edits)).toThrow(/ghost/)
+    expect(() => replay(new Map([['src-0', src]]), edits)).toThrow(/ghost/)
   })
 
   it('draws each page\'s objects in ascending z order', () => {
@@ -86,7 +86,7 @@ describe('replay', () => {
     const previous = WRITERS.rect
     WRITERS.rect = (_ctx, object) => { seen.push(object.id) }
     try {
-      replay(src, edits)
+      replay(new Map([['src-0', src]]), edits)
     } finally {
       if (previous) WRITERS.rect = previous
       else delete WRITERS.rect
@@ -120,7 +120,7 @@ describe('replay progress and error context', () => {
 
   it('reports progress once per page written', () => {
     const seen: Array<[number, number]> = []
-    replay(src(), doc([rect('a', 'p0'), rect('b', 'p1')]), {
+    replay(new Map([['src-0', src()]]), doc([rect('a', 'p0'), rect('b', 'p1')]), {
       onProgress: (done, total) => seen.push([done, total]),
     })
     expect(seen).toEqual([[1, 2], [2, 2]])
@@ -130,14 +130,14 @@ describe('replay progress and error context', () => {
   // jumps to 100% on the first page and sits there.
   it('counts only the pages that carry objects', () => {
     const seen: Array<[number, number]> = []
-    replay(src(), doc([rect('a', 'p1')]), {
+    replay(new Map([['src-0', src()]]), doc([rect('a', 'p1')]), {
       onProgress: (done, total) => seen.push([done, total]),
     })
     expect(seen).toEqual([[1, 1]])
   })
 
   it('works without a progress callback', () => {
-    expect(() => replay(src(), doc([rect('a', 'p0')]))).not.toThrow()
+    expect(() => replay(new Map([['src-0', src()]]), doc([rect('a', 'p0')]))).not.toThrow()
   })
 
   // "Could not export this PDF" tells the user nothing they can act on.
@@ -148,13 +148,13 @@ describe('replay progress and error context', () => {
       // somewhere inside MuPDF rather than validating up front.
       stroke: 'not-a-colour',
     } as unknown as EditObject
-    expect(() => replay(src(), doc([broken]))).toThrow(/rect on page 2/)
+    expect(() => replay(new Map([['src-0', src()]]), doc([broken]))).toThrow(/rect on page 2/)
   })
 
   it('keeps the original failure as the cause', () => {
     const broken = { ...rect('bad', 'p0'), stroke: 'not-a-colour' } as unknown as EditObject
     try {
-      replay(src(), doc([broken]))
+      replay(new Map([['src-0', src()]]), doc([broken]))
       expect.unreachable('replay should have thrown')
     } catch (e) {
       expect((e as Error).cause).toBeDefined()

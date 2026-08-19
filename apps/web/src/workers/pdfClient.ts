@@ -1,6 +1,6 @@
 import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
-import type { EditDocument, PageQuadIndex } from '@margin/pdf-core'
+import type { EditDocument, PageQuadIndex, SourceId } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
 // comment in transferHandlers.ts for why both ends need it.
@@ -53,6 +53,14 @@ export type PdfClient = {
    * PdfService.quadIndex.
    */
   quadIndex(page: number): Promise<PageQuadIndex>
+  /** Register another file for merging. See PdfService.addSource. */
+  addSource(bytes: Uint8Array): Promise<{
+    sourceId: SourceId
+    pageCount: number
+    geometries: import('@margin/transform').PageGeometry[]
+  }>
+  /** Forget a source's bytes. Ignored for the primary document. */
+  dropSource(id: SourceId): Promise<void>
   close(): Promise<void>
   terminate(): void
 }
@@ -205,6 +213,18 @@ export function createPdfClient(): PdfClient {
     async quadIndex(page) {
       await ready
       return remote.quadIndex(page)
+    },
+
+    async addSource(bytes) {
+      await ready
+      // Transferred, like open(): the main thread must not read these bytes
+      // again, and a copy of a 150MB file is exactly what merge cannot afford.
+      return remote.addSource(Comlink.transfer(bytes, [bytes.buffer]))
+    },
+
+    async dropSource(id) {
+      await ready
+      return remote.dropSource(id)
     },
 
     async close() {

@@ -157,13 +157,17 @@ export const useDocumentStore = defineStore('document', {
      * document to a merge is undoable like any other page operation.
      */
     addSource(info: {
+      id: SourceId
       name: string
       size: number
       hash: string
       geometries: PageGeometry[]
     }): SourceId {
       const edits = useEditsStore()
-      const id: SourceId = `src-${nanoid(8)}`
+      // The id comes from the WORKER, which is where the bytes actually
+      // live. Minting a second one here would leave the two sides
+      // disagreeing about which file a page came from.
+      const id = info.id
 
       this.sources[id] = {
         id,
@@ -258,6 +262,7 @@ export const useDocumentStore = defineStore('document', {
         }
 
         this.addSource({
+          id: info.sourceId,
           name: file.name,
           size: file.size,
           hash: this.sourceHash,
@@ -285,6 +290,7 @@ export const useDocumentStore = defineStore('document', {
           return
         }
         this.addSource({
+          id: info.sourceId,
           name: this.fileName,
           size: this.fileSize,
           hash: this.sourceHash,
