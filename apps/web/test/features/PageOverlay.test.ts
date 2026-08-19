@@ -30,7 +30,7 @@ function obj(id: string, pageId: string, z = 1): EditObject {
 describe('PageOverlay', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    useEditsStore().reset('h', ['p1', 'p2'], { p1: { sourceIndex: 0 }, p2: { sourceIndex: 1 } })
+    useEditsStore().reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1', 'p2'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null }, p2: { sourceIndex: 1, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   it('sets the viewBox to the page dimensions in points', () => {
@@ -88,7 +88,7 @@ describe('PageOverlay', () => {
 describe('PageOverlay layering', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    useEditsStore().reset('h', ['p1', 'p2'], { p1: { sourceIndex: 0 }, p2: { sourceIndex: 1 } })
+    useEditsStore().reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1', 'p2'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null }, p2: { sourceIndex: 1, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   it('puts the text surface before the svg in document order', () => {

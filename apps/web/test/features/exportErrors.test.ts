@@ -43,7 +43,7 @@ describe('export error surfaces', () => {
     save.mockResolvedValue(new Uint8Array([1, 2, 3]))
     downloadBytes = vi.spyOn(exportFile, 'downloadBytes').mockImplementation(() => {})
     readyDoc(3)
-    useEditsStore().reset('h', ['p0'], { p0: { sourceIndex: 0 } })
+    useEditsStore().reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p0'], { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   const click = async (w: ReturnType<typeof mount>) => {
@@ -118,7 +118,7 @@ describe('export progress', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     vi.spyOn(exportFile, 'downloadBytes').mockImplementation(() => {})
-    useEditsStore().reset('h', ['p0'], { p0: { sourceIndex: 0 } })
+    useEditsStore().reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p0'], { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   // A bar that flashes and vanishes on a 3-page document reads as a glitch.
@@ -186,7 +186,7 @@ describe('undo and redo controls', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     readyDoc(1)
-    useEditsStore().reset('h', ['p0'], { p0: { sourceIndex: 0 } })
+    useEditsStore().reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p0'], { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   const rect: EditObject = {

@@ -18,7 +18,7 @@ describe('Inspector', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     edits = useEditsStore()
-    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
     edits.applyOp({ type: 'addObject', object: rect }, 'add')
   })
 
@@ -122,7 +122,7 @@ describe('Inspector URL validation', () => {
     setActivePinia(createPinia())
     edits = useEditsStore()
     doc = useDocumentStore()
-    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
     edits.applyOp({ type: 'addObject', object: link }, 'add')
     edits.select(['l1'])
   })

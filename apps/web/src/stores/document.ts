@@ -71,9 +71,14 @@ export const useDocumentStore = defineStore('document', {
       // one place they are minted. Deriving them a second time elsewhere is
       // how objects end up orphaned or attributed to the wrong page.
       useEditsStore().reset(
-        this.sourceHash,
+        { 'src-0': { hash: this.sourceHash, name: this.fileName } },
         order,
-        Object.fromEntries(order.map((id, i) => [id, { sourceIndex: i }])),
+        Object.fromEntries(
+          order.map((id, i) => [
+            id,
+            { sourceId: 'src-0', sourceIndex: i, rotation: 0, cropBox: null },
+          ]),
+        ),
       )
     },
 

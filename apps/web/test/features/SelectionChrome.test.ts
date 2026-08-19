@@ -41,7 +41,7 @@ describe('SelectionChrome', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     edits = useEditsStore()
-    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
     edits.applyOp({ type: 'addObject', object }, 'add')
   })
 

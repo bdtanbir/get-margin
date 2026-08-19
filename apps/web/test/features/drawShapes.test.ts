@@ -49,7 +49,7 @@ describe('drawing shapes', () => {
     setActivePinia(createPinia())
     edits = useEditsStore()
     tools = useToolsStore()
-    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   function overlay() {
@@ -155,7 +155,7 @@ describe('drawing a link', () => {
     setActivePinia(createPinia())
     edits = useEditsStore()
     tools = useToolsStore()
-    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   afterEach(() => setUriPrompt(undefined))

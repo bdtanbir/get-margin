@@ -15,10 +15,10 @@ const bytes = (n: FixtureName): Uint8Array => new Uint8Array(readFileSync(fixtur
 
 function emptyEdits(pageCount: number): EditDocument {
   const pageOrder = Array.from({ length: pageCount }, (_, i) => `p${i}`)
-  const pages = Object.fromEntries(pageOrder.map((id, i) => [id, { sourceIndex: i }]))
+  const pages = Object.fromEntries(pageOrder.map((id, i) => [id, { sourceIndex: i, sourceId: 'src-0', rotation: 0, cropBox: null }]))
   return {
     version: EDIT_DOCUMENT_VERSION,
-    sourceHash: '',
+    sources: { 'src-0': { hash: '', name: 'a.pdf' } },
     pageOrder,
     pages,
     objects: {},
@@ -110,9 +110,9 @@ describe('replay progress and error context', () => {
   function doc(objects: EditObject[], pages = 2): EditDocument {
     const pageOrder = Array.from({ length: pages }, (_, i) => `p${i}`)
     return {
-      version: EDIT_DOCUMENT_VERSION, sourceHash: '',
+      version: EDIT_DOCUMENT_VERSION, sources: { 'src-0': { hash: '', name: 'a.pdf' } },
       pageOrder,
-      pages: Object.fromEntries(pageOrder.map((id, i) => [id, { sourceIndex: i }])),
+      pages: Object.fromEntries(pageOrder.map((id, i) => [id, { sourceIndex: i, sourceId: 'src-0', rotation: 0, cropBox: null }])),
       objects: Object.fromEntries(objects.map((o) => [o.id, o])),
       nextZ: 9,
     }

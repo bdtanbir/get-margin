@@ -27,8 +27,8 @@ function signaturePng(size = 120): Uint8Array {
 
 function docWith(objects: EditObject[]): EditDocument {
   return {
-    version: EDIT_DOCUMENT_VERSION, sourceHash: '',
-    pageOrder: ['p0', 'p1'], pages: { p0: { sourceIndex: 0 }, p1: { sourceIndex: 1 } },
+    version: EDIT_DOCUMENT_VERSION, sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+    pageOrder: ['p0', 'p1'], pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null }, p1: { sourceIndex: 1, sourceId: 'src-0', rotation: 0, cropBox: null } },
     objects: Object.fromEntries(objects.map((o) => [o.id, o])), nextZ: 99,
   }
 }

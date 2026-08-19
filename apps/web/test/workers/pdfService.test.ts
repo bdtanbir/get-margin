@@ -121,8 +121,8 @@ describe('PdfService.save', () => {
     const src = bytes('simple-text')
     svc.open(src.slice())
     const empty = {
-      version: 1, sourceHash: '', pageOrder: ['p0'],
-      pages: { p0: { sourceIndex: 0 } }, objects: {}, nextZ: 1,
+      version: 2, sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } }, objects: {}, nextZ: 1,
     }
     expect(Array.from(svc.save(empty))).toEqual(Array.from(src))
   })
@@ -140,8 +140,8 @@ describe('PdfService.save', () => {
     const svc = new PdfService()
     svc.open(bytes('simple-text'))
     const edits = {
-      version: 1, sourceHash: '', pageOrder: ['p0'],
-      pages: { p0: { sourceIndex: 0 } },
+      version: 2, sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       objects: { a1: { id: 'a1', pageId: 'p0', kind: 'not-a-real-kind', z: 1 } as any },
       nextZ: 2,
@@ -157,8 +157,8 @@ describe('PdfService.save', () => {
     const src = bytes('simple-text')
     svc.open(src.slice())
     const edits = {
-      version: 1, sourceHash: '', pageOrder: ['p0'],
-      pages: { p0: { sourceIndex: 0 } },
+      version: 2, sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
       objects: {
         a1: {
           id: 'a1', pageId: 'p0', kind: 'rect',

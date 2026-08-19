@@ -159,6 +159,6 @@ describe('useDocumentStore.openFile', () => {
     const edits = useEditsStore()
     await doc.openFile(fakeFile('contract.pdf', PDF_BYTES))
     expect(edits.doc.pageOrder).toEqual(doc.pageOrder)
-    expect(edits.doc.sourceHash).toBe(doc.sourceHash)
+    expect(edits.doc.sources['src-0']!.hash).toBe(doc.sourceHash)
   })
 })

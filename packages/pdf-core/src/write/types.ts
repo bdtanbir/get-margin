@@ -85,12 +85,40 @@ export type EditObject =
   | TextObject | ImageObject | ShapeObject | WhiteoutObject
   | InkObject | MarkupObject | LinkObject | SignatureObject
 
+export type SourceId = string
+
+/**
+ * A page in the edited document: where it came from, and what has been done
+ * to it that is not an object drawn on top.
+ */
+export type PageEntry = {
+  /** Which opened file this page came from. Merge is why this exists. */
+  sourceId: SourceId
+  /** Index in THAT source, not in the edited document. */
+  sourceIndex: number
+  /**
+   * Added to the source page's own /Rotate. Always normalised to one of
+   * 0/90/180/270 -- an unbounded accumulator would eventually be compared
+   * against a normalised source rotation and disagree.
+   */
+  rotation: number
+  /**
+   * Overrides the source page's CropBox. RAW PDF user space, like every
+   * other rect in this file; the writer converts to Convention A through
+   * toAnnotSpace. null means "use whatever the source page has".
+   */
+  cropBox: [number, number, number, number] | null
+}
+
 export type EditDocument = {
   version: number
-  /** SHA-256 of the original file. Guards replay against the wrong source. */
-  sourceHash: string
+  /**
+   * One entry per opened file. A normal document has exactly one; merge
+   * adds more. The hash guards replay against being handed the wrong bytes.
+   */
+  sources: Record<SourceId, { hash: string; name: string }>
   pageOrder: PageId[]
-  pages: Record<PageId, { sourceIndex: number }>
+  pages: Record<PageId, PageEntry>
   objects: Record<ObjectId, EditObject>
   nextZ: number
 }
@@ -100,5 +128,24 @@ export type Op =
   | { type: 'updateObject'; id: ObjectId; patch: Partial<EditObject> }
   | { type: 'deleteObject'; id: ObjectId }
   | { type: 'reorder'; id: ObjectId; z: number }
+  // Task 42 -- page structure. These share the object ops' single linear
+  // undo stack so Ctrl+Z is globally predictable (PLAN.md 1.2).
+  | { type: 'rotatePage'; pageId: PageId; by: 90 | 180 | 270 }
+  | { type: 'deletePages'; pageIds: PageId[] }
+  | { type: 'reorderPages'; pageOrder: PageId[] }
+  | { type: 'cropPage'; pageId: PageId; cropBox: Rect | null }
+  /**
+   * Insert pages, optionally registering the source they came from in the
+   * same op. Folding registration in here rather than exposing a second
+   * writer keeps `applyOp` the ONLY path that mutates an EditDocument, and
+   * means undoing a merge removes the source entry along with its pages
+   * instead of leaving an orphan behind.
+   */
+  | {
+      type: 'insertPages'
+      pages: Array<{ id: PageId } & PageEntry>
+      at: number
+      source?: { id: SourceId; hash: string; name: string }
+    }
 
-export const EDIT_DOCUMENT_VERSION = 1
+export const EDIT_DOCUMENT_VERSION = 2

@@ -76,7 +76,7 @@ describe('SignatureModal', () => {
       pageOrder: ['p1'],
       pages: { p1: { id: 'p1', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } } },
     })
-    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
     tools.setTool('signature')
 
     HTMLCanvasElement.prototype.getContext = vi.fn(() => fakeCtx(true)) as never
