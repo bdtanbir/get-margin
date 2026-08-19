@@ -175,3 +175,35 @@ describe('PdfService.save', () => {
     expect(Array.from(out)).not.toEqual(Array.from(src))
   })
 })
+
+describe('PdfService.quadIndex', () => {
+  it('refuses when no document is open', () => {
+    expect(() => new PdfService().quadIndex(0)).toThrow('no document open')
+  })
+
+  it('returns character geometry for a page', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const index = svc.quadIndex(0)
+    expect(index.lines.length).toBeGreaterThan(0)
+    expect(index.lines[0]!.chars[0]!.quad).toHaveLength(8)
+  })
+
+  // Extraction walks every glyph, so re-running it as the user scrolls back
+  // and forth would dominate the cost of text selection. The source document
+  // is never mutated, so a page's quads cannot go stale while it is open.
+  it('caches per page, returning the identical object', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    expect(svc.quadIndex(0)).toBe(svc.quadIndex(0))
+  })
+
+  it('drops the cache on close, so the next document is not served stale quads', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const first = svc.quadIndex(0)
+    svc.close()
+    svc.open(bytes('multi-page'))
+    expect(svc.quadIndex(0)).not.toBe(first)
+  })
+})

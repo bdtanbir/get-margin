@@ -1,6 +1,6 @@
 import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
-import type { EditDocument } from '@margin/pdf-core'
+import type { EditDocument, PageQuadIndex } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
 // comment in transferHandlers.ts for why both ends need it.
@@ -44,6 +44,11 @@ export type PdfClient = {
    * payloads) must survive on the main thread for the next export.
    */
   save(editDoc?: EditDocument, fonts?: Map<string, Uint8Array>): Promise<Uint8Array>
+  /**
+   * Character-level text geometry for one page, cached in the worker. See
+   * PdfService.quadIndex.
+   */
+  quadIndex(page: number): Promise<PageQuadIndex>
   close(): Promise<void>
   terminate(): void
 }
@@ -156,6 +161,11 @@ export function createPdfClient(): PdfClient {
     async save(editDoc, fonts) {
       await ready
       return remote.save(editDoc, fonts)
+    },
+
+    async quadIndex(page) {
+      await ready
+      return remote.quadIndex(page)
     },
 
     async close() {

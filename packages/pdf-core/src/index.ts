@@ -10,3 +10,7 @@ export type {
 } from './write/types.js'
 export { EDIT_DOCUMENT_VERSION } from './write/types.js'
 export { replay, WRITERS, type ObjectWriter, type WriteContext } from './write/index.js'
+
+// Task 36. Per-page text geometry for selection, in MuPDF page space.
+export { buildQuadIndex } from './text/index.js'
+export type { Quad, CharQuad, LineRun, PageQuadIndex } from './text/index.js'

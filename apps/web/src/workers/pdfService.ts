@@ -1,4 +1,7 @@
-import { PdfDocument, renderPage, replay, type EditDocument } from '@margin/pdf-core'
+import {
+  PdfDocument, renderPage, replay, buildQuadIndex,
+  type EditDocument, type PageQuadIndex,
+} from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
 export type DocumentInfo = {
@@ -35,6 +38,17 @@ export class PdfService {
    * a second copy of anything the main thread still holds.
    */
   #sourceBytes: Uint8Array | undefined
+
+  /**
+   * Per-page text geometry, cached for the life of the open document.
+   *
+   * Extraction walks every glyph on the page, so re-running it as the user
+   * scrolls back and forth would be the dominant cost of text selection.
+   * The source document is never mutated (see #sourceBytes), so a page's
+   * quads cannot go stale while it is open; close() drops the cache with
+   * everything else.
+   */
+  #quadCache = new Map<number, PageQuadIndex>()
 
   #info(): DocumentInfo {
     const doc = this.#doc
@@ -113,9 +127,24 @@ export class PdfService {
     return replay(src, editDoc, fonts ? { fonts } : {})
   }
 
+  /**
+   * Character-level text geometry for one page, in MuPDF page space.
+   * See pdf-core/src/text/index.ts for why that space and not raw PDF space.
+   */
+  quadIndex(page: number): PageQuadIndex {
+    const doc = this.#doc
+    if (!doc) throw new Error('no document open')
+    const hit = this.#quadCache.get(page)
+    if (hit) return hit
+    const index = buildQuadIndex(doc, page)
+    this.#quadCache.set(page, index)
+    return index
+  }
+
   close(): void {
     this.#doc?.close()
     this.#doc = undefined
     this.#sourceBytes = undefined
+    this.#quadCache.clear()
   }
 }
