@@ -1,7 +1,7 @@
 import type { Component } from 'vue'
 import {
   MousePointer2, Type, Image, Square, Circle, Minus, ArrowRight,
-  Pen, Eraser, Link2, Signature, Highlighter, Underline, Strikethrough, Crop,
+  Pen, Eraser, Link2, Signature, Highlighter, Underline, Strikethrough, Crop, TextCursorInput,
 } from 'lucide-vue-next'
 import type { ToolId } from '@/stores/tools'
 
@@ -31,4 +31,8 @@ export const TOOLS: Array<{ id: ToolId; label: string; icon: Component }> = [
   { id: 'underline', label: 'Underline', icon: Underline },
   { id: 'strikeout', label: 'Strikeout', icon: Strikethrough },
   { id: 'crop', label: 'Crop', icon: Crop },
+  // ONE entry for all six field types; the type is chosen in the inspector.
+  // Six rail entries would make forms the visually dominant feature of a
+  // product where they are one phase of eight.
+  { id: 'field', label: 'Form field', icon: TextCursorInput },
 ]
