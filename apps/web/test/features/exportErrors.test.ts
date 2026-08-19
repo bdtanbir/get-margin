@@ -177,3 +177,45 @@ describe('withTimeout', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 })
+
+// Phase 2 built a full history stack and, until Task 40, left it
+// unreachable: nothing in the UI called undo(). These buttons are the
+// non-keyboard path, which is the only path on the mobile shell.
+describe('undo and redo controls', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    readyDoc(1)
+    useEditsStore().reset('h', ['p0'], { p0: { sourceIndex: 0 } })
+  })
+
+  const rect: EditObject = {
+    id: 'o1', pageId: 'p0', kind: 'rect',
+    rect: { x: 0, y: 0, w: 10, h: 10 },
+    rotation: 0, z: 1, locked: false, opacity: 1,
+    stroke: [0, 0, 0], strokeWidth: 1, fill: null,
+  }
+
+  it('disables both with nothing to undo or redo', () => {
+    const w = mount(TopBar)
+    expect((w.get('[data-undo]').element as HTMLButtonElement).disabled).toBe(true)
+    expect((w.get('[data-redo]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('undoes the last op', async () => {
+    const edits = useEditsStore()
+    edits.applyOp({ type: 'addObject', object: rect }, 'Draw')
+    const w = mount(TopBar)
+    await w.get('[data-undo]').trigger('click')
+    expect(Object.keys(edits.doc.objects)).toHaveLength(0)
+  })
+
+  it('redoes what it undid', async () => {
+    const edits = useEditsStore()
+    edits.applyOp({ type: 'addObject', object: rect }, 'Draw')
+    const w = mount(TopBar)
+    await w.get('[data-undo]').trigger('click')
+    await w.get('[data-redo]').trigger('click')
+    expect(Object.keys(edits.doc.objects)).toEqual(['o1'])
+  })
+})

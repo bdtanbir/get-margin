@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Download, Sun, Moon, Monitor, PanelLeft } from 'lucide-vue-next'
+import { Download, Sun, Moon, Monitor, PanelLeft, Undo2, Redo2 } from 'lucide-vue-next'
 import Button from '@/ui/Button.vue'
 import IconButton from '@/ui/IconButton.vue'
 import Tooltip from '@/ui/Tooltip.vue'
@@ -96,6 +96,34 @@ async function download(): Promise<void> {
     <Tooltip :content="`Theme: ${choice}`" side="bottom">
       <IconButton size="sm" :label="`Theme: ${choice}`" @click="cycle()">
         <component :is="icon[choice]" :size="17" :stroke-width="1.5" />
+      </IconButton>
+    </Tooltip>
+
+    <!--
+      Undo/redo as buttons as well as shortcuts: the mobile shell has no
+      physical keyboard, and a history stack reachable only by Cmd+Z is
+      unreachable for a whole class of users.
+    -->
+    <Tooltip content="Undo" shortcut="⌘Z" side="bottom">
+      <IconButton
+        label="Undo"
+        size="sm"
+        data-undo
+        :disabled="!edits.canUndo"
+        @click="edits.undo()"
+      >
+        <Undo2 :size="16" :stroke-width="1.5" />
+      </IconButton>
+    </Tooltip>
+    <Tooltip content="Redo" shortcut="⇧⌘Z" side="bottom">
+      <IconButton
+        label="Redo"
+        size="sm"
+        data-redo
+        :disabled="!edits.canRedo"
+        @click="edits.redo()"
+      >
+        <Redo2 :size="16" :stroke-width="1.5" />
       </IconButton>
     </Tooltip>
 

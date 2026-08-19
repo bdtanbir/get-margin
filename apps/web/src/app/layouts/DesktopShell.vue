@@ -11,6 +11,7 @@ import SignatureModal from '@/features/signature/SignatureModal.vue'
 import { useToolsStore } from '@/stores/tools'
 import { useDocumentStore } from '@/stores/document'
 import { useViewportShortcuts } from '@/features/viewport/useViewportShortcuts'
+import { useEditShortcuts } from '@/features/tools/useEditShortcuts'
 
 const doc = useDocumentStore()
 const tools = useToolsStore()
@@ -22,6 +23,10 @@ const panelOpen = ref(true)
 // this alone is sufficient scoping — no extra "is this active" guard
 // needed here.
 useViewportShortcuts()
+
+// Phase 2: undo/redo/delete. Until this, the history stack the edit store
+// maintains had no way to be reached from the UI at all.
+useEditShortcuts()
 
 // Amendment A2: PageList (features/viewport/PageList.vue) already owns a
 // ResizeObserver on its own scroller element and re-runs `vp.applyFit` on
