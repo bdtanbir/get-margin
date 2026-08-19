@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 
 export const FIXTURE_NAMES = [
   'simple-text', 'rotated', 'offset-cropbox', 'multi-page', 'large-300p', 'mixed-fonts',
+  // Carries scripted actions, for the sanitiser. Generated, never committed.
+  'hostile',
 ] as const
 
 export type FixtureName = (typeof FIXTURE_NAMES)[number]

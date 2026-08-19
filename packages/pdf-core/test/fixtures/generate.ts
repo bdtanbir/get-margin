@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, degrees, PDFName, PDFString } from 'pdf-lib'
 import { writeFile, mkdir, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -106,6 +106,50 @@ async function mixedFonts(outDir: string): Promise<void> {
   await save(doc, outDir, 'mixed-fonts')
 }
 
+/**
+ * A document carrying scripted actions, for the sanitiser's tests.
+ *
+ * GENERATED, not committed: a genuinely malicious PDF sitting in the
+ * repository is a hazard to whoever clones it. Everything here is inert on
+ * its own -- `app.alert` does nothing outside a JavaScript-enabled viewer --
+ * but it is exactly the shape the stripper must recognise.
+ */
+async function hostile(outDir: string): Promise<void> {
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([612, 792])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  page.drawText('Hostile fixture', { x: 60, y: 700, size: 24, font, color: rgb(0, 0, 0) })
+
+  const ctx = doc.context
+  const script = (code: string) =>
+    ctx.register(
+      ctx.obj({ S: PDFName.of('JavaScript'), JS: PDFString.of(code) }),
+    )
+
+  // Runs when the document opens.
+  doc.catalog.set(PDFName.of('OpenAction'), script('app.alert("on-open")'))
+
+  // Document-level scripts, via the name tree.
+  const tree = ctx.obj({
+    Names: [PDFString.of('evil'), script('this.exportDataObject()')],
+  })
+  doc.catalog.set(PDFName.of('Names'), ctx.register(ctx.obj({ JavaScript: ctx.register(tree) })))
+
+  // Catalog additional actions (will-close).
+  doc.catalog.set(
+    PDFName.of('AA'),
+    ctx.register(ctx.obj({ WC: script('app.alert("on-close")') })),
+  )
+
+  // Page additional actions (page-open).
+  page.node.set(
+    PDFName.of('AA'),
+    ctx.register(ctx.obj({ O: script('app.alert("on-page-open")') })),
+  )
+
+  await save(doc, outDir, 'hostile')
+}
+
 export async function generateFixtures(outDir = fileURLToPath(new URL('.', import.meta.url))): Promise<void> {
   await mkdir(outDir, { recursive: true })
   await simpleText(outDir)
@@ -114,4 +158,5 @@ export async function generateFixtures(outDir = fileURLToPath(new URL('.', impor
   await multiPage(outDir)
   await large300p(outDir)
   await mixedFonts(outDir)
+  await hostile(outDir)
 }

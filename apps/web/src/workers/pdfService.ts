@@ -1,6 +1,6 @@
 import {
   PdfDocument, renderPage, replay, buildQuadIndex,
-  type EditDocument, type PageQuadIndex, type SourceId,
+  type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
 } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
@@ -217,6 +217,7 @@ export class PdfService {
     editDoc?: EditDocument,
     fonts?: Map<string, Uint8Array>,
     onProgress?: (done: number, total: number) => void,
+    onStripped?: (found: StrippedContent) => void,
   ): Uint8Array {
     const primary = this.#primarySource
     const src = primary ? this.#sources.get(primary) : undefined
@@ -236,6 +237,7 @@ export class PdfService {
     return replay(this.#sources, editDoc, {
       ...(fonts ? { fonts } : {}),
       ...(onProgress ? { onProgress } : {}),
+      ...(onStripped ? { onStripped } : {}),
     })
   }
 
