@@ -9,6 +9,7 @@ import { useViewportStore } from '@/stores/viewport'
 import { usePageSelectionStore } from '@/stores/pageSelection'
 import { useDragReorder } from './useDragReorder'
 import SplitDialog from './SplitDialog.vue'
+import AddSourceButton from './AddSourceButton.vue'
 
 const doc = useDocumentStore()
 const edits = useEditsStore()
@@ -32,6 +33,24 @@ function onClick(id: PageId, index: number, e: MouseEvent): void {
 
 const listEl = ref<HTMLElement | null>(null)
 const splitting = ref(false)
+
+/** More than one file open means the grid spans sources. */
+const merged = computed(() => Object.keys(doc.sources).length > 1)
+
+/** The file a page came from, for the per-source label and screen readers. */
+function sourceName(id: string): string {
+  const entry = edits.doc.pages[id]
+  return (entry && doc.sources[entry.sourceId]?.name) || ''
+}
+
+/** True when this tile begins a run of pages from a different file. */
+function startsSourceRun(index: number): boolean {
+  if (!merged.value) return false
+  const ids = doc.pageOrder
+  const here = sourceName(ids[index]!)
+  const previous = index > 0 ? sourceName(ids[index - 1]!) : ''
+  return here !== previous
+}
 
 /**
  * Vertical midpoint of each tile, in client coordinates and in display
@@ -86,6 +105,7 @@ function remove(): void {
     <header class="flex h-11 shrink-0 items-center gap-1 px-3 text-[13px] text-text-muted">
       <template v-if="count === 0">
         <span class="mr-auto">{{ doc.pageCount }} {{ doc.pageCount === 1 ? 'page' : 'pages' }}</span>
+        <AddSourceButton />
         <IconButton size="sm" label="Split or extract" data-open-split @click="splitting = true">
           <Scissors :size="15" :stroke-width="1.5" />
         </IconButton>
@@ -105,9 +125,28 @@ function remove(): void {
     </header>
 
     <div ref="listEl" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-3">
+      <p
+        v-if="merged"
+        data-merge-notice
+        class="mb-2 rounded-control border border-border bg-surface-sunken p-2 text-[12px] text-text-muted"
+      >
+        Merging keeps each page exactly as it is. Bookmarks and page labels from
+        the added file are not carried over.
+      </p>
+
+      <template v-for="(id, i) in doc.pageOrder" :key="id">
+        <!--
+          A header wherever the run of pages from one file gives way to
+          another, so a merged grid reads as the documents it came from
+          rather than one undifferentiated stack.
+        -->
+        <p
+          v-if="startsSourceRun(i)"
+          data-source-header
+          class="px-1 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-text-subtle"
+        >{{ sourceName(id) }}</p>
+
       <div
-        v-for="(id, i) in doc.pageOrder"
-        :key="id"
         :data-page-tile="id"
         role="option"
         :aria-selected="selection.isSelected(id) ? 'true' : 'false'"
@@ -136,7 +175,9 @@ function remove(): void {
           :active="vp.anchorIndex === i"
           @select="() => {}"
         />
+        <span v-if="merged" class="sr-only">from {{ sourceName(id) }}</span>
       </div>
+      </template>
       <!-- The gap after the last tile, so a page can be dropped at the end. -->
       <div
         v-if="dropIndex === doc.pageOrder.length"
