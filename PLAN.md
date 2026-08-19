@@ -562,18 +562,36 @@ assembly tiers: byte-identical pass-through, lossless in-place restructuring for
 graft **plus an explicit `/Annots` graft** for merge — without that last step every merge silently
 destroys the annotations already in the user's file.
 
-**Outstanding**, recorded in the verification file rather than implied complete:
-cross-viewer checks in Acrobat/Preview/Chrome (no GUI available, as in Phase 2); **page selection —
-rotate and delete — is desktop-only**, because the phone's pages panel closes on tap and needs a
-touch-specific select affordance; and bookmarks/page labels are lost across a merge, which the UI
-states.
+**Outstanding**, recorded in the verification file rather than implied complete: cross-viewer
+checks in Acrobat/Preview/Chrome (no GUI available, as in Phase 2), and bookmarks/page labels are
+lost across a merge, which the UI states. The phone-only gap this phase left — page selection, and
+so rotate and delete, reachable on desktop only — was closed by Phase 4's Task 64.
 
 ### Phase 4 — MVP hardening · weeks 7–9
 
+**Built.** Design: `PHASE-4-DESIGN.md`. Plan: `PLAN-PHASE-4.md` (Tasks 52–65). Pre-flight
+measurements: `docs/findings/09-phase-4-preflight.md` and `10-large-document-performance.md`.
+Verification record: `docs/findings/11-phase-4-verification.md`.
+
 IndexedDB autosave + crash recovery · keyboard shortcuts · ⌘K palette · a11y pass · mobile gesture polish (pinch/pan/palm rejection) · perf pass on a 300-page document · memory-pressure handling · error boundaries · `/JS` + `/OpenAction` stripping · privacy page · onboarding empty state.
+
+Two decisions worth carrying forward. Active content is stripped **before** the byte-identical
+pass-through is considered, so an unedited hostile file cannot be handed back with its scripts
+intact — and because stripping is a change, such a file leaves the pass-through tier. And recovery
+is *offered*, never automatic: silently restoring an old draft over the file someone just opened is
+data loss wearing a helpful face.
+
+**Outstanding**, recorded in the verification file: the cross-viewer checks accumulated since
+Phase 2, and a run on real phone hardware. Both are gating — see below.
 
 > ### ▶ **Shippable MVP — end of week 9**
 > Ships as a pure static frontend. **No backend, no database, no accounts, no per-user hosting cost.**
+>
+> **Feature-complete; not yet verified.** Everything above is built and covered by tests that run on
+> every commit. But this tool's whole promise is *your files never leave your device and the file
+> you get back opens correctly everywhere*, and no agent here has a GUI or a phone: no export has
+> been opened in Acrobat, and no gesture has met a real finger. Those two checks are the gate.
+> Until someone runs them, this is a release candidate.
 
 ### Phase 5 — Forms · weeks 9–12
 

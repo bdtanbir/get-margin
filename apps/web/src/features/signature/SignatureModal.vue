@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useFocusTrap } from '@/lib/useFocusTrap'
 import { nanoid } from 'nanoid'
 import type { SignatureObject, EditObject } from '@margin/pdf-core'
 import Button from '@/ui/Button.vue'
@@ -24,6 +25,7 @@ const PAD = { w: 600, h: 200 }
 /** Widest a placed signature gets, in points. */
 const PLACED_MAX_PT = 200
 
+const surface = ref<HTMLElement | null>(null)
 const pad = ref<HTMLCanvasElement | null>(null)
 const typed = ref('')
 const saved = ref<SavedSignature[]>([])
@@ -173,6 +175,10 @@ function close(): void {
   tools.setTool('select')
 }
 
+// Keyboard users need focus to land in the dialog, stay in it, and go back
+// where it came from. Escape cancels, which for this surface means closing.
+useFocusTrap(surface, { onEscape: close })
+
 async function place(sig: { data: Uint8Array; w: number; h: number }): Promise<void> {
   const pageId = doc.pageOrder[0]
   const page = pageId ? doc.pages[pageId] : undefined
@@ -245,7 +251,8 @@ onBeforeUnmount(() => {
     data-signature-modal
     @click.self="close"
   >
-    <div class="flex w-full max-w-2xl flex-col gap-3 rounded-panel bg-surface p-4 shadow-high">
+
+    <div ref="surface" tabindex="-1" class="flex w-full max-w-2xl flex-col gap-3 rounded-panel bg-surface p-4 shadow-high">
       <div role="tablist" aria-label="Signature source" class="flex gap-1">
         <button
           v-for="t in (['draw', 'type', 'upload'] as const)"

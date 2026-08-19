@@ -307,8 +307,8 @@ describe('useEditsStore', () => {
         && typeof (s as unknown as Record<string, unknown>)[k] === 'function',
     )
     expect(mutators.sort()).toEqual(
-      ['applyOp', 'beginTransaction', 'clearSelection', 'endTransaction', 'nextZ', 'redo', 'reset',
-        'select', 'undo', 'withTransaction'].sort(),
+      ['applyOp', 'beginTransaction', 'clearHistory', 'clearSelection', 'endTransaction',
+        'nextZ', 'redo', 'reset', 'select', 'undo', 'withTransaction'].sort(),
     )
   })
 })

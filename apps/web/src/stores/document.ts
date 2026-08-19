@@ -7,6 +7,7 @@ import { checkFileSize, checkPageCount } from '@/lib/limits'
 import { sha256Hex } from '@/lib/hash'
 import { useEditsStore } from '@/stores/edits'
 import { usePageSelectionStore } from '@/stores/pageSelection'
+import { useAutosaveStore } from '@/stores/autosave'
 
 export type PageId = string
 export type SourceId = string
@@ -229,6 +230,7 @@ export const useDocumentStore = defineStore('document', {
       // A selection naming the previous document's pages would otherwise
       // survive into the next one.
       usePageSelectionStore().clear()
+      useAutosaveStore().stop()
       this.sourceHash = ''
 
       const size = checkFileSize(file.size)
@@ -276,6 +278,13 @@ export const useDocumentStore = defineStore('document', {
           geometries: info.geometries,
         })
         this.status = 'ready'
+
+        // Look for previously autosaved edits for this exact file. This
+        // only OFFERS them -- see stores/autosave.ts for why restoring
+        // silently would be wrong.
+        const autosave = useAutosaveStore()
+        await autosave.checkForSaved()
+        autosave.start()
       } catch (e) {
         this.status = 'error'
         // Comlink reconstructs errors crossing the worker boundary as plain

@@ -6,6 +6,7 @@ import PageCanvas from './PageCanvas.vue'
 import PageOverlay from '@/features/overlay/PageOverlay.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useViewportStore } from '@/stores/viewport'
+import { useGestures } from './useGestures'
 
 const doc = useDocumentStore()
 const vp = useViewportStore()
@@ -92,7 +93,56 @@ onMounted(() => {
   }
 })
 
-onBeforeUnmount(() => resizeObserver?.disconnect())
+/**
+ * Touch gestures on the scroller.
+ *
+ * Zoom goes through `vp.setZoom`, and panning through the scroller's own
+ * scroll position, so no coordinate maths lives here -- the gesture
+ * composable reports a RELATIVE scale and this multiplies the current zoom
+ * by it.
+ *
+ * Only touch: a mouse already has the wheel and the zoom controls, and
+ * claiming its drags here would break text selection and object dragging.
+ */
+const gestures = useGestures({
+  onPinch: (scale) => {
+    vp.setFitMode('custom')
+    vp.setZoom(vp.zoom * scale)
+  },
+  onPan: ({ dx, dy }) => {
+    const el = scroller.value
+    if (!el) return
+    el.scrollLeft -= dx
+    el.scrollTop -= dy
+  },
+})
+
+function isTouch(e: PointerEvent): boolean {
+  return e.pointerType === 'touch'
+}
+
+function onPointerDown(e: PointerEvent): void {
+  if (isTouch(e)) gestures.onPointerDown(e)
+}
+
+function onPointerMove(e: PointerEvent): void {
+  if (!isTouch(e)) return
+  // Only claim the event once a gesture is genuinely in progress, so a
+  // single tap still reaches whatever is underneath.
+  if (gestures.contacts.value.length > 0) {
+    if (gestures.contacts.value.length > 1) e.preventDefault()
+    gestures.onPointerMove(e)
+  }
+}
+
+function onPointerUp(e: PointerEvent): void {
+  if (isTouch(e)) gestures.onPointerUp(e)
+}
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  gestures.reset()
+})
 </script>
 
 <template>
@@ -117,6 +167,11 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
     tabindex="0"
     role="region"
     aria-label="Document pages"
+    style="touch-action: pan-x pan-y"
+    @pointerdown="onPointerDown"
+    @pointermove="onPointerMove"
+    @pointerup="onPointerUp"
+    @pointercancel="onPointerUp"
   >
     <div class="relative mx-auto w-fit py-6" :style="{ height: `${totalHeight}px` }">
       <div

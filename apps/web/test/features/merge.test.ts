@@ -25,7 +25,7 @@ const addSource = vi.fn()
 
 vi.mock('@/workers/pdfClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/workers/pdfClient')>()
-  return { ...actual, getPdfClient: () => ({ addSource }) }
+  return { ...actual, getPdfClient: () => ({ addSource, openBytes: async () => 0 }) }
 })
 
 /** Register a second document the way AddSourceButton does. */
@@ -157,5 +157,37 @@ describe('AddSourceButton', () => {
     await settle()
     expect(useDocumentStore().error).toBe('boom')
     expect(useDocumentStore().pageCount).toBe(3)
+  })
+})
+
+// Nothing bounded the SUM of open files before, only each one.
+describe('AddSourceButton total-size budget', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    seedPages(3)
+    addSource.mockResolvedValue({ sourceId: 'src-1', pageCount: 2, geometries: [GEOM, GEOM] })
+  })
+
+  it('refuses a merge that would cross the total budget, and says what to do', async () => {
+    const { MAX_TOTAL_SOURCE_BYTES } = await import('@/lib/limits')
+    const client = await import('@/workers/pdfClient')
+    vi.spyOn(client, 'getPdfClient').mockReturnValue({
+      addSource,
+      openBytes: async () => MAX_TOTAL_SOURCE_BYTES,
+    } as never)
+
+    const w = mount(AddSourceButton)
+    const file = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d])], 'b.pdf', {
+      type: 'application/pdf',
+    })
+    Object.defineProperty(file, 'size', { value: 1024 })
+    const input = w.get('input[type=file]')
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+    await settle()
+
+    expect(addSource).not.toHaveBeenCalled()
+    expect(useDocumentStore().error).toContain('Export what you have')
   })
 })

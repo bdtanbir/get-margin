@@ -1,6 +1,6 @@
 import {
   PdfDocument, renderPage, replay, buildQuadIndex,
-  type EditDocument, type PageQuadIndex, type SourceId,
+  type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
 } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
@@ -149,6 +149,13 @@ export class PdfService {
     return [...this.#sources.keys()]
   }
 
+  /** Total retained source bytes, so the main thread can bound a merge. */
+  openBytes(): number {
+    let total = 0
+    for (const bytes of this.#sources.values()) total += bytes.byteLength
+    return total
+  }
+
   authenticate(password: string): DocumentInfo {
     const doc = this.#doc
     if (!doc) throw new Error('no document open')
@@ -217,6 +224,7 @@ export class PdfService {
     editDoc?: EditDocument,
     fonts?: Map<string, Uint8Array>,
     onProgress?: (done: number, total: number) => void,
+    onStripped?: (found: StrippedContent) => void,
   ): Uint8Array {
     const primary = this.#primarySource
     const src = primary ? this.#sources.get(primary) : undefined
@@ -236,6 +244,7 @@ export class PdfService {
     return replay(this.#sources, editDoc, {
       ...(fonts ? { fonts } : {}),
       ...(onProgress ? { onProgress } : {}),
+      ...(onStripped ? { onStripped } : {}),
     })
   }
 

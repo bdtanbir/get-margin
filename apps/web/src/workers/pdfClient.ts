@@ -1,6 +1,8 @@
 import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
-import type { EditDocument, PageQuadIndex, SourceId } from '@margin/pdf-core'
+import type {
+  EditDocument, PageQuadIndex, SourceId, StrippedContent,
+} from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
 // comment in transferHandlers.ts for why both ends need it.
@@ -47,6 +49,7 @@ export type PdfClient = {
     editDoc?: EditDocument,
     fonts?: Map<string, Uint8Array>,
     onProgress?: (done: number, total: number) => void,
+    onStripped?: (found: StrippedContent) => void,
   ): Promise<Uint8Array>
   /**
    * Character-level text geometry for one page, cached in the worker. See
@@ -61,6 +64,8 @@ export type PdfClient = {
   }>
   /** Forget a source's bytes. Ignored for the primary document. */
   dropSource(id: SourceId): Promise<void>
+  /** Total retained source bytes, for bounding a merge. */
+  openBytes(): Promise<number>
   close(): Promise<void>
   terminate(): void
 }
@@ -198,13 +203,14 @@ export function createPdfClient(): PdfClient {
       return await remote.render({ id, page, scale, ...(sourceId ? { sourceId } : {}) })
     },
 
-    async save(editDoc, fonts, onProgress) {
+    async save(editDoc, fonts, onProgress, onStripped) {
       await ready
-      // Comlink.proxy so the worker can CALL this function rather than
-      // receiving a structured clone of it (functions do not clone).
+      // Comlink.proxy so the worker can CALL these rather than receiving a
+      // structured clone of them (functions do not clone).
       const progress = onProgress ? Comlink.proxy(onProgress) : undefined
+      const stripped = onStripped ? Comlink.proxy(onStripped) : undefined
       return withTimeout(
-        remote.save(editDoc, fonts, progress),
+        remote.save(editDoc, fonts, progress, stripped),
         EXPORT_TIMEOUT_MS,
         'The export took too long and was stopped. Try again, or remove some edits.',
       )
@@ -225,6 +231,11 @@ export function createPdfClient(): PdfClient {
     async dropSource(id) {
       await ready
       return remote.dropSource(id)
+    },
+
+    async openBytes() {
+      await ready
+      return remote.openBytes()
     },
 
     async close() {

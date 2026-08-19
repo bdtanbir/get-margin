@@ -58,13 +58,16 @@ test('worker boots, loads WASM, and opens a real PDF', async ({ page }, testInfo
 
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  // The empty state is identified by a stable hook, not its heading text:
+  // that copy is product wording and changed once already, breaking a dozen
+  // selectors across three specs at once.
+  await expect(page.locator('[data-empty-state]')).toBeVisible()
 
   const openStart = Date.now()
   await page.setInputFiles('input[type=file]', FIXTURE)
 
   // Generous timeout: first load fetches and instantiates 10.4MB of WASM.
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).not.toBeVisible({
+  await expect(page.locator('[data-empty-state]')).not.toBeVisible({
     timeout: 30_000,
   })
   // Not an assertion — just a visible record of how long open() actually
@@ -163,9 +166,9 @@ test('scrolling the page list renders later pages as they come into view', async
   })
 
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  await expect(page.locator('[data-empty-state]')).toBeVisible()
   await page.setInputFiles('input[type=file]', FIXTURE_12P)
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).not.toBeVisible({
+  await expect(page.locator('[data-empty-state]')).not.toBeVisible({
     timeout: 30_000,
   })
 
@@ -246,9 +249,9 @@ test('zoom in changes the rendered page size', async ({ page }, testInfo) => {
   })
 
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  await expect(page.locator('[data-empty-state]')).toBeVisible()
   await page.setInputFiles('input[type=file]', FIXTURE)
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).not.toBeVisible({
+  await expect(page.locator('[data-empty-state]')).not.toBeVisible({
     timeout: 30_000,
   })
 
@@ -371,9 +374,9 @@ test('thumbnail panel renders real page content from the placeholder tier', asyn
   })
 
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  await expect(page.locator('[data-empty-state]')).toBeVisible()
   await page.setInputFiles('input[type=file]', FIXTURE)
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).not.toBeVisible({
+  await expect(page.locator('[data-empty-state]')).not.toBeVisible({
     timeout: 30_000,
   })
 
@@ -386,7 +389,9 @@ test('thumbnail panel renders real page content from the placeholder tier', asyn
   // Scoped to the tiles: since Phase 3 the panel's header also carries page
   // actions (add a PDF, split), so counting every button in the panel would
   // shift the moment another control is added there.
-  await expect(panel.locator('[data-page-tile] button')).toHaveCount(12)
+  await expect(
+    panel.locator('[data-page-tile] button:not([data-select-page])'),
+  ).toHaveCount(12)
 
   // `exact: true` matters here for the same reason it does on the page-1
   // check above: accessible-name matching is substring by default, and
@@ -519,9 +524,9 @@ test('the shell swaps between desktop and mobile chrome as the viewport crosses 
   // config default staying above 1024px.
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  await expect(page.locator('[data-empty-state]')).toBeVisible()
   await page.setInputFiles('input[type=file]', FIXTURE)
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).not.toBeVisible({
+  await expect(page.locator('[data-empty-state]')).not.toBeVisible({
     timeout: 30_000,
   })
 

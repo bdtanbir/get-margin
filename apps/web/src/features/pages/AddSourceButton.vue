@@ -6,7 +6,7 @@ import IconButton from '@/ui/IconButton.vue'
 import Tooltip from '@/ui/Tooltip.vue'
 import { useDocumentStore } from '@/stores/document'
 import { getPdfClient } from '@/workers/pdfClient'
-import { checkFileSize } from '@/lib/limits'
+import { checkFileSize, checkTotalOpenSize } from '@/lib/limits'
 import { sha256Hex } from '@/lib/hash'
 
 const doc = useDocumentStore()
@@ -22,6 +22,14 @@ async function onChange(e: Event): Promise<void> {
     const size = checkFileSize(file.size)
     if (!size.ok) {
       doc.error = size.message
+      return
+    }
+
+    // Nothing bounded the SUM of open files before, only each one, so
+    // merging several large documents grew memory without limit.
+    const budget = checkTotalOpenSize(await getPdfClient().openBytes(), file.size)
+    if (!budget.ok) {
+      doc.error = budget.message
       return
     }
 

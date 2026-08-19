@@ -1,5 +1,6 @@
 import type { RenderResult } from '@/workers/pdfService'
 import type { PageId } from '@/stores/document'
+import { bitmapBudgetMegapixels } from '@/lib/memoryBudget'
 
 export type CacheKey = string
 
@@ -16,10 +17,14 @@ export function cacheKey(pageId: PageId, scale: number): CacheKey {
  * immediate neighbours (±1) is ~5.8MP (23MB); at zoom 2 that becomes
  * ~23MP (93MB); all 300 thumbnails at 0.2 scale add ~5.8MP (23MB) more.
  * That covers a demanding desktop session in ~30MP. 50MP (~200MB) leaves
- * headroom above that without inviting an out-of-memory crash. Re-measure
- * this on a mid-range phone during the later perf pass.
+ * headroom above that without inviting an out-of-memory crash.
+ *
+ * Phase 4 Task 61 re-measured it as that comment asked: a 300-page document
+ * scrolled fifty pages sits at 215MB of heap, i.e. right ON this bound. The
+ * default is now resolved per device (lib/memoryBudget.ts) and still comes
+ * out at exactly 50 wherever the device does not report its memory, which
+ * is Safari, Firefox, and anything else without navigator.deviceMemory.
  */
-const DEFAULT_MAX_MEGAPIXELS = 50
 
 /**
  * LRU cache of rendered page bitmaps, capped by total megapixels (spec §1.5).
@@ -32,7 +37,7 @@ export class BitmapCache {
   #megapixels = 0
   readonly #max: number
 
-  constructor(maxMegapixels = DEFAULT_MAX_MEGAPIXELS) {
+  constructor(maxMegapixels = bitmapBudgetMegapixels()) {
     this.#max = maxMegapixels
   }
 

@@ -300,6 +300,18 @@ export const useEditsStore = defineStore('edits', () => {
   function select(ids: ObjectId[]): void { selectedIds.value = ids }
   function clearSelection(): void { selectedIds.value = [] }
 
+  /**
+   * Drop the undo stack without touching the document.
+   *
+   * Used after restoring an autosave: the restore itself is not a step the
+   * user should be able to undo, because undoing it would leave them
+   * between two documents with no way to say which one they meant.
+   */
+  function clearHistory(): void {
+    past.value = []
+    future.value = []
+  }
+
   function reset(
     sources: EditDocument['sources'],
     pageOrder: string[],
@@ -332,5 +344,6 @@ export const useEditsStore = defineStore('edits', () => {
     select,
     clearSelection,
     reset,
+    clearHistory,
   }
 })

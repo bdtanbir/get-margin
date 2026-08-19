@@ -13,12 +13,16 @@ import { seedDocument } from '../helpers/seedDocument'
 // wiring gap — Thumbnail only proves it EMITS `select`, not that anything
 // listens.
 /**
- * The thumbnails only. PageGrid's header also renders buttons (split, and
- * the rotate/delete actions once pages are selected), so indexing
- * `findAll('button')` positionally silently shifts the moment the header
- * gains a control -- which it did.
+ * The thumbnail buttons only.
+ *
+ * PageGrid's header renders buttons (split, add, and the rotate/delete
+ * actions once pages are selected), and since Task 64 every tile also
+ * carries a select control. Indexing `findAll('button')` positionally
+ * silently shifts each time one of those is added -- which has now happened
+ * twice.
  */
-const thumbnails = (w: ReturnType<typeof mount>) => w.findAll('[data-page-tile] button')
+const thumbnails = (w: ReturnType<typeof mount>) =>
+  w.findAll('[data-page-tile] button:not([data-select-page])')
 
 vi.mock('../../src/workers/pdfClient.js', () => ({
   getPdfClient: () => ({

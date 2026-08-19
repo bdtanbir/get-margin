@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useFocusTrap } from '@/lib/useFocusTrap'
 import Button from '@/ui/Button.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
@@ -15,6 +16,7 @@ const edits = useEditsStore()
 
 const emit = defineEmits<{ close: [] }>()
 
+const surface = ref<HTMLElement | null>(null)
 const input = ref('')
 const busy = ref(false)
 const error = ref('')
@@ -61,6 +63,8 @@ async function exportGroup(pages: number[], fonts: Map<string, Uint8Array>): Pro
   }
   return getPdfClient().save(narrowed, fonts)
 }
+
+useFocusTrap(surface, { onEscape: () => emit('close') })
 
 async function run(): Promise<void> {
   if (busy.value) return
@@ -111,7 +115,7 @@ async function run(): Promise<void> {
     data-split-dialog
     @click.self="emit('close')"
   >
-    <div class="flex w-full max-w-md flex-col gap-3 rounded-panel bg-surface p-4 shadow-high">
+    <div ref="surface" tabindex="-1" class="flex w-full max-w-md flex-col gap-3 rounded-panel bg-surface p-4 shadow-high">
       <h2 class="text-[15px] font-medium">Split or extract pages</h2>
 
       <label class="flex flex-col gap-1 text-[13px] text-text-muted">
