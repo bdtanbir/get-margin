@@ -1,5 +1,38 @@
 # get-margin Phase 2 — Edit Core Implementation Plan
 
+> ## Status: BUILT, with one release gate outstanding
+>
+> Tasks 22–40 are implemented, tested, and merged. The step checkboxes below are left unticked as
+> the historical plan text; the authoritative status is here and in `PLAN.md` §7.
+>
+> **Outstanding — a release gate, not a nice-to-have:**
+> - **Task 40 Step 4, cross-viewer verification in Acrobat / Preview / Chrome.** No agent can open
+>   those applications. Sample files: `docs/findings/evidence/phase-2-*.pdf`. Matrix to fill in:
+>   `docs/findings/06-phase-2-verification.md`.
+>
+> **Deliberately not built, each recorded with its reason:**
+> - **Task 34 Step 5**, adopting a document's *existing* links into the edit store. Seeding them
+>   without a matching removal path exports duplicate hotspots; the clean fix needs `EditDocument`
+>   to record that it owns links, which is a schema change. Left out rather than shipped
+>   half-working.
+> - **Snapping** (Task 26). Deferred to Phase 4 by `PHASE-2-DESIGN.md` §0 before execution began.
+>
+> **Where the build knowingly departs from the plan text.** Each is commented at the site and
+> explained in its commit:
+> - `write/annots.ts` and `write/links.ts` were not created; their responsibilities live in
+>   `write/objects/{ink,markup,link}.ts` and `apps/web/src/lib/linkUrl.ts`.
+> - `withTransaction` could not wrap a gesture (synchronous callback, asynchronous drag), so the
+>   edit store grew `beginTransaction`/`endTransaction`.
+> - `setInkList` takes `Point[][]`, not flat arrays; `setRect` throws on Ink and all three markup
+>   types, which derive their box from their points.
+> - Task 36 builds the quad index from ONE `walk()` call rather than `asJSON()` plus bbox matching.
+> - Task 37's selection layer and Task 38's markup render OUTSIDE the overlay's y-flipped root
+>   `<g>`, because their quads are already in MuPDF page space.
+> - Task 39 does not yield between pages; a worker's `postMessage` reaches the idle main thread
+>   without it, and yielding would have meant an async export.
+> - `perfect-freehand` is used in the signature pad, not `InkCanvas` — see the fix commit.
+> - Undo/redo had no UI at all; `useEditShortcuts` and the TopBar buttons were added in Task 40.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn the Phase 1 read-only viewer into an editor — place text, images, shapes, whiteout, links, freehand ink, and signatures on a PDF, highlight its text, undo any of it, and download a file that opens correctly in Acrobat, Preview, and Chrome.
