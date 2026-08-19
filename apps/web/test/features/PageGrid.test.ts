@@ -223,3 +223,91 @@ describe('PageGrid drag to reorder', () => {
     expect([...edits.doc.pageOrder].sort()).toEqual(['p0', 'p1', 'p2', 'p3'])
   })
 })
+
+// Task 64: Phase 3's recorded capability gap. On the phone the pages panel
+// closes when a thumbnail is tapped, so tap-to-select was unreachable --
+// the grid carrying the actions was gone by the time a selection existed.
+/** Tiles stacked 100px apart, so a drag has somewhere to land. */
+function stubLayoutFor(w: ReturnType<typeof mount>): void {
+  w.findAll('[data-page-tile]').forEach((tile, i) => {
+    vi.spyOn(tile.element, 'getBoundingClientRect').mockReturnValue({
+      top: i * 100, height: 100, bottom: i * 100 + 100,
+      left: 0, right: 200, width: 200, x: 0, y: i * 100,
+      toJSON: () => ({}),
+    } as DOMRect)
+  })
+}
+
+describe('PageGrid per-tile selection control', () => {
+  let edits: ReturnType<typeof useEditsStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    seedPages(4)
+    edits = useEditsStore()
+  })
+
+  const selectControl = (w: ReturnType<typeof mount>, i: number) =>
+    w.get(`[data-select-page="p${i}"]`)
+
+  it('gives every tile a select control', () => {
+    const w = mount(PageGrid)
+    expect(w.findAll('[data-select-page]')).toHaveLength(4)
+  })
+
+  it('selects without navigating', async () => {
+    const w = mount(PageGrid)
+    await selectControl(w, 1).trigger('click')
+    expect(w.get('[data-page-tile="p1"]').attributes('aria-selected')).toBe('true')
+    // Navigation is what closes the panel on phone; it must not have happened.
+    expect(w.emitted('select')).toBeUndefined()
+  })
+
+  it('toggles back off', async () => {
+    const w = mount(PageGrid)
+    await selectControl(w, 1).trigger('click')
+    await selectControl(w, 1).trigger('click')
+    expect(w.findAll('[aria-selected="true"]')).toHaveLength(0)
+  })
+
+  it('adds to the selection rather than replacing it', async () => {
+    const w = mount(PageGrid)
+    await selectControl(w, 0).trigger('click')
+    await selectControl(w, 2).trigger('click')
+    expect(w.findAll('[data-page-tile][aria-selected="true"]')).toHaveLength(2)
+  })
+
+  it('names itself for screen readers, by page position and state', async () => {
+    const w = mount(PageGrid)
+    expect(selectControl(w, 0).attributes('aria-label')).toBe('Select page 1')
+    await selectControl(w, 0).trigger('click')
+    expect(selectControl(w, 0).attributes('aria-label')).toBe('Deselect page 1')
+    expect(selectControl(w, 0).attributes('aria-pressed')).toBe('true')
+  })
+
+  // The tile starts a reorder drag on pointerdown; without stopping it here
+  // every tap of the checkbox would begin dragging the page.
+  it('does not start a reorder drag', async () => {
+    const w = mount(PageGrid)
+    stubLayoutFor(w)
+    const el = selectControl(w, 0).element
+    const down = new Event('pointerdown', { bubbles: true }) as PointerEvent
+    Object.assign(down, { clientX: 0, clientY: 50, pointerId: 1 })
+    Object.defineProperty(down, 'currentTarget', { value: el, configurable: true })
+    el.dispatchEvent(down)
+
+    const move = new Event('pointermove', { bubbles: true }) as PointerEvent
+    Object.assign(move, { clientX: 0, clientY: 400, pointerId: 1 })
+    window.dispatchEvent(move)
+    window.dispatchEvent(new Event('pointerup', { bubbles: true }))
+
+    expect(edits.doc.pageOrder).toEqual(['p0', 'p1', 'p2', 'p3'])
+  })
+
+  it('drives the page actions', async () => {
+    const w = mount(PageGrid)
+    await selectControl(w, 0).trigger('click')
+    await w.get('[data-rotate-right]').trigger('click')
+    expect(edits.doc.pages.p0!.rotation).toBe(90)
+  })
+})

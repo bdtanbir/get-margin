@@ -389,7 +389,9 @@ test('thumbnail panel renders real page content from the placeholder tier', asyn
   // Scoped to the tiles: since Phase 3 the panel's header also carries page
   // actions (add a PDF, split), so counting every button in the panel would
   // shift the moment another control is added there.
-  await expect(panel.locator('[data-page-tile] button')).toHaveCount(12)
+  await expect(
+    panel.locator('[data-page-tile] button:not([data-select-page])'),
+  ).toHaveCount(12)
 
   // `exact: true` matters here for the same reason it does on the page-1
   // check above: accessible-name matching is substring by default, and

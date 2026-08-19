@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RotateCcw, RotateCw, Trash2, Scissors } from 'lucide-vue-next'
+import { RotateCcw, RotateCw, Trash2, Scissors, Check } from 'lucide-vue-next'
 import Thumbnail from '@/features/document/Thumbnail.vue'
 import IconButton from '@/ui/IconButton.vue'
 import { useDocumentStore, type PageId } from '@/stores/document'
@@ -19,6 +19,22 @@ const selection = usePageSelectionStore()
 const emit = defineEmits<{ select: [index: number] }>()
 
 const count = computed(() => selection.count)
+
+/**
+ * Toggle selection from the per-tile control.
+ *
+ * A SEPARATE affordance from tapping the thumbnail, which navigates. On the
+ * phone the pages panel closes on navigation (deliberate Phase 1
+ * behaviour, so tapping a page takes you to it rather than jumping the
+ * viewport behind an open overlay) -- which made tap-to-select unreachable
+ * there, because the grid carrying the actions was gone by the time a
+ * selection existed. One control, both platforms: always visible on touch,
+ * on hover or focus with a mouse.
+ */
+function toggleSelect(id: PageId, e: Event): void {
+  e.stopPropagation()
+  selection.toggle(id)
+}
 
 function onClick(id: PageId, index: number, e: MouseEvent): void {
   if (e.shiftKey) selection.extendTo(id, doc.pageOrder)
@@ -162,7 +178,7 @@ function remove(): void {
         role="option"
         :aria-selected="selection.isSelected(id) ? 'true' : 'false'"
         :aria-grabbed="draggingId === id ? 'true' : undefined"
-        class="relative rounded-control"
+        class="group relative rounded-control"
         :class="[
           selection.isSelected(id) ? 'ring-2 ring-accent' : '',
           draggingId === id ? 'opacity-40' : '',
@@ -170,6 +186,28 @@ function remove(): void {
         @click="(e) => onClick(id, i, e)"
         @pointerdown="(e) => startReorder(id, e)"
       >
+        <!--
+          Selection control. `pointerdown.stop` as well as `click.stop`
+          because the tile also starts a reorder drag on pointerdown, and
+          without it every tap of this checkbox would begin dragging the
+          page it is trying to select.
+        -->
+        <button
+          type="button"
+          :data-select-page="id"
+          :aria-label="selection.isSelected(id) ? `Deselect page ${i + 1}` : `Select page ${i + 1}`"
+          :aria-pressed="selection.isSelected(id)"
+          class="absolute left-1 top-1 z-10 flex size-6 items-center justify-center rounded-control
+                 border border-border bg-surface/90 opacity-0 transition-opacity
+                 focus-visible:opacity-100 group-hover:opacity-100
+                 [@media(hover:none)]:opacity-100"
+          :class="selection.isSelected(id) ? 'opacity-100 bg-accent text-accent-fg' : ''"
+          @click.stop="(e) => toggleSelect(id, e)"
+          @pointerdown.stop
+        >
+          <Check v-if="selection.isSelected(id)" :size="14" :stroke-width="2" />
+        </button>
+
         <!--
           An insertion marker rather than animating the tiles apart: the
           marker says exactly where the page will land, and animation during
