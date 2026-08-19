@@ -113,6 +113,63 @@ describe('useEditsStore', () => {
     expect(s.doc.objects.o1?.opacity).toBe(1)
   })
 
+  // A pointer drag is not synchronous: pointerdown starts it, window
+  // pointermove events land in LATER turns of the event loop, and pointerup
+  // finishes it. withTransaction's callback has already returned by then, so
+  // Task 26's gestures need a transaction that can span turns -- otherwise
+  // every drag frame pushes its own entry and one drag is sixty undo steps,
+  // the exact failure transactions exist to prevent.
+  it('coalesces ops spanning event-loop turns between begin and end', async () => {
+    const s = useEditsStore()
+    s.applyOp({ type: 'addObject', object: rectObject('o1') }, 'Add rectangle')
+    s.beginTransaction('Drag')
+    for (let x = 0; x < 3; x++) {
+      await Promise.resolve()
+      s.applyOp({ type: 'updateObject', id: 'o1', patch: { rect: { x, y: 20, w: 100, h: 50 } } }, 'Drag')
+    }
+    s.endTransaction()
+    expect(s.doc.objects.o1?.rect.x).toBe(2)
+    expect(s.historySize).toBe(2)
+    s.undo()
+    expect(s.doc.objects.o1?.rect.x).toBe(10)
+  })
+
+  it('applies ops immediately during a transaction so the overlay tracks live', () => {
+    const s = useEditsStore()
+    s.applyOp({ type: 'addObject', object: rectObject('o1') }, 'Add rectangle')
+    s.beginTransaction('Drag')
+    s.applyOp({ type: 'updateObject', id: 'o1', patch: { opacity: 0.3 } }, 'Drag')
+    // Visible before the transaction closes -- only HISTORY is deferred.
+    expect(s.doc.objects.o1?.opacity).toBe(0.3)
+    expect(s.historySize).toBe(1)
+    s.endTransaction()
+    expect(s.historySize).toBe(2)
+  })
+
+  it('nested begin/end join the outermost transaction', () => {
+    const s = useEditsStore()
+    s.applyOp({ type: 'addObject', object: rectObject('o1') }, 'Add rectangle')
+    s.beginTransaction('Outer')
+    s.applyOp({ type: 'updateObject', id: 'o1', patch: { opacity: 0.5 } }, 'a')
+    s.beginTransaction('Inner')
+    s.applyOp({ type: 'updateObject', id: 'o1', patch: { opacity: 0.2 } }, 'b')
+    s.endTransaction()
+    expect(s.historySize).toBe(1)
+    s.endTransaction()
+    expect(s.historySize).toBe(2)
+    s.undo()
+    expect(s.doc.objects.o1?.opacity).toBe(1)
+  })
+
+  // A gesture aborted before it started (pointercancel with no move) must
+  // not corrupt the depth counter for the NEXT gesture.
+  it('endTransaction without a matching begin is a no-op', () => {
+    const s = useEditsStore()
+    s.endTransaction()
+    s.applyOp({ type: 'addObject', object: rectObject('o1') }, 'Add rectangle')
+    expect(s.historySize).toBe(1)
+  })
+
   it('caps history at exactly 200 entries and evicts the oldest first', () => {
     const s = useEditsStore()
     s.applyOp({ type: 'addObject', object: rectObject('o1') }, 'Add rectangle')
@@ -225,7 +282,8 @@ describe('useEditsStore', () => {
         && typeof (s as unknown as Record<string, unknown>)[k] === 'function',
     )
     expect(mutators.sort()).toEqual(
-      ['applyOp', 'clearSelection', 'nextZ', 'redo', 'reset', 'select', 'undo', 'withTransaction'].sort(),
+      ['applyOp', 'beginTransaction', 'clearSelection', 'endTransaction', 'nextZ', 'redo', 'reset',
+        'select', 'undo', 'withTransaction'].sort(),
     )
   })
 })

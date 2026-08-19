@@ -4,6 +4,7 @@ import { svgViewBox, svgRootTransform } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import ObjectLayer from './ObjectLayer.vue'
+import SelectionChrome from './SelectionChrome.vue'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -38,14 +39,34 @@ const objects = computed(() =>
     size-full` to exactly the canvas box PageCanvas established from the
     same geometry, so the two can never disagree about size.
   -->
-  <svg
-    class="pointer-events-none absolute inset-0 size-full"
-    :viewBox="viewBox"
-    preserveAspectRatio="none"
-    aria-hidden="true"
-  >
-    <g :transform="rootTransform">
-      <ObjectLayer v-for="o in objects" :key="o.id" :object="o" />
-    </g>
-  </svg>
+  <div class="pointer-events-none absolute inset-0">
+    <svg
+      class="pointer-events-none absolute inset-0 size-full"
+      :viewBox="viewBox"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <g :transform="rootTransform">
+        <!--
+          Hit-testing lives here rather than on the <svg>: ObjectLayer's <g>
+          is pointer-events-auto inside a pointer-events-none <svg>, so a
+          pointerdown that reaches this handler landed on an object's own
+          painted geometry. Everywhere else stays transparent to the canvas,
+          text selection, and scrolling beneath.
+        -->
+        <ObjectLayer
+          v-for="o in objects"
+          :key="o.id"
+          :object="o"
+          @pointerdown="edits.select([o.id])"
+        />
+      </g>
+    </svg>
+    <!--
+      Layer 3 sits OUTSIDE the <svg> (spec 1.3) and positions against this
+      same box, so its DOM handles get ordinary Tailwind, focus, and mobile
+      keyboard behaviour.
+    -->
+    <SelectionChrome :page="props.page" :zoom="props.zoom" />
+  </div>
 </template>

@@ -153,26 +153,56 @@ export const useEditsStore = defineStore('edits', () => {
   }
 
   /**
-   * Coalesce every op emitted inside `fn` into a single history entry.
-   * Required for drags, resizes, freehand strokes, and typing -- without it
-   * one drag is 60 undo steps. Nested calls join the outermost transaction.
+   * Open a transaction that may span event-loop turns. A pointer drag is
+   * inherently asynchronous -- pointerdown opens it, each pointermove lands
+   * in a later turn, pointerup closes it -- so the synchronous
+   * `withTransaction` below cannot wrap one: its callback returns after
+   * merely REGISTERING the move listeners, closing the transaction before a
+   * single drag frame has been applied and leaving every frame to push its
+   * own history entry. Gestures call begin/end directly; everything
+   * synchronous should prefer `withTransaction`.
+   *
+   * Nested calls join the outermost transaction, so the label that survives
+   * is the outermost one.
    */
-  function withTransaction(label: string, fn: () => void): void {
+  function beginTransaction(label: string): void {
     if (depth === 0) {
       txPatches = []
       txInverse = []
       txLabel = label
     }
     depth++
+  }
+
+  /**
+   * Close the innermost transaction; pushes one history entry when the
+   * outermost closes. Unbalanced calls are a no-op rather than an error: a
+   * gesture can be cancelled (pointercancel) on a path that never opened
+   * one, and driving `depth` negative there would silently swallow the NEXT
+   * gesture's history.
+   */
+  function endTransaction(): void {
+    if (depth === 0) return
+    depth--
+    if (depth === 0) {
+      push(txLabel, txPatches, txInverse)
+      txPatches = []
+      txInverse = []
+    }
+  }
+
+  /**
+   * Coalesce every op emitted inside `fn` into a single history entry.
+   * Required for freehand strokes and typing -- without it one burst is
+   * dozens of undo steps. Nested calls join the outermost transaction.
+   * `fn` must be synchronous; use begin/end for anything that spans turns.
+   */
+  function withTransaction(label: string, fn: () => void): void {
+    beginTransaction(label)
     try {
       fn()
     } finally {
-      depth--
-      if (depth === 0) {
-        push(txLabel, txPatches, txInverse)
-        txPatches = []
-        txInverse = []
-      }
+      endTransaction()
     }
   }
 
@@ -222,6 +252,8 @@ export const useEditsStore = defineStore('edits', () => {
     historySize: computed(() => past.value.length),
     applyOp,
     withTransaction,
+    beginTransaction,
+    endTransaction,
     undo,
     redo,
     nextZ,
