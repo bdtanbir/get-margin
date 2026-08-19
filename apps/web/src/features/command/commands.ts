@@ -102,6 +102,13 @@ export function useCommands(): ComputedRef<Command[]> {
         run: () => dialogs.show('protect'),
       },
       {
+        id: 'doc:metadata',
+        label: 'Document details…',
+        group: 'Document',
+        available: hasDocument,
+        run: () => dialogs.show('metadata'),
+      },
+      {
         id: 'doc:undo',
         label: 'Undo',
         group: 'Document',

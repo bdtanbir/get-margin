@@ -9,6 +9,7 @@ import PasswordPrompt from '@/features/document/PasswordPrompt.vue'
 import ErrorBoundary from './ErrorBoundary.vue'
 import StampDialog from '@/features/stamp/StampDialog.vue'
 import ProtectDialog from '@/features/protect/ProtectDialog.vue'
+import MetadataDialog from '@/features/metadata/MetadataDialog.vue'
 import { useDialogsStore } from '@/stores/dialogs'
 import RestorePrompt from '@/features/document/RestorePrompt.vue'
 import CommandPalette from '@/features/command/CommandPalette.vue'
@@ -84,5 +85,6 @@ function record(err: Error): void {
     -->
     <StampDialog v-if="dialogs.isOpen('stamp')" @close="dialogs.close()" />
     <ProtectDialog v-if="dialogs.isOpen('protect')" @close="dialogs.close()" />
+    <MetadataDialog v-if="dialogs.isOpen('metadata')" @close="dialogs.close()" />
   </ErrorBoundary>
 </template>

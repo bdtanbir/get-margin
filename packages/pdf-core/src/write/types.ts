@@ -316,6 +316,9 @@ export type Op =
   | { type: 'setFlattenForms'; on: boolean }
   /** Task 76 -- field names in tab order for one page. */
   | { type: 'setTabOrder'; pageId: PageId; order: string[] }
+  /** Task 86 -- the document description. */
+  | { type: 'setMetadata'; metadata: EditDocument['metadata'] }
+  | { type: 'setStripMetadata'; strip: boolean }
 
 export const EDIT_DOCUMENT_VERSION = 3
 

@@ -1,7 +1,7 @@
 import {
-  PdfDocument, renderPage, replay, buildQuadIndex, listFields,
+  PdfDocument, renderPage, replay, buildQuadIndex, listFields, readMetadata,
   type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
-  type SourceField, type Protection,
+  type SourceField, type Protection, type DocumentMetadata,
 } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
@@ -288,6 +288,19 @@ export class PdfService {
     const doc = this.#docFor(sourceId)
     if (!doc) throw new Error('no document open')
     return listFields(doc._raw(), page, `${sourceId ?? this.#primarySource ?? 'src-0'}:${page}`)
+  }
+
+  /**
+   * The description the source document carries.
+   *
+   * Read from the source rather than from an export copy, because the
+   * dialog opens on what the user's file already says -- an export copy
+   * would already have this build's Producer stamped on it.
+   */
+  metadata(): DocumentMetadata {
+    const doc = this.#doc
+    if (!doc) throw new Error('no document open')
+    return readMetadata(doc._raw())
   }
 
   close(): void {

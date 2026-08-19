@@ -2,6 +2,7 @@ import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
 import type {
   EditDocument, PageQuadIndex, SourceId, StrippedContent, SourceField, Protection,
+  DocumentMetadata,
 } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
@@ -65,6 +66,8 @@ export type PdfClient = {
    * for a page that is already on screen.
    */
   listFields(sourceId: SourceId | undefined, page: number): Promise<SourceField[]>
+  /** The description the source document carries. See PdfService.metadata. */
+  metadata(): Promise<DocumentMetadata>
   /** Register another file for merging. See PdfService.addSource. */
   addSource(bytes: Uint8Array): Promise<{
     sourceId: SourceId
@@ -215,6 +218,11 @@ export function createPdfClient(): PdfClient {
     async listFields(sourceId, page) {
       await ready
       return remote.listFields(sourceId, page)
+    },
+
+    async metadata() {
+      await ready
+      return remote.metadata()
     },
 
     async save(editDoc, fonts, onProgress, onStripped, protection) {
