@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { PdfService } from '../../src/workers/pdfService.js'
-import { PdfDocument } from '@margin/pdf-core'
+import { PdfDocument, emptyEditDocument } from '@margin/pdf-core'
 import { generateFixtures, fixturePath } from '../../../../packages/pdf-core/test/fixtures/index.js'
 
 beforeAll(async () => { await generateFixtures() }, 60_000)
@@ -122,8 +122,9 @@ describe('PdfService.save', () => {
     const src = bytes('simple-text')
     svc.open(src.slice())
     const empty = {
-      version: 2, sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
-      pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } }, objects: {}, nextZ: 1,
+      ...emptyEditDocument(),
+      sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
     }
     expect(Array.from(svc.save(empty))).toEqual(Array.from(src))
   })
@@ -141,7 +142,8 @@ describe('PdfService.save', () => {
     const svc = new PdfService()
     svc.open(bytes('simple-text'))
     const edits = {
-      version: 2, sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
+      ...emptyEditDocument(),
+      sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
       pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       objects: { a1: { id: 'a1', pageId: 'p0', kind: 'not-a-real-kind', z: 1 } as any },
@@ -158,7 +160,8 @@ describe('PdfService.save', () => {
     const src = bytes('simple-text')
     svc.open(src.slice())
     const edits = {
-      version: 2, sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
+      ...emptyEditDocument(),
+      sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
       pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
       objects: {
         a1: {
@@ -213,7 +216,7 @@ describe('PdfService.quadIndex', () => {
 // phase that puts more than one file's bytes in memory.
 describe('PdfService multi-source', () => {
   const twoSourceDoc = (a: string, b: string) => ({
-    version: 2,
+    ...emptyEditDocument(),
     sources: { [a]: { hash: '', name: 'a.pdf' }, [b]: { hash: '', name: 'b.pdf' } },
     pageOrder: ['x', 'y'],
     pages: {
@@ -342,5 +345,30 @@ describe('PdfService.render across sources', () => {
     // The source is gone, so it falls back to the primary rather than
     // rendering through a handle whose bytes were dropped.
     expect(() => svc.render({ id: 2, page: 0, scale: 1, sourceId: added.sourceId })).not.toThrow()
+  })
+})
+
+// Task 70. The fill overlay reads fields from the SOURCE document, because
+// the page it draws over is the source page as rendered.
+describe('PdfService.listFields', () => {
+  it('returns nothing for a document with no form', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    expect(svc.listFields(undefined, 0)).toEqual([])
+  })
+
+  it('throws by name when no document is open', () => {
+    expect(() => new PdfService().listFields(undefined, 0)).toThrow(/no document open/)
+  })
+
+  it('reads a merged source’s fields through the same handle cache as render', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+    // Both sources are formless, so this asserts the plumbing rather than
+    // the contents: the call must resolve the secondary handle and not
+    // silently answer for the primary.
+    expect(() => svc.listFields(added.sourceId, 5)).not.toThrow()
+    expect(svc.listFields(added.sourceId, 5)).toEqual([])
   })
 })

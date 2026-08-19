@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type { FieldType } from '@margin/pdf-core'
 import type { Rect } from '@margin/transform'
 import { useEditsStore } from '@/stores/edits'
 
@@ -10,6 +11,10 @@ export type ToolId =
   // Task 48. A PAGE tool, not an object tool: it changes the page's frame
   // rather than adding anything to it.
   | 'crop'
+  // Task 74. ONE tool for all six field types; the type is chosen in the
+  // inspector rather than costing six more rail entries in a product where
+  // forms are one phase of eight.
+  | 'field'
 
 /** An object being dragged out but not yet committed. */
 export type Draft = { pageId: string; rect: Rect }
@@ -21,6 +26,11 @@ export type Draft = { pageId: string; rect: Rect }
  */
 export const useToolsStore = defineStore('tools', () => {
   const active = ref<ToolId>('select')
+  /**
+   * Which kind of field the field tool draws next. Lives here rather than
+   * in edit history: it is a tool setting, not a document edit.
+   */
+  const fieldType = ref<FieldType>('text')
   const draft = ref<Draft | undefined>(undefined)
   /**
    * The text object whose inline editor is open, if any. Transient like
@@ -49,6 +59,8 @@ export const useToolsStore = defineStore('tools', () => {
 
   return {
     active: computed(() => active.value),
+    fieldType: computed(() => fieldType.value),
+    setFieldType(type: FieldType): void { fieldType.value = type },
     draft: computed(() => draft.value),
     editingId: computed(() => editingId.value),
     setTool,

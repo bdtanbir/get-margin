@@ -19,6 +19,7 @@ import { useDocumentStore } from '@/stores/document'
 import { getPdfClient } from '@/workers/pdfClient'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
+import FieldLayer from '@/features/forms/FieldLayer.vue'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -182,6 +183,22 @@ const draft = computed(() => {
       class="pointer-events-auto absolute inset-0 cursor-text"
       @pointerdown="text.onPointerDown"
     />
+    <!--
+      AFTER the text surface and BEFORE the <svg>, and both halves matter.
+
+      Before the svg, so the user's own objects paint and hit-test above the
+      form: an annotation drawn over a field is reachable, which is what
+      drawing it on top meant.
+
+      After the text surface, because that surface is pointer-events-auto
+      and covers the whole page whenever the select tool is active. Mounted
+      earlier, FieldLayer sat UNDERNEATH it and every field became
+      unclickable -- a checkbox could not be ticked at all. It looked fine
+      in unit tests, which dispatch events at elements directly, and in any
+      e2e step using fill(), which focuses rather than clicks. Only a real
+      click found it.
+    -->
+    <FieldLayer :page="props.page" :zoom="props.zoom" />
     <svg
       ref="svgEl"
       class="pointer-events-none absolute inset-0 size-full"

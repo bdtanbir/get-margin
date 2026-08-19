@@ -7,6 +7,7 @@ export type ObjectKind =
   | 'text' | 'image' | 'rect' | 'ellipse' | 'line' | 'arrow'
   | 'ink' | 'highlight' | 'underline' | 'strikeout'
   | 'whiteout' | 'link' | 'signature'
+  | 'field'
 
 /** sRGB, each channel 0..1 — the range MuPDF's colour setters take. */
 export type Color = [number, number, number]
@@ -75,6 +76,52 @@ export type MarkupObject = BaseObject & {
 
 export type LinkObject = BaseObject & { kind: 'link'; uri: string }
 
+/**
+ * What a form field holds. `boolean` is the button types; `string[]` is a
+ * multi-select list box.
+ */
+export type FieldValue = string | boolean | string[]
+
+export type FieldType =
+  | 'text' | 'checkbox' | 'radio' | 'dropdown' | 'listbox' | 'signature'
+
+/**
+ * A form field the USER created. Filling a field that already exists in the
+ * source document is a different thing entirely and lives in
+ * `EditDocument.fieldValues` -- see PHASE-5-DESIGN.md 0 for why the two are
+ * not one type. In short: a field someone else authored is not the user's
+ * to move, and materialising one object per field on open would defeat the
+ * byte-identical pass-through before they had typed anything.
+ */
+export type FieldObject = BaseObject & {
+  kind: 'field'
+  fieldType: FieldType
+  /** The field's /T. Unique per document, except across a radio group. */
+  name: string
+  /**
+   * Radio only. Buttons sharing a group become kids of one parent field,
+   * which is what makes them mutually exclusive.
+   */
+  group: string | null
+  /**
+   * Radio only, and load-bearing: this button's on-state name. It must be
+   * unique within the group, because mupdf derives a kid's on-state from
+   * the keys of its /AP /N dictionary and two kids sharing one are ONE
+   * button as far as the format is concerned -- toggling either turns on
+   * both, silently (docs/findings/12-phase-5-preflight.md 1).
+   */
+  exportValue: string | null
+  value: FieldValue
+  /** Choice types only, in the order they should appear. */
+  options: string[]
+  required: boolean
+  readOnly: boolean
+  multiline: boolean
+  maxLength: number | null
+  /** 0 means auto-size, which is what a /DA of "0 Tf" asks for. */
+  fontSize: number
+}
+
 export type SignatureObject = BaseObject & {
   kind: 'signature'
   data: Uint8Array
@@ -83,7 +130,7 @@ export type SignatureObject = BaseObject & {
 
 export type EditObject =
   | TextObject | ImageObject | ShapeObject | WhiteoutObject
-  | InkObject | MarkupObject | LinkObject | SignatureObject
+  | InkObject | MarkupObject | LinkObject | SignatureObject | FieldObject
 
 export type SourceId = string
 
@@ -108,6 +155,19 @@ export type PageEntry = {
    * toAnnotSpace. null means "use whatever the source page has".
    */
   cropBox: [number, number, number, number] | null
+  /**
+   * Form field names in tab order, for this page.
+   *
+   * OPTIONAL, and absent means document order -- which is what every
+   * existing PDF already means, so a document that never touches tab order
+   * is written exactly as it would have been. That is also why this needed
+   * no schema version of its own.
+   *
+   * Names rather than object ids, because the same list has to address
+   * fields the user created AND fields the source document already had, and
+   * the name is the only identity those two share.
+   */
+  tabOrder?: string[]
 }
 
 export type EditDocument = {
@@ -121,6 +181,25 @@ export type EditDocument = {
   pages: Record<PageId, PageEntry>
   objects: Record<ObjectId, EditObject>
   nextZ: number
+  /**
+   * Values for fields that ALREADY EXIST in a source document, keyed by
+   * fully-qualified field name.
+   *
+   * Keyed by name rather than position because two widgets sharing a /T
+   * are one field in PDF semantics and must hold the same value -- keying
+   * by name makes that fall out instead of needing to be maintained. A
+   * positional key would also break the moment a page was reordered or a
+   * second document merged in.
+   *
+   * Fields with no /T -- structurally invalid, but real files contain
+   * them -- are keyed `#unnamed:<pageId>#<index>`.
+   */
+  fieldValues: Record<string, FieldValue>
+  /**
+   * Flatten form fields into page content on export. One-way: the fields
+   * are gone from the exported file. Off by default for that reason.
+   */
+  flattenForms: boolean
 }
 
 export type Op =
@@ -147,5 +226,38 @@ export type Op =
       at: number
       source?: { id: SourceId; hash: string; name: string }
     }
+  /**
+   * Task 71 -- fill a field the SOURCE document already had.
+   *
+   * Not an object op, because a field someone else authored is not an
+   * object: it has no rect of the user's choosing, no z, and nothing to
+   * drag. See PHASE-5-DESIGN.md 0.
+   */
+  | { type: 'setFieldValue'; key: string; value: FieldValue }
+  /** Task 72 -- flatten form fields into page content on export. */
+  | { type: 'setFlattenForms'; on: boolean }
+  /** Task 76 -- field names in tab order for one page. */
+  | { type: 'setTabOrder'; pageId: PageId; order: string[] }
 
-export const EDIT_DOCUMENT_VERSION = 2
+export const EDIT_DOCUMENT_VERSION = 3
+
+/**
+ * An edit document describing no edits at all.
+ *
+ * Exists so that adding a member to EditDocument does not break every
+ * caller that had to spell one out. The v2 bump broke five; this is the
+ * seam that makes the next bump break none. Callers needing a populated
+ * document spread over it.
+ */
+export function emptyEditDocument(): EditDocument {
+  return {
+    version: EDIT_DOCUMENT_VERSION,
+    sources: {},
+    pageOrder: [],
+    pages: {},
+    objects: {},
+    nextZ: 1,
+    fieldValues: {},
+    flattenForms: false,
+  }
+}

@@ -75,9 +75,26 @@ the rect at **negative x, and y past the page height** — outside the visible b
 `getBounds()` normalises the CropBox origin and a raw `/Rect` does not.
 
 So widget rects are **raw PDF user space (Convention B)** and `getBounds()` reports **MuPDF page
-space (Convention A)** — the same split as everywhere else. Writing a widget rect goes through the
-existing `toAnnotSpace()`, alongside `setRect`, `setQuadPoints`, `createLink`, and `setPageBox`.
-Reading one for the DOM overlay uses `getBounds()`, which is already the space the renderer works in.
+space (Convention A)**.
+
+> **Correction, added when Task 67's tests caught it.** The first version of this section concluded
+> that writing a widget rect should go through `toAnnotSpace()`, alongside `setRect` and
+> `createLink`. That is wrong, and the measurement above says so: `getBounds()` converts B to A on
+> the way *out*, and **nothing converts on the way in**. Convention A belongs to mupdf's *setters*,
+> which flip y and normalise the CropBox for the caller. Writing `/Rect` as a raw PDF object bypasses
+> all of that and lands in the file exactly as given, so it must be given the file's own space —
+> `toContentSpace`, the identity.
+>
+> The distinction is not annotation-versus-content. It is **setter-versus-raw-object**, and this is
+> the first place in the codebase that writes an annotation rect as a raw object.
+>
+> Worth recording how it was caught: passing Convention A put a field meant for the bottom of the
+> page at the top, which is still *inside* the page box. Three of four rotations passed a containment
+> assertion. Only `/Rotate 270`, where the error pushed the rect to negative y, failed — and the fix
+> was to assert the exact expected bounds rather than containment.
+
+Reading a rect for the DOM overlay uses `getBounds()`, which is already the space the renderer works
+in. That half was right.
 
 ## 5. Raw-object widgets are invisible to `getWidgets()` until save and reopen
 

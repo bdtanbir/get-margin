@@ -90,3 +90,66 @@ describe('replay accepts an older schema', () => {
     expect(() => replay(new Map(), { ...v1, version: 99 } as never)).toThrow(/newer version/i)
   })
 })
+
+describe('v2 -> v3 (forms)', () => {
+  const v2 = () => ({
+    version: 2,
+    sources: { 'src-0': { hash: 'h', name: 'a.pdf' } },
+    pageOrder: ['p0', 'p1'],
+    pages: {
+      p0: { sourceId: 'src-0', sourceIndex: 0, rotation: 90, cropBox: null },
+      p1: { sourceId: 'src-0', sourceIndex: 1, rotation: 0, cropBox: [1, 2, 3, 4] },
+    },
+    objects: { o1: { id: 'o1', kind: 'rect', pageId: 'p0' } },
+    nextZ: 7,
+  })
+
+  it('adds the form defaults', () => {
+    const out = migrateEditDocument(v2())
+    expect(out.version).toBe(3)
+    expect(out.fieldValues).toEqual({})
+    expect(out.flattenForms).toBe(false)
+  })
+
+  // The whole reason this step is safe to run on every stored record.
+  it('changes nothing else', () => {
+    const before = v2()
+    const out = migrateEditDocument(before)
+    expect(out.pageOrder).toEqual(before.pageOrder)
+    expect(out.pages).toEqual(before.pages)
+    expect(out.objects).toEqual(before.objects)
+    expect(out.sources).toEqual(before.sources)
+    expect(out.nextZ).toBe(7)
+  })
+
+  it('does not mutate its input', () => {
+    const before = v2()
+    migrateEditDocument(before)
+    expect(before.version).toBe(2)
+    expect('fieldValues' in before).toBe(false)
+  })
+
+  // A v1 document has to cross both boundaries, through the same v2 step a
+  // v2 document was written by -- not a v1-to-v3 special case.
+  it('lifts a v1 document all the way', () => {
+    const out = migrateEditDocument({
+      version: 1,
+      sourceHash: 'abc',
+      pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0 } },
+      objects: {},
+      nextZ: 1,
+    })
+    expect(out.version).toBe(3)
+    expect(out.sources[LEGACY_SOURCE_ID]).toEqual({ hash: 'abc', name: '' })
+    expect(out.pages.p0).toEqual({
+      sourceId: LEGACY_SOURCE_ID, sourceIndex: 0, rotation: 0, cropBox: null,
+    })
+    expect(out.fieldValues).toEqual({})
+    expect(out.flattenForms).toBe(false)
+  })
+
+  it('still refuses a document from a newer build', () => {
+    expect(() => migrateEditDocument({ version: 4 })).toThrow(/newer version/)
+  })
+})

@@ -45,3 +45,74 @@ export function applyPageBoxes(
     }
   })
 }
+
+/**
+ * Put each page's form fields in the order the user chose, and tell viewers
+ * to honour it.
+ *
+ * Tab order IS /Annots order in the PDF format -- there is no separate
+ * ordering structure for it. /Tabs /R on the page dictionary asks the
+ * viewer to follow the array in row order rather than substituting its own
+ * geometric guess, which several viewers do by default.
+ *
+ * Non-widget annotations keep their relative positions and stay after the
+ * widgets: the array's order means nothing for ink or a highlight, so there
+ * is nothing to preserve there and nothing to gain from interleaving.
+ *
+ * A name in `tabOrder` matching no field on the page is ignored, and a
+ * field the order does not mention goes last in its existing order. Both
+ * happen from ordinary editing -- delete a field after ordering, or add one
+ * after -- and neither is a reason to fail an export.
+ */
+export function applyTabOrder(
+  raw: mupdf.PDFDocument,
+  editDoc: EditDocument,
+): void {
+  editDoc.pageOrder.forEach((pageId, index) => {
+    const order = editDoc.pages[pageId]?.tabOrder
+    if (!order || order.length === 0) return
+
+    const page = raw.loadPage(index)
+    try {
+      const obj = page.getObject()
+      const annots = obj.get('Annots')
+      if (!annots.isArray()) return
+
+      const widgets: Array<{ obj: mupdf.PDFObject; name: string }> = []
+      const others: mupdf.PDFObject[] = []
+      annots.forEach((a) => {
+        if (a.isDictionary() && a.get('Subtype').asName() === 'Widget') {
+          // A radio kid's /T lives on its parent, so the name has to be
+          // looked for in both places or every button sorts as unnamed.
+          const own = a.get('T')
+          const parent = a.get('Parent')
+          const name = own.isString()
+            ? own.asString()
+            : parent.isDictionary() && parent.get('T').isString()
+              ? parent.get('T').asString()
+              : ''
+          widgets.push({ obj: a, name })
+        } else {
+          others.push(a)
+        }
+      })
+      if (widgets.length === 0) return
+
+      const rank = (name: string): number => {
+        const at = order.indexOf(name)
+        return at === -1 ? Number.MAX_SAFE_INTEGER : at
+      }
+      // A stable sort, which Array.prototype.sort is required to be, keeps
+      // unmentioned fields in the order they were already in.
+      const sorted = [...widgets].sort((a, b) => rank(a.name) - rank(b.name))
+
+      const next = raw.newArray()
+      for (const w of sorted) next.push(w.obj)
+      for (const o of others) next.push(o)
+      obj.put('Annots', next)
+      obj.put('Tabs', raw.newName('R'))
+    } finally {
+      page.destroy()
+    }
+  })
+}

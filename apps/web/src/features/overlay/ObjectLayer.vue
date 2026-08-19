@@ -10,6 +10,7 @@ import TextObject from './objects/TextObject.vue'
 import ImageObject from './objects/ImageObject.vue'
 import InkObject from './objects/InkObject.vue'
 import LinkObject from './objects/LinkObject.vue'
+import FieldObject from './objects/FieldObject.vue'
 
 const props = defineProps<{ object: EditObject }>()
 
@@ -38,6 +39,7 @@ const COMPONENTS: Partial<Record<ObjectKind, Component>> = {
   image: ImageObject,
   ink: InkObject,
   link: LinkObject,
+  field: FieldObject,
 }
 
 const component = computed(() => COMPONENTS[props.object.kind])

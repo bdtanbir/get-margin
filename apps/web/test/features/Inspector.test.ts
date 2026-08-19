@@ -4,7 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import Inspector from '@/features/tools/Inspector.vue'
 import { useEditsStore } from '@/stores/edits'
 import { useDocumentStore } from '@/stores/document'
-import type { EditObject } from '@margin/pdf-core'
+import type { EditObject, FieldObject } from '@margin/pdf-core'
 
 const rect: EditObject = {
   id: 'o1', pageId: 'p1', kind: 'rect',
@@ -162,5 +162,116 @@ describe('Inspector URL validation', () => {
     const before = edits.historySize
     edits.applyOp({ type: 'updateObject', id: 'l1', patch: { opacity: 0.5 } }, 'Later')
     expect(edits.historySize).toBe(before + 1)
+  })
+})
+
+describe('Inspector for form fields', () => {
+  const fieldObject = (over: Partial<FieldObject> = {}): FieldObject => ({
+    id: 'f1', pageId: 'p1', kind: 'field',
+    rect: { x: 10, y: 10, w: 100, h: 20 },
+    rotation: 0, z: 1, locked: false, opacity: 1,
+    fieldType: 'text', name: 'text_1', group: null, exportValue: null,
+    value: '', options: [], required: false, readOnly: false,
+    multiline: false, maxLength: null, fontSize: 0,
+    ...over,
+  })
+
+  function open(over: Partial<FieldObject> = {}) {
+    const s = useEditsStore()
+    s.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'],
+      { p1: { sourceId: 'src-0', sourceIndex: 0, rotation: 0, cropBox: null } })
+    const o = fieldObject(over)
+    s.applyOp({ type: 'addObject', object: o }, 'Add')
+    s.select([o.id])
+    return { store: s, wrapper: mount(Inspector) }
+  }
+
+  beforeEach(() => { setActivePinia(createPinia()) })
+
+  it('offers the type and the name for every field', () => {
+    const { wrapper } = open()
+    expect(wrapper.find('[data-field="fieldType"]').exists()).toBe(true)
+    expect(wrapper.find('[data-field="name"]').exists()).toBe(true)
+  })
+
+  it('changes the field’s type', async () => {
+    const { store, wrapper } = open()
+    await wrapper.get('[data-field="fieldType"] select').setValue('checkbox')
+    expect((store.doc.objects.f1 as FieldObject).fieldType).toBe('checkbox')
+  })
+
+  /**
+   * Properties follow the TYPE, not just the kind. Offering "Options" on a
+   * checkbox is not a setting so much as a question with no answer.
+   */
+  it('offers options only for choice types', () => {
+    expect(open({ fieldType: 'dropdown' }).wrapper.find('[data-field="options"]').exists()).toBe(true)
+    expect(open({ fieldType: 'listbox' }).wrapper.find('[data-field="options"]').exists()).toBe(true)
+    expect(open({ fieldType: 'checkbox' }).wrapper.find('[data-field="options"]').exists()).toBe(false)
+    expect(open({ fieldType: 'text' }).wrapper.find('[data-field="options"]').exists()).toBe(false)
+  })
+
+  it('offers multiline and max length only for text', () => {
+    expect(open({ fieldType: 'text' }).wrapper.find('[data-field="multiline"]').exists()).toBe(true)
+    expect(open({ fieldType: 'checkbox' }).wrapper.find('[data-field="multiline"]').exists()).toBe(false)
+    expect(open({ fieldType: 'checkbox' }).wrapper.find('[data-field="maxLength"]').exists()).toBe(false)
+  })
+
+  it('offers an option value only for a radio button', () => {
+    expect(open({ fieldType: 'radio', exportValue: 'option_1', group: 'g' })
+      .wrapper.find('[data-field="exportValue"]').exists()).toBe(true)
+    expect(open({ fieldType: 'text' }).wrapper.find('[data-field="exportValue"]').exists()).toBe(false)
+  })
+
+  it('toggles a boolean property, undoably', async () => {
+    const { store, wrapper } = open()
+    await wrapper.get('[data-field="required"] input').setValue(true)
+    expect((store.doc.objects.f1 as FieldObject).required).toBe(true)
+    store.undo()
+    expect((store.doc.objects.f1 as FieldObject).required).toBe(false)
+  })
+
+  it('adds and removes options', async () => {
+    const { store, wrapper } = open({ fieldType: 'dropdown', options: ['BD'] })
+    await wrapper.get('[data-add-option]').trigger('click')
+    expect((store.doc.objects.f1 as FieldObject).options).toHaveLength(2)
+    await wrapper.get('[data-remove-option="0"]').trigger('click')
+    expect((store.doc.objects.f1 as FieldObject).options).toEqual(['Option 2'])
+  })
+
+  it('edits an option in place', async () => {
+    const { store, wrapper } = open({ fieldType: 'dropdown', options: ['BD', 'CA'] })
+    const inputs = wrapper.findAll('[data-field="options"] input')
+    await inputs[1]!.setValue('Canada')
+    expect((store.doc.objects.f1 as FieldObject).options).toEqual(['BD', 'Canada'])
+  })
+
+  /**
+   * A field with no /T cannot hold a value -- the format addresses values
+   * by name -- so the edit is rejected here and the export never has to.
+   */
+  it('refuses an empty name and says why', async () => {
+    const { store, wrapper } = open()
+    const input = wrapper.get('[data-field="name"] input')
+    await input.setValue('   ')
+    await input.trigger('change')
+    expect((store.doc.objects.f1 as FieldObject).name).toBe('text_1')
+    expect(useDocumentStore().error).toMatch(/needs a name/)
+  })
+
+  // Two buttons sharing an export value are ONE button, and "Off" is the
+  // universal unselected state.
+  it('refuses a reserved option value', async () => {
+    const { store, wrapper } = open({ fieldType: 'radio', exportValue: 'option_1', group: 'g' })
+    const input = wrapper.get('[data-field="exportValue"] input')
+    await input.setValue('Off')
+    await input.trigger('change')
+    expect((store.doc.objects.f1 as FieldObject).exportValue).toBe('option_1')
+    expect(useDocumentStore().error).toMatch(/reserved/)
+  })
+
+  // The alternative is a user believing this app signs documents.
+  it('says a signature field is not a signature', () => {
+    expect(open({ fieldType: 'signature' }).wrapper.text()).toContain('does not sign documents')
   })
 })

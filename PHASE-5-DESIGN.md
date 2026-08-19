@@ -82,8 +82,13 @@ export type FieldObject = BaseObject & {
 ```
 
 `rect` follows the project rule — raw PDF user space, bottom-up — and reaches `/Rect` through
-`toAnnotSpace()`, exactly as `setRect`, `setQuadPoints`, `createLink`, and `setPageBox` do. Findings
-12 §4 measured this rather than assuming it.
+`toContentSpace()`, the identity, **not** `toAnnotSpace()`.
+
+That is the opposite of every other annotation here, and the distinction is not the annotation: it
+is the API. Convention A belongs to mupdf's *setters* — `setRect`, `setQuadPoints`, `createLink` —
+which flip y and normalise the CropBox on the caller's behalf. A widget's `/Rect` is written as a raw
+PDF object, which bypasses all of that. See the correction in findings 12 §4, which this contradicted
+until Task 67's tests caught it.
 
 **Migration.** `migrateEditDocument` gains a v2 → v3 step: `fieldValues: {}`, `flattenForms: false`.
 Both defaults mean "a document with no forms behaves exactly as it did", which is what makes the step

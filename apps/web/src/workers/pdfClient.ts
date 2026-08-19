@@ -1,7 +1,7 @@
 import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
 import type {
-  EditDocument, PageQuadIndex, SourceId, StrippedContent,
+  EditDocument, PageQuadIndex, SourceId, StrippedContent, SourceField,
 } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
@@ -56,6 +56,14 @@ export type PdfClient = {
    * PdfService.quadIndex.
    */
   quadIndex(page: number): Promise<PageQuadIndex>
+  /**
+   * The form fields on one page. See PdfService.listFields.
+   *
+   * Not cancellable and not queued behind renders: enumerating fields is
+   * cheap next to rasterising a page, and the fill overlay needs an answer
+   * for a page that is already on screen.
+   */
+  listFields(sourceId: SourceId | undefined, page: number): Promise<SourceField[]>
   /** Register another file for merging. See PdfService.addSource. */
   addSource(bytes: Uint8Array): Promise<{
     sourceId: SourceId
@@ -201,6 +209,11 @@ export function createPdfClient(): PdfClient {
       await ready
       const id = nextId++
       return await remote.render({ id, page, scale, ...(sourceId ? { sourceId } : {}) })
+    },
+
+    async listFields(sourceId, page) {
+      await ready
+      return remote.listFields(sourceId, page)
     },
 
     async save(editDoc, fonts, onProgress, onStripped) {

@@ -1,7 +1,7 @@
 import * as mupdf from 'mupdf'
 import { withPage, SAVE_OPTIONS } from './session.js'
 import { assemble, isUntouched, type SourceBytes } from './assemble.js'
-import { applyPageBoxes } from './objects/page.js'
+import { applyPageBoxes, applyTabOrder } from './objects/page.js'
 import { geometryFromPageObject } from '../geometry.js'
 import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectKind } from './types.js'
 import type { PageGeometry } from '@margin/transform'
@@ -14,8 +14,13 @@ import { createXObjectCache, type XObjectCache } from './xobject.js'
 import { writeInk } from './objects/ink.js'
 import { writeLink } from './objects/link.js'
 import { writeMarkup } from './objects/markup.js'
+import { writeField } from './objects/field.js'
+export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
+export { listFields, fieldKey, applyFieldValues } from './fields.js'
+export type { SourceField, SourceFieldType } from './fields.js'
 import { migrateEditDocument } from './migrate.js'
 import { stripActiveContent, anythingStripped, type StrippedContent } from './sanitize.js'
+import { applyFieldValues } from './fields.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -83,6 +88,10 @@ WRITERS.signature = writeImage
 
 // Task 38. Native /QuadPoints annotations -- they stay editable and
 // removable in other PDF tools and do not damage the page.
+// Task 67. Form fields the USER created -- filling a field that already
+// exists in the source is not an object and does not come through here.
+WRITERS.field = writeField
+
 WRITERS.highlight = writeMarkup
 WRITERS.underline = writeMarkup
 WRITERS.strikeout = writeMarkup
@@ -139,6 +148,15 @@ export function replay(
   const provider: FontProvider = opts.fonts ?? new Map()
   const measure = createMeasurer(provider)
   const hasObjects = Object.keys(editDoc.objects).length > 0
+  // A filled field and a flatten request are edits as much as an object is.
+  // Without this a user could type into a form, hit Download, and get their
+  // original file back -- the pass-through tier silently discarding the
+  // only thing they did.
+  const hasFills = Object.keys(editDoc.fieldValues ?? {}).length > 0
+  const flatten = editDoc.flattenForms === true
+  const hasTabOrder = editDoc.pageOrder.some(
+    (id) => (editDoc.pages[id]?.tabOrder?.length ?? 0) > 0,
+  )
 
   // See assemble(). Pages come back already in pageOrder, so from here on a
   // page is addressed by its POSITION, not its sourceIndex.
@@ -153,7 +171,10 @@ export function replay(
     // nothing to it, and nothing had to be removed from it -- so hand back
     // the user's own bytes rather than a re-serialisation.
     // e2e/download.spec.ts asserts this byte-for-byte.
-    if (unchanged && !hasObjects && !anythingStripped(stripped)) {
+    if (
+      unchanged && !hasObjects && !hasFills && !flatten && !hasTabOrder
+      && !anythingStripped(stripped)
+    ) {
       const original = sources.get(Object.keys(editDoc.sources)[0]!)
       if (original) return original
     }
@@ -230,6 +251,30 @@ export function replay(
       opts.onProgress?.(done, pagesToWrite.length)
     }
 
+    // AFTER the object writers: a field created in this same session has to
+    // exist before a value can be set on it.
+    if (hasFills) {
+      applyFieldValues(
+        raw,
+        editDoc.fieldValues,
+        editDoc.pageOrder.map((pageId) => {
+          const entry = editDoc.pages[pageId]
+          return entry ? `${entry.sourceId}:${entry.sourceIndex}` : ''
+        }),
+      )
+    }
+
+    // AFTER the fields exist and BEFORE they are baked: tab order IS
+    // /Annots order, so it has to be applied while there is still an
+    // /Annots array of widgets to order.
+    applyTabOrder(raw, editDoc)
+
+    // LAST, and on the assembled export copy only. bake() draws each
+    // field's appearance into the page content and removes /AcroForm
+    // wholesale -- it is not undoable, and doing it to the document being
+    // edited would destroy the user's form rather than their copy of it.
+    if (flatten) raw.bake(false, true)
+
     return raw.saveToBuffer(SAVE_OPTIONS).asUint8Array()
   } finally {
     // Disposal is a correctness requirement: omitting it hard-crashes the
@@ -240,7 +285,7 @@ export function replay(
 
 export { withDocument, withPage, SAVE_OPTIONS } from './session.js'
 export { assemble, isUntouched, type SourceBytes } from './assemble.js'
-export { applyPageBoxes } from './objects/page.js'
+export { applyPageBoxes, applyTabOrder } from './objects/page.js'
 export {
   stripActiveContent, anythingStripped, nothingStripped, type StrippedContent,
 } from './sanitize.js'
@@ -255,4 +300,8 @@ export { createXObjectCache, type XObjectCache } from './xobject.js'
 export { writeInk } from './objects/ink.js'
 export { writeLink } from './objects/link.js'
 export { writeMarkup } from './objects/markup.js'
+export {
+  writeField, ensureAcroForm, pageAnnots, commonFlags, newWidget,
+  FIELD_READ_ONLY, FIELD_REQUIRED, TX_MULTILINE, BTN_NO_TOGGLE_OFF, BTN_RADIO, CH_COMBO,
+} from './objects/field.js'
 export { migrateEditDocument, LEGACY_SOURCE_ID } from './migrate.js'

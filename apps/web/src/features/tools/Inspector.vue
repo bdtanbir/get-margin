@@ -4,6 +4,7 @@ import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { fieldsFor, type Field } from './inspectorFields'
 import { toHex, fromHex } from './colorInput'
+import TabOrderList from './TabOrderList.vue'
 
 const edits = useEditsStore()
 const doc = useDocumentStore()
@@ -13,7 +14,7 @@ const selected = computed(() => {
   return id ? edits.doc.objects[id] : undefined
 })
 
-const fields = computed(() => (selected.value ? fieldsFor(selected.value.kind) : []))
+const fields = computed(() => (selected.value ? fieldsFor(selected.value) : []))
 
 const valueOf = (key: string): unknown =>
   (selected.value as unknown as Record<string, unknown> | undefined)?.[key]
@@ -43,6 +44,32 @@ function onInput(key: string, value: unknown): void {
     edits.beginTransaction('Edit')
   }
   write(key, value)
+}
+
+/**
+ * The options list, edited as a whole.
+ *
+ * Each change writes the entire array rather than patching an index: the
+ * op is `updateObject` with a partial, and a partial naming `options`
+ * replaces it. Reading, editing a copy, and writing it back is what keeps
+ * that honest -- and it is one undo step per change, which is what the user
+ * would expect from clicking "remove".
+ */
+function optionsOf(key: string): string[] {
+  const v = valueOf(key)
+  return Array.isArray(v) ? (v as string[]) : []
+}
+
+function addOption(key: string): void {
+  write(key, [...optionsOf(key), `Option ${optionsOf(key).length + 1}`])
+}
+
+function removeOption(key: string, index: number): void {
+  write(key, optionsOf(key).filter((_, i) => i !== index))
+}
+
+function replaceOption(key: string, index: number, value: string): void {
+  write(key, optionsOf(key).map((o, i) => (i === index ? value : o)))
 }
 
 /**
@@ -111,6 +138,13 @@ function handleInput(field: Field, e: Event): void {
         still be copied out of the file.
       </p>
 
+      <!--
+        Shown while a field is selected, because that is when the user is
+        thinking about the form. It is a PAGE property rather than an object
+        one, so it sits outside the per-property loop.
+      -->
+      <TabOrderList v-if="selected.kind === 'field'" :page-id="selected.pageId" />
+
       <div
         v-for="f in fields"
         :key="f.key"
@@ -156,6 +190,61 @@ function handleInput(field: Field, e: Event): void {
           @change="() => onCommit(f)"
           @blur="() => onCommit(f)"
         />
+
+        <!--
+          Static guidance, not a control. A signature FIELD is a place for a
+          signature, and saying so where the user is configuring it is the
+          only thing standing between them and believing this app signs
+          documents.
+        -->
+        <p
+          v-else-if="f.type === 'note'"
+          class="rounded-control border border-border bg-surface-sunken p-2 text-[12px] text-text-muted"
+        >{{ f.text }}</p>
+
+        <input
+          v-else-if="f.type === 'boolean'"
+          :id="`insp-${f.key}`"
+          type="checkbox"
+          class="size-4 accent-accent"
+          :disabled="selected.locked"
+          :checked="valueOf(f.key) === true"
+          @change="(e) => { onInput(f.key, (e.target as HTMLInputElement).checked); onCommit(f) }"
+        />
+
+        <!--
+          One option per line, edited in place. A comma-separated string
+          would be simpler and wrong: option values legitimately contain
+          commas, and a user typing "Yes, please" as an option would
+          silently get two.
+        -->
+        <div v-else-if="f.type === 'list'" class="flex w-40 flex-col gap-1">
+          <div v-for="(opt, i) in (valueOf(f.key) as string[])" :key="i" class="flex gap-1">
+            <input
+              type="text"
+              class="min-h-8 w-full rounded-control border border-border bg-surface-sunken px-2 text-[13px]"
+              :disabled="selected.locked"
+              :value="opt"
+              :aria-label="`Option ${i + 1}`"
+              @change="(e) => replaceOption(f.key, i, (e.target as HTMLInputElement).value)"
+            />
+            <button
+              type="button"
+              class="min-h-8 rounded-control border border-border px-2 text-[12px]"
+              :disabled="selected.locked"
+              :aria-label="`Remove option ${i + 1}`"
+              :data-remove-option="i"
+              @click="removeOption(f.key, i)"
+            >&times;</button>
+          </div>
+          <button
+            type="button"
+            class="min-h-8 rounded-control border border-border px-2 text-[12px]"
+            :disabled="selected.locked"
+            data-add-option
+            @click="addOption(f.key)"
+          >Add option</button>
+        </div>
 
         <input
           v-else

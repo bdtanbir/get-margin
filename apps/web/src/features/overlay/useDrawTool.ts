@@ -1,6 +1,8 @@
 import { nanoid } from 'nanoid'
 import { viewToPdf, rectFromPoints, directedRect, type Rect } from '@margin/transform'
-import type { ShapeObject, WhiteoutObject, TextObject, LinkObject, EditObject } from '@margin/pdf-core'
+import type {
+  ShapeObject, WhiteoutObject, TextObject, LinkObject, FieldObject, EditObject,
+} from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
@@ -8,6 +10,7 @@ import { useToolsStore, type ToolId } from '@/stores/tools'
 import { DEFAULT_FAMILY } from '@/lib/fonts'
 import { normalizeUri } from '@/lib/linkUrl'
 import { useDragGesture } from './useDragGesture'
+import { newFieldNames } from '@/features/forms/fieldNaming'
 
 /**
  * Below this, a drag is a stray click. Committing it would leave an
@@ -17,7 +20,7 @@ import { useDragGesture } from './useDragGesture'
 const MIN_DRAG_PT = 3
 
 /** Kinds this composable knows how to create. Task 35 extends it. */
-const DRAWABLE = ['rect', 'ellipse', 'line', 'arrow', 'whiteout', 'text', 'link'] as const
+const DRAWABLE = ['rect', 'ellipse', 'line', 'arrow', 'whiteout', 'text', 'link', 'field'] as const
 export type DrawableTool = (typeof DRAWABLE)[number]
 
 export function isDrawable(tool: ToolId): tool is DrawableTool {
@@ -69,26 +72,61 @@ export function setUriPrompt(fn: UriPrompt | undefined): void {
  * and no stroke; the four shapes carry stroke and fill. Splitting it here
  * keeps the gesture code below identical for every drawable kind.
  */
+/**
+ * A new field's properties, minus the naming -- which depends on what is
+ * already in the document and so is decided at commit time.
+ */
+export const FIELD_DEFAULTS = {
+  value: '' as string,
+  options: [] as string[],
+  required: false,
+  readOnly: false,
+  multiline: false,
+  maxLength: null as number | null,
+  // 0 means auto-size, which is what a /DA of "0 Tf" asks for -- the right
+  // default for a box whose height the user chose by dragging.
+  fontSize: 0,
+}
+
 export function draftDefaults(kind: ToolId) {
   if (kind === 'whiteout') return WHITEOUT_DEFAULTS
   if (kind === 'text') return TEXT_DEFAULTS
   if (kind === 'link') return { uri: '' }
+  if (kind === 'field') return FIELD_DEFAULTS
   return SHAPE_DEFAULTS
 }
+
+/** A field small enough to be an accident still needs to be usable. */
+const FIELD_MIN_SIZE_PT = { w: 60, h: 16 }
+const BUTTON_SIZE_PT = 16
 
 function significant(rect: Rect, kind: DrawableTool): boolean {
   // Text is the exception: a single click is a legitimate way to place a
   // caret, so it gets a default-sized box rather than being discarded.
-  if (kind === 'text') return true
+  // A field behaves the same way -- clicking where a field should go is a
+  // reasonable way to ask for one.
+  if (kind === 'text' || kind === 'field') return true
   if (isDirected(kind)) return Math.hypot(rect.w, rect.h) >= MIN_DRAG_PT
   return rect.w >= MIN_DRAG_PT || rect.h >= MIN_DRAG_PT
 }
 
-/** A clicked (rather than dragged) text frame gets a usable default size. */
-function sizeFor(rect: Rect, kind: DrawableTool): Rect {
-  if (kind !== 'text') return rect
-  const w = Math.max(rect.w, TEXT_MIN_SIZE_PT.w)
-  const h = Math.max(rect.h, TEXT_MIN_SIZE_PT.h)
+/**
+ * A clicked (rather than dragged) frame gets a usable default size.
+ *
+ * Buttons are SQUARE regardless of the drag, because a checkbox is square
+ * in every viewer that renders one and a stretched box would render its
+ * appearance stream distorted -- the two-state dot is drawn to the widget's
+ * own BBox.
+ */
+function sizeFor(rect: Rect, kind: DrawableTool, buttonish = false): Rect {
+  if (kind === 'field' && buttonish) {
+    const s = BUTTON_SIZE_PT
+    return { x: rect.x, y: rect.y + rect.h - s, w: s, h: s }
+  }
+  const min = kind === 'text' ? TEXT_MIN_SIZE_PT : kind === 'field' ? FIELD_MIN_SIZE_PT : null
+  if (!min) return rect
+  const w = Math.max(rect.w, min.w)
+  const h = Math.max(rect.h, min.h)
   // The box's y is its BOTTOM edge, so growing it must extend downward from
   // the click, not upward -- otherwise a click places a box above the cursor.
   return { x: rect.x, y: rect.y + rect.h - h, w, h }
@@ -147,19 +185,32 @@ export function useDrawTool(page: () => PageState, zoom: () => number) {
           }
         }
 
+        // A field's name depends on what is already in the document, and a
+        // radio button's group and export value on which buttons exist --
+        // so naming happens here, at commit time, not in draftDefaults.
+        const type = tools.fieldType
+        const buttonish = tool === 'field' && (type === 'checkbox' || type === 'radio')
+        const fieldParts = tool === 'field'
+          ? { fieldType: type, ...newFieldNames(edits.doc.objects, type) }
+          : {}
+
         const object = {
           ...draftDefaults(tool),
           ...(tool === 'link' ? { uri } : {}),
+          ...fieldParts,
           id: nanoid(10),
           pageId: page().id,
           kind: tool,
-          rect: sizeFor(rect, tool),
+          rect: sizeFor(rect, tool, buttonish),
           rotation: 0,
           z: edits.nextZ(),
           locked: false,
           opacity: 1,
-        } as ShapeObject | WhiteoutObject | TextObject | LinkObject
-        edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Draw')
+        } as ShapeObject | WhiteoutObject | TextObject | LinkObject | FieldObject
+        edits.applyOp(
+          { type: 'addObject', object: object as EditObject },
+          tool === 'field' ? 'Add form field' : 'Draw',
+        )
         // Hand the new object straight to the select tool: the thing you
         // just drew is the thing you want to adjust.
         tools.setTool('select')
