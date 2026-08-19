@@ -35,7 +35,10 @@ test('edits survive a reload and are offered back', async ({ page }) => {
   await expect(page.locator('[data-autosave-state="saved"]')).toBeVisible()
 
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  // The empty state is identified by a stable hook, not its heading text:
+  // that copy is product wording and changed once already, breaking a dozen
+  // selectors across three specs at once.
+  await expect(page.locator('[data-empty-state]')).toBeVisible()
   await open(page)
 
   // OFFERED, not applied: the document comes back clean until accepted.

@@ -33,6 +33,7 @@ function onInput(e: Event): void {
 <template>
   <div
     ref="zone"
+    data-empty-state
     class="flex h-full w-full items-center justify-center p-6 transition-colors duration-base"
     :class="isOverDropZone ? 'bg-accent-subtle' : 'bg-canvas'"
   >

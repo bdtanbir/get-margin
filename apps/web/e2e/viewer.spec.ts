@@ -54,7 +54,10 @@ function page1Canvas(page: import('@playwright/test').Page) {
 
 test('opens a PDF and renders the first page', async ({ page }, testInfo) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Open a PDF' })).toBeVisible()
+  // The empty state is identified by a stable hook, not its heading text:
+  // that copy is product wording and changed once already, breaking a dozen
+  // selectors across three specs at once.
+  await expect(page.locator('[data-empty-state]')).toBeVisible()
 
   await page.setInputFiles('input[type=file]', FIXTURE)
 
