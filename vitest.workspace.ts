@@ -12,6 +12,13 @@ export default defineWorkspace([
   },
   {
     test: {
+      name: 'shared',
+      root: './packages/shared',
+      environment: 'node',
+    },
+  },
+  {
+    test: {
       name: 'transform',
       root: './packages/transform',
       environment: 'node',
