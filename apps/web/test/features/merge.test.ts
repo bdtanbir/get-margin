@@ -128,8 +128,9 @@ describe('AddSourceButton', () => {
     return input.trigger('change')
   }
 
-  const PDF = new Uint8Array<ArrayBuffer>([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 10, 10])
-  const NOT_PDF = new Uint8Array<ArrayBuffer>([0x50, 0x4b, 0x03, 0x04, 10, 10, 10, 10])
+  const PDF: Uint8Array<ArrayBuffer> =
+    new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 10, 10])
+  const NOT_PDF: Uint8Array<ArrayBuffer> = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 10, 10, 10, 10])
 
   it('registers the picked file and appends its pages', async () => {
     const w = mount(AddSourceButton)
