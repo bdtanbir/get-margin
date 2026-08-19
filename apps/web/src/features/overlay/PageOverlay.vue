@@ -170,13 +170,6 @@ const draft = computed(() => {
   -->
   <div class="pointer-events-none absolute inset-0">
     <!--
-      FIRST, so it sits below everything else in the stack. A form field the
-      document already had is not one of the user's objects: clicking it
-      focuses it and never selects. Above ObjectLayer it would swallow
-      clicks meant for annotations the user drew over the form.
-    -->
-    <FieldLayer :page="props.page" :zoom="props.zoom" />
-    <!--
       BELOW the <svg> in the stack, deliberately. Objects inside the svg are
       pointer-events-auto over a pointer-events-none svg, so a click on an
       object reaches the object and a click on bare page falls through to
@@ -190,6 +183,22 @@ const draft = computed(() => {
       class="pointer-events-auto absolute inset-0 cursor-text"
       @pointerdown="text.onPointerDown"
     />
+    <!--
+      AFTER the text surface and BEFORE the <svg>, and both halves matter.
+
+      Before the svg, so the user's own objects paint and hit-test above the
+      form: an annotation drawn over a field is reachable, which is what
+      drawing it on top meant.
+
+      After the text surface, because that surface is pointer-events-auto
+      and covers the whole page whenever the select tool is active. Mounted
+      earlier, FieldLayer sat UNDERNEATH it and every field became
+      unclickable -- a checkbox could not be ticked at all. It looked fine
+      in unit tests, which dispatch events at elements directly, and in any
+      e2e step using fill(), which focuses rather than clicks. Only a real
+      click found it.
+    -->
+    <FieldLayer :page="props.page" :zoom="props.zoom" />
     <svg
       ref="svgEl"
       class="pointer-events-none absolute inset-0 size-full"

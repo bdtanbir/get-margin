@@ -150,6 +150,52 @@ async function hostile(outDir: string): Promise<void> {
   await save(doc, outDir, 'hostile')
 }
 
+/**
+ * A realistic AcroForm: a text field, a checkbox, a three-button radio
+ * group, and a dropdown.
+ *
+ * Built with pdf-lib's form API rather than raw objects, deliberately. The
+ * point of a fixture is to be a document someone else made -- generating it
+ * with the same code the write path uses would let a shared misunderstanding
+ * pass every test on both sides.
+ */
+async function form(outDir: string): Promise<void> {
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([612, 792])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  page.drawText('Application form', { x: 60, y: 720, size: 20, font, color: rgb(0, 0, 0) })
+
+  const acro = doc.getForm()
+
+  page.drawText('Full name', { x: 60, y: 660, size: 11, font })
+  const name = acro.createTextField('fullname')
+  name.addToPage(page, { x: 60, y: 630, width: 300, height: 22 })
+
+  page.drawText('Notes', { x: 60, y: 590, size: 11, font })
+  const notes = acro.createTextField('notes')
+  notes.enableMultiline()
+  notes.addToPage(page, { x: 60, y: 520, width: 300, height: 60 })
+
+  const agree = acro.createCheckBox('agree')
+  agree.addToPage(page, { x: 60, y: 480, width: 16, height: 16 })
+  page.drawText('I agree to the terms', { x: 84, y: 483, size: 11, font })
+
+  page.drawText('Contact me by', { x: 60, y: 440, size: 11, font })
+  const contact = acro.createRadioGroup('contact')
+  const labels = ['Email', 'Phone', 'Post']
+  labels.forEach((label, i) => {
+    contact.addOptionToPage(label, page, { x: 60, y: 410 - i * 24, width: 14, height: 14 })
+    page.drawText(label, { x: 82, y: 411 - i * 24, size: 11, font })
+  })
+
+  page.drawText('Country', { x: 60, y: 320, size: 11, font })
+  const country = acro.createDropdown('country')
+  country.addOptions(['Bangladesh', 'Canada', 'Denmark'])
+  country.addToPage(page, { x: 60, y: 290, width: 200, height: 22 })
+
+  await save(doc, outDir, 'form')
+}
+
 export async function generateFixtures(outDir = fileURLToPath(new URL('.', import.meta.url))): Promise<void> {
   await mkdir(outDir, { recursive: true })
   await simpleText(outDir)
@@ -159,4 +205,5 @@ export async function generateFixtures(outDir = fileURLToPath(new URL('.', impor
   await large300p(outDir)
   await mixedFonts(outDir)
   await hostile(outDir)
+  await form(outDir)
 }
