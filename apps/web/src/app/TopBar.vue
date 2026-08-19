@@ -12,6 +12,7 @@ import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
 import { fontsForExport } from '@/lib/fonts'
 import PrivacyPage from '@/features/document/PrivacyPage.vue'
+import { anythingStripped } from '@margin/pdf-core'
 import type { TextObject, StrippedContent } from '@margin/pdf-core'
 
 const props = defineProps<{ compact?: boolean; panelOpen?: boolean }>()
@@ -52,6 +53,13 @@ const strippedMessage = computed(() => {
   if (s.openAction) parts.push('a script that would have run when the file opened')
   if (s.documentJavaScript) parts.push('document-level JavaScript')
   if (s.catalogActions || s.pageActions > 0) parts.push('automatic page actions')
+  if (s.annotationActions > 0) {
+    parts.push(
+      s.annotationActions === 1
+        ? 'a link or field that would have run a file or sent data somewhere'
+        : `${s.annotationActions} links or fields that would have run a file or sent data somewhere`,
+    )
+  }
   return `Removed ${parts.join(', ')}. If the original had form-field scripts, those are gone too.`
 })
 
@@ -83,10 +91,10 @@ async function download(): Promise<void> {
         ? (done, total) => { progress.value = { done, total } }
         : undefined,
       (found) => {
-        // Only worth saying when something actually went.
-        if (found.openAction || found.documentJavaScript || found.catalogActions || found.pageActions > 0) {
-          stripped.value = found
-        }
+        // Asks pdf-core rather than re-deriving it here. This condition was
+        // duplicated inline once, and when the sanitizer grew a fifth
+        // vector the copy went on reporting nothing was removed.
+        if (anythingStripped(found)) stripped.value = found
       },
     )
     downloadBytes(bytes, pdfFileName(doc.fileName))

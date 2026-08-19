@@ -17,6 +17,8 @@ on the one platform this project committed to and cannot emulate (a mid-range ph
 | Active content | `/OpenAction`, `/Names /JavaScript`, and catalog + page `/AA` are removed from every export | `test/write/sanitize.test.ts` |
 | Active content | The script **text** is absent from the output bytes, not merely unlinked | `test/write/sanitize.test.ts` |
 | Active content | Stripping defeats the byte-identical pass-through for a hostile file, but not for a clean one | `test/write/sanitize.test.ts`, `e2e/sanitize.spec.ts` |
+| Active content | Annotation `/A` chains (`/Launch`, `/SubmitForm`, `/JavaScript`) and widget `/AA` are removed, including behind a benign `/Next` hop | `test/write/sanitize.test.ts` |
+| Active content | An ordinary `/URI` link survives -- the sweep is a denylist, so links are not collateral | `test/write/sanitize.test.ts` |
 | Active content | The user is told what was removed, including that form-field scripts go too | `test/features/strippedNotice.test.ts` |
 | Failure | A render error costs its region, not the app, and names itself | `test/features/ErrorBoundary.test.ts` |
 | Persistence | Edits are debounced, coalesced, pruned, and survive a rejected write | `test/stores/autosave.test.ts` |
@@ -33,7 +35,33 @@ on the one platform this project committed to and cannot emulate (a mid-range ph
 | Touch | Pinch, pan, palm rejection, and no jump when a finger joins or leaves | `test/features/useGestures.test.ts` |
 | Touch | Page selection works on the phone shell | `test/features/PageGrid.test.ts`, `e2e/pages.spec.ts` |
 
-879 unit tests, 51 e2e across desktop and phone viewports, clean `tsc` and `vue-tsc`, clean build.
+890 unit tests, 51 e2e across desktop and phone viewports, clean `tsc` and `vue-tsc`, clean build.
+
+### One gap this record found, and closed
+
+Auditing against the spec rather than against the plan turned up a real hole. `PLAN.md` names three
+vectors -- `/JS`, `/OpenAction`, **`/Launch`** -- and the sanitizer as first written covered the
+catalog and the page dictionary only. `/Launch` does not live there. It lives on annotations: a link
+hotspot whose `/A` runs a file, or a form widget whose `/AA` fires a keystroke script.
+
+The failure mode was the bad one. Such a file reported *nothing stripped*, which meant it also
+satisfied the byte-identical pass-through tier -- so an unedited hostile PDF was handed straight back
+to the user, intact and unmentioned, by the code path written to prevent exactly that. The probe is
+in the commit message; the regression test is `defeats pass-through for a file whose only payload is
+on annotations`.
+
+Two design notes, since both directions were available:
+
+- **A denylist, not an allowlist.** The app writes its own `/URI` and `/GoTo` links, and real
+  documents are full of legitimate navigation; an allowlist would have destroyed every hotspot in
+  every table of contents. Removed: `JavaScript`, `Launch`, `SubmitForm`, `ImportData`, `Rendition`,
+  `GoToE`. Kept: `GoToR` and `Named`, which navigate without running anything.
+- **The whole `/Next` chain goes, not the offending hop.** `/S /URI` with a `/Next` of `/S /Launch`
+  reads as an ordinary link from its first dictionary. Keeping the benign prefix of an action built
+  to deceive means trusting the shape of a hostile file.
+
+Still not stripped, deliberately: embedded file attachments (`/Names /EmbeddedFiles`) and XFA. Both
+are legitimate features whose removal is real data loss, and neither executes on its own.
 
 ## Outstanding — and what each one blocks
 
