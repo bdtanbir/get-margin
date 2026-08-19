@@ -155,6 +155,19 @@ export type PageEntry = {
    * toAnnotSpace. null means "use whatever the source page has".
    */
   cropBox: [number, number, number, number] | null
+  /**
+   * Form field names in tab order, for this page.
+   *
+   * OPTIONAL, and absent means document order -- which is what every
+   * existing PDF already means, so a document that never touches tab order
+   * is written exactly as it would have been. That is also why this needed
+   * no schema version of its own.
+   *
+   * Names rather than object ids, because the same list has to address
+   * fields the user created AND fields the source document already had, and
+   * the name is the only identity those two share.
+   */
+  tabOrder?: string[]
 }
 
 export type EditDocument = {
@@ -223,6 +236,8 @@ export type Op =
   | { type: 'setFieldValue'; key: string; value: FieldValue }
   /** Task 72 -- flatten form fields into page content on export. */
   | { type: 'setFlattenForms'; on: boolean }
+  /** Task 76 -- field names in tab order for one page. */
+  | { type: 'setTabOrder'; pageId: PageId; order: string[] }
 
 export const EDIT_DOCUMENT_VERSION = 3
 

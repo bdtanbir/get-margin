@@ -307,3 +307,96 @@ describe('applyFieldValues on a radio group', () => {
     expect(fill('beta').map((f) => f.value)).toEqual(['beta', 'beta', 'beta'])
   })
 })
+
+/**
+ * Tab order IS /Annots order in the PDF format -- there is no separate
+ * structure for it -- so this asserts on the array's order directly.
+ */
+describe('tab order', () => {
+  const threeFields = () => build([
+    field({ id: 'a', name: 'first', rect: { x: 100, y: 400, w: 200, h: 24 } }),
+    field({ id: 'b', name: 'second', rect: { x: 100, y: 350, w: 200, h: 24 } }),
+    field({ id: 'c', name: 'third', rect: { x: 100, y: 300, w: 200, h: 24 } }),
+  ])
+
+  const ordered = (src: Uint8Array, order: string[]) => {
+    const base = docWith([])
+    return replay(new Map([['src-0', src]]), {
+      ...base,
+      pages: { p0: { ...base.pages.p0!, tabOrder: order } },
+    })
+  }
+
+  const names = (pdf: Uint8Array) => fieldsOf(pdf).map((f) => f.name)
+  const tabsOf = (pdf: Uint8Array) => {
+    const doc = mupdf.PDFDocument.openDocument(pdf, 'application/pdf') as mupdf.PDFDocument
+    const p = doc.loadPage(0)
+    try {
+      const t = p.getObject().get('Tabs')
+      return t.isName() ? t.asName() : null
+    } finally { p.destroy(); doc.destroy() }
+  }
+
+  it('leaves a page with no explicit order untouched', () => {
+    const src = threeFields()
+    expect(names(src)).toEqual(['first', 'second', 'third'])
+    expect(tabsOf(src)).toBeNull()
+  })
+
+  it('reorders the fields', () => {
+    const out = ordered(threeFields(), ['third', 'first', 'second'])
+    expect(names(out)).toEqual(['third', 'first', 'second'])
+  })
+
+  // Several viewers substitute their own geometric guess unless told not to.
+  it('asks the viewer to honour the array', () => {
+    expect(tabsOf(ordered(threeFields(), ['third', 'first', 'second']))).toBe('R')
+  })
+
+  // Both of these happen from ordinary editing -- delete a field after
+  // ordering, or add one after -- and neither should fail an export.
+  it('ignores a name matching no field', () => {
+    expect(names(ordered(threeFields(), ['third', 'deleted', 'first'])))
+      .toEqual(['third', 'first', 'second'])
+  })
+
+  it('puts unmentioned fields last, in the order they were already in', () => {
+    expect(names(ordered(threeFields(), ['third']))).toEqual(['third', 'first', 'second'])
+  })
+
+  /**
+   * A radio kid's /T lives on its PARENT, so a name lookup that only reads
+   * the widget's own /T sees every button as unnamed and sorts the whole
+   * group to the end.
+   */
+  it('finds a radio button’s name on its parent field', () => {
+    const src = build([
+      field({ id: 'a', name: 'text_field', rect: { x: 100, y: 400, w: 200, h: 24 } }),
+      field({ id: 'b', fieldType: 'radio', name: 'choice', group: 'choice',
+        exportValue: 'yes', rect: { x: 100, y: 350, w: 18, h: 18 } }),
+    ])
+    expect(names(ordered(src, ['choice', 'text_field']))).toEqual(['choice', 'text_field'])
+  })
+
+  it('keeps non-widget annotations in the document', () => {
+    const src = build([
+      field({ id: 'a', name: 'first', rect: { x: 100, y: 400, w: 200, h: 24 } }),
+      { id: 'i1', pageId: 'p0', kind: 'ink', strokes: [[100, 100, 200, 150]],
+        color: [0, 0, 0], strokeWidth: 2,
+        rect: { x: 100, y: 100, w: 100, h: 50 }, rotation: 0, z: 2, locked: false, opacity: 1 },
+    ])
+    const out = ordered(src, ['first'])
+    const doc = mupdf.PDFDocument.openDocument(out, 'application/pdf') as mupdf.PDFDocument
+    const p = doc.loadPage(0)
+    try {
+      expect(p.getAnnotations()).toHaveLength(1)
+      expect(p.getWidgets()).toHaveLength(1)
+    } finally { p.destroy(); doc.destroy() }
+  })
+
+  it('defeats the byte-identical pass-through', () => {
+    const src = threeFields()
+    expect(Buffer.from(ordered(src, ['third', 'first', 'second'])).equals(Buffer.from(src)))
+      .toBe(false)
+  })
+})

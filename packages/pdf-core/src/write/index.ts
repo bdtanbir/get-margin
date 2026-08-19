@@ -1,7 +1,7 @@
 import * as mupdf from 'mupdf'
 import { withPage, SAVE_OPTIONS } from './session.js'
 import { assemble, isUntouched, type SourceBytes } from './assemble.js'
-import { applyPageBoxes } from './objects/page.js'
+import { applyPageBoxes, applyTabOrder } from './objects/page.js'
 import { geometryFromPageObject } from '../geometry.js'
 import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectKind } from './types.js'
 import type { PageGeometry } from '@margin/transform'
@@ -154,6 +154,9 @@ export function replay(
   // only thing they did.
   const hasFills = Object.keys(editDoc.fieldValues ?? {}).length > 0
   const flatten = editDoc.flattenForms === true
+  const hasTabOrder = editDoc.pageOrder.some(
+    (id) => (editDoc.pages[id]?.tabOrder?.length ?? 0) > 0,
+  )
 
   // See assemble(). Pages come back already in pageOrder, so from here on a
   // page is addressed by its POSITION, not its sourceIndex.
@@ -168,7 +171,10 @@ export function replay(
     // nothing to it, and nothing had to be removed from it -- so hand back
     // the user's own bytes rather than a re-serialisation.
     // e2e/download.spec.ts asserts this byte-for-byte.
-    if (unchanged && !hasObjects && !hasFills && !flatten && !anythingStripped(stripped)) {
+    if (
+      unchanged && !hasObjects && !hasFills && !flatten && !hasTabOrder
+      && !anythingStripped(stripped)
+    ) {
       const original = sources.get(Object.keys(editDoc.sources)[0]!)
       if (original) return original
     }
@@ -258,6 +264,11 @@ export function replay(
       )
     }
 
+    // AFTER the fields exist and BEFORE they are baked: tab order IS
+    // /Annots order, so it has to be applied while there is still an
+    // /Annots array of widgets to order.
+    applyTabOrder(raw, editDoc)
+
     // LAST, and on the assembled export copy only. bake() draws each
     // field's appearance into the page content and removes /AcroForm
     // wholesale -- it is not undoable, and doing it to the document being
@@ -274,7 +285,7 @@ export function replay(
 
 export { withDocument, withPage, SAVE_OPTIONS } from './session.js'
 export { assemble, isUntouched, type SourceBytes } from './assemble.js'
-export { applyPageBoxes } from './objects/page.js'
+export { applyPageBoxes, applyTabOrder } from './objects/page.js'
 export {
   stripActiveContent, anythingStripped, nothingStripped, type StrippedContent,
 } from './sanitize.js'

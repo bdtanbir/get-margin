@@ -4,6 +4,7 @@ import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { fieldsFor, type Field } from './inspectorFields'
 import { toHex, fromHex } from './colorInput'
+import TabOrderList from './TabOrderList.vue'
 
 const edits = useEditsStore()
 const doc = useDocumentStore()
@@ -136,6 +137,13 @@ function handleInput(field: Field, e: Event): void {
         Whiteout covers content — it does not delete it. The text underneath can
         still be copied out of the file.
       </p>
+
+      <!--
+        Shown while a field is selected, because that is when the user is
+        thinking about the form. It is a PAGE property rather than an object
+        one, so it sits outside the per-property loop.
+      -->
+      <TabOrderList v-if="selected.kind === 'field'" :page-id="selected.pageId" />
 
       <div
         v-for="f in fields"

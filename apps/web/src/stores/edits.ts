@@ -165,6 +165,13 @@ function reduce(draft: EditDocument, op: Op): void {
     case 'setFlattenForms':
       draft.flattenForms = op.on
       break
+
+    case 'setTabOrder': {
+      const page = draft.pages[op.pageId]
+      if (!page) return
+      page.tabOrder = [...op.order]
+      break
+    }
   }
 }
 
