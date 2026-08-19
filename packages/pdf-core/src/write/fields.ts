@@ -1,5 +1,6 @@
 import * as mupdf from 'mupdf'
 import type { Rect } from '@margin/transform'
+import type { FieldValue } from './types.js'
 
 /**
  * A form field that ALREADY EXISTS in a source document.
@@ -137,4 +138,100 @@ export function listFields(
   } finally {
     page.destroy()
   }
+}
+
+/**
+ * Write the user's values into fields that already existed in the source.
+ *
+ * Runs AFTER the object writers, so a value can be set on a field created
+ * in the same session -- the field has to exist before it can be filled.
+ *
+ * A key matching nothing is skipped silently rather than throwing. It means
+ * the page carrying that field was deleted after it was filled, which is an
+ * ordinary sequence of edits and not an error; failing the export would
+ * make an undo the user already performed block their download.
+ */
+export function applyFieldValues(
+  raw: mupdf.PDFDocument,
+  values: Record<string, FieldValue>,
+  pageRefs: string[],
+): void {
+  if (Object.keys(values).length === 0) return
+
+  for (let i = 0; i < raw.countPages(); i++) {
+    const page = raw.loadPage(i)
+    try {
+      const widgets = page.getWidgets()
+      if (widgets.length === 0) continue
+
+      const annots: mupdf.PDFObject[] = []
+      const arr = page.getObject().get('Annots')
+      if (arr.isArray()) {
+        arr.forEach((a) => {
+          if (a.isDictionary() && a.get('Subtype').asName() === 'Widget') annots.push(a)
+        })
+      }
+
+      widgets.forEach((w, index) => {
+        const key = fieldKey(w.getName(), pageRefs[i] ?? `page:${i}`, index)
+        if (!(key in values)) return
+        setWidgetValue(raw, w, annots[index], values[key]!)
+      })
+    } finally {
+      page.destroy()
+    }
+  }
+}
+
+/**
+ * Set one widget's value, by type.
+ *
+ * Buttons go through raw /V and /AS rather than toggle(): toggle flips
+ * whatever the current state is, so applying a stored value through it
+ * would depend on what the document happened to ship with. Setting the
+ * state directly is idempotent, which is what replaying an edit log needs.
+ */
+function setWidgetValue(
+  raw: mupdf.PDFDocument,
+  w: mupdf.PDFWidget,
+  annot: mupdf.PDFObject | undefined,
+  value: FieldValue,
+): void {
+  if (w.isCheckbox() || w.isRadioButton()) {
+    if (!annot) return
+    // This button's own on-state, from its /AP /N keys -- "Yes" for a
+    // checkbox, the button's export value for a radio kid.
+    const on = exportValueOf(annot) ?? 'Yes'
+
+    if (w.isRadioButton()) {
+      // A radio group's value NAMES the selected button, and every button
+      // in the group shares one key -- so each one has to ask whether the
+      // value is its own. Treating the value as "this button is on", the
+      // way a checkbox does, turns on every button in the group: they all
+      // see the same string and all say yes. That is the same shape as the
+      // pre-flight's /AP failure, arrived at from the other direction.
+      const chosen = typeof value === 'string' ? value : ''
+      annot.put('AS', raw.newName(chosen === on ? on : 'Off'))
+
+      // The value belongs to the FIELD, which for a kid is its parent --
+      // which is exactly why a kid's getValue() reports the group's value.
+      const parent = annot.get('Parent')
+      if (parent.isDictionary()) parent.put('V', raw.newName(chosen === '' ? 'Off' : chosen))
+      return
+    }
+
+    const selected = value === true || value === on || value === 'Yes'
+    const state = selected ? on : 'Off'
+    annot.put('AS', raw.newName(state))
+    annot.put('V', raw.newName(state))
+    return
+  }
+
+  if (w.isChoice()) {
+    const v = Array.isArray(value) ? value[0] : value
+    if (typeof v === 'string') w.setChoiceValue(v)
+    return
+  }
+
+  if (typeof value === 'string') w.setTextValue(value)
 }

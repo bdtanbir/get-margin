@@ -141,3 +141,169 @@ describe('fieldKey', () => {
     expect(fieldKey('   ', 'src-0:3', 2)).toBe('#unnamed:src-0:3#2')
   })
 })
+
+/**
+ * Filling fields the source document already had.
+ *
+ * Every fixture here is built by exporting a document WITH fields and then
+ * treating that output as the source, which is the same shape as a user
+ * opening a form somebody sent them.
+ */
+describe('applyFieldValues', () => {
+  const formDoc = () => build([
+    field({ id: 'a', name: 'fullname' }),
+    field({ id: 'b', name: 'agree', fieldType: 'checkbox', rect: { x: 100, y: 350, w: 18, h: 18 } }),
+    field({ id: 'c', name: 'country', fieldType: 'dropdown', options: ['BD', 'CA'],
+      rect: { x: 100, y: 300, w: 160, h: 22 } }),
+  ])
+
+  const fill = (values: Record<string, string | boolean | string[]>, src = formDoc()) =>
+    replay(new Map([['src-0', src]]), { ...docWith([]), fieldValues: values })
+
+  it('puts a typed value into the exported field', () => {
+    const out = fill({ fullname: 'Ada Lovelace' })
+    expect(fieldsOf(out).find((f) => f.name === 'fullname')!.value).toBe('Ada Lovelace')
+  })
+
+  it('puts the value in the exported bytes, not just the object model', () => {
+    expect(Buffer.from(fill({ fullname: 'Ada Lovelace' })).includes('Ada Lovelace')).toBe(true)
+  })
+
+  it('checks and unchecks a checkbox', () => {
+    expect(fieldsOf(fill({ agree: true })).find((f) => f.name === 'agree')!.state).toBe('Yes')
+    expect(fieldsOf(fill({ agree: false })).find((f) => f.name === 'agree')!.state).toBe('Off')
+  })
+
+  it('selects a choice option', () => {
+    expect(fieldsOf(fill({ country: 'CA' })).find((f) => f.name === 'country')!.value).toBe('CA')
+  })
+
+  it('leaves fields it was given no value for alone', () => {
+    const out = fill({ fullname: 'Ada' })
+    expect(fieldsOf(out).find((f) => f.name === 'country')!.value).toBe('')
+  })
+
+  /**
+   * A key matching nothing means the page carrying that field was deleted
+   * after it was filled -- an ordinary sequence of edits. Throwing would
+   * make an undo the user already performed block their download.
+   */
+  it('ignores a value whose field is gone', () => {
+    expect(() => fill({ fullname: 'Ada', deleted_field: 'x' })).not.toThrow()
+    expect(fieldsOf(fill({ deleted_field: 'x' })).find((f) => f.name === 'fullname')!.value).toBe('')
+  })
+
+  it('does not disturb the rest of the document', () => {
+    const before = fieldsOf(formDoc()).length
+    expect(fieldsOf(fill({ fullname: 'Ada' })).length).toBe(before)
+  })
+
+  // A user who types into a form and downloads must not get their original
+  // file back -- the pass-through tier would silently discard the only
+  // thing they did.
+  it('defeats the byte-identical pass-through', () => {
+    const src = formDoc()
+    expect(Buffer.from(fill({ fullname: 'Ada' }, src)).equals(Buffer.from(src))).toBe(false)
+  })
+
+  it('still hands back an untouched form byte for byte', () => {
+    const src = formDoc()
+    const out = replay(new Map([['src-0', src]]), docWith([]))
+    expect(Buffer.from(out).equals(Buffer.from(src))).toBe(true)
+  })
+
+  it('selects one button of a radio group by its export value', () => {
+    const src = build(['alpha', 'beta'].map((state, i) => field({
+      id: `r${i}`, fieldType: 'radio', name: 'choice', group: 'choice', exportValue: state,
+      rect: { x: 100, y: 400 - i * 30, w: 18, h: 18 },
+    })))
+    const out = fill({ choice: 'beta' }, src)
+    expect(fieldsOf(out).map((f) => f.state)).toEqual(['Off', 'beta'])
+  })
+})
+
+describe('flattenForms', () => {
+  const withInkAndField = () => build([
+    field({ name: 'fullname', value: 'Ada Lovelace' }),
+    { id: 'i1', pageId: 'p0', kind: 'ink', strokes: [[100, 100, 200, 150]],
+      color: [0, 0, 0], strokeWidth: 2,
+      rect: { x: 100, y: 100, w: 100, h: 50 }, rotation: 0, z: 2, locked: false, opacity: 1 },
+  ])
+
+  const flatten = (src: Uint8Array) =>
+    replay(new Map([['src-0', src]]), { ...docWith([]), flattenForms: true })
+
+  const annotCounts = (pdf: Uint8Array) => {
+    const doc = mupdf.PDFDocument.openDocument(pdf, 'application/pdf') as mupdf.PDFDocument
+    const p = doc.loadPage(0)
+    try {
+      return {
+        widgets: p.getWidgets().length,
+        annots: p.getAnnotations().length,
+        text: p.toStructuredText().asText(),
+        acroForm: !doc.getTrailer().get('Root').get('AcroForm').isNull(),
+      }
+    } finally { p.destroy(); doc.destroy() }
+  }
+
+  it('is off by default', () => {
+    expect(annotCounts(withInkAndField()).widgets).toBe(1)
+  })
+
+  it('removes the fields and keeps their values in the page', () => {
+    const out = annotCounts(flatten(withInkAndField()))
+    expect(out.widgets).toBe(0)
+    expect(out.text).toContain('Ada Lovelace')
+    expect(out.acroForm).toBe(false)
+  })
+
+  /**
+   * The semantic split, held. bake(false, true) is chosen over
+   * bake(true, true) precisely so ink and markup stay editable in other
+   * PDF tools -- flattening a form is not a reason to destroy a signature.
+   */
+  it('leaves ink annotations editable', () => {
+    expect(annotCounts(flatten(withInkAndField())).annots).toBe(1)
+  })
+
+  it('defeats the byte-identical pass-through', () => {
+    const src = withInkAndField()
+    expect(Buffer.from(flatten(src)).equals(Buffer.from(src))).toBe(false)
+  })
+})
+
+/**
+ * Radio fill, on its own, because it is the one case where the value is
+ * the GROUP's and each button has to decide whether it is the one named.
+ */
+describe('applyFieldValues on a radio group', () => {
+  const src = () => build(['alpha', 'beta', 'gamma'].map((state, i) => field({
+    id: `r${i}`, fieldType: 'radio', name: 'choice', group: 'choice', exportValue: state,
+    rect: { x: 100, y: 400 - i * 30, w: 18, h: 18 },
+  })))
+  const fill = (v: string) =>
+    fieldsOf(replay(new Map([['src-0', src()]]), { ...docWith([]), fieldValues: { choice: v } }))
+
+  it('turns on exactly the named button', () => {
+    expect(fill('gamma').map((f) => f.state)).toEqual(['Off', 'Off', 'gamma'])
+  })
+
+  // Treating the group's value as "this button is on" -- which is what a
+  // checkbox does -- turns on EVERY button, because they all see the same
+  // string and all say yes.
+  it('turns on exactly one, not all of them', () => {
+    expect(fill('alpha').filter((f) => f.state !== 'Off')).toHaveLength(1)
+  })
+
+  it('turns them all off for an empty value', () => {
+    expect(fill('').map((f) => f.state)).toEqual(['Off', 'Off', 'Off'])
+  })
+
+  it('turns them all off for a value naming no button', () => {
+    expect(fill('delta').map((f) => f.state)).toEqual(['Off', 'Off', 'Off'])
+  })
+
+  it('reports the group value on every button, as the format requires', () => {
+    expect(fill('beta').map((f) => f.value)).toEqual(['beta', 'beta', 'beta'])
+  })
+})

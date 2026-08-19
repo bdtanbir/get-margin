@@ -16,10 +16,11 @@ import { writeLink } from './objects/link.js'
 import { writeMarkup } from './objects/markup.js'
 import { writeField } from './objects/field.js'
 export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
-export { listFields, fieldKey } from './fields.js'
+export { listFields, fieldKey, applyFieldValues } from './fields.js'
 export type { SourceField, SourceFieldType } from './fields.js'
 import { migrateEditDocument } from './migrate.js'
 import { stripActiveContent, anythingStripped, type StrippedContent } from './sanitize.js'
+import { applyFieldValues } from './fields.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -147,6 +148,12 @@ export function replay(
   const provider: FontProvider = opts.fonts ?? new Map()
   const measure = createMeasurer(provider)
   const hasObjects = Object.keys(editDoc.objects).length > 0
+  // A filled field and a flatten request are edits as much as an object is.
+  // Without this a user could type into a form, hit Download, and get their
+  // original file back -- the pass-through tier silently discarding the
+  // only thing they did.
+  const hasFills = Object.keys(editDoc.fieldValues ?? {}).length > 0
+  const flatten = editDoc.flattenForms === true
 
   // See assemble(). Pages come back already in pageOrder, so from here on a
   // page is addressed by its POSITION, not its sourceIndex.
@@ -161,7 +168,7 @@ export function replay(
     // nothing to it, and nothing had to be removed from it -- so hand back
     // the user's own bytes rather than a re-serialisation.
     // e2e/download.spec.ts asserts this byte-for-byte.
-    if (unchanged && !hasObjects && !anythingStripped(stripped)) {
+    if (unchanged && !hasObjects && !hasFills && !flatten && !anythingStripped(stripped)) {
       const original = sources.get(Object.keys(editDoc.sources)[0]!)
       if (original) return original
     }
@@ -237,6 +244,25 @@ export function replay(
       done++
       opts.onProgress?.(done, pagesToWrite.length)
     }
+
+    // AFTER the object writers: a field created in this same session has to
+    // exist before a value can be set on it.
+    if (hasFills) {
+      applyFieldValues(
+        raw,
+        editDoc.fieldValues,
+        editDoc.pageOrder.map((pageId) => {
+          const entry = editDoc.pages[pageId]
+          return entry ? `${entry.sourceId}:${entry.sourceIndex}` : ''
+        }),
+      )
+    }
+
+    // LAST, and on the assembled export copy only. bake() draws each
+    // field's appearance into the page content and removes /AcroForm
+    // wholesale -- it is not undoable, and doing it to the document being
+    // edited would destroy the user's form rather than their copy of it.
+    if (flatten) raw.bake(false, true)
 
     return raw.saveToBuffer(SAVE_OPTIONS).asUint8Array()
   } finally {
