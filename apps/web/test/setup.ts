@@ -113,3 +113,22 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
     dispatchEvent: () => false,
   })) as typeof window.matchMedia
 }
+
+/**
+ * Unmount every mounted component after each test.
+ *
+ * Vue Test Utils leaves wrappers mounted unless told otherwise, and a
+ * surviving component keeps the store instance it resolved at setup. Once a
+ * later test installs a fresh Pinia, the stale component still reacts to any
+ * module-scope state it shares and still writes to the PREVIOUS test's
+ * store — so a test can watch its own store sit untouched while the click it
+ * just made lands somewhere else entirely.
+ *
+ * That is not hypothetical: it produced two green-in-isolation,
+ * red-in-sequence failures in the page-grid suite, where the selection
+ * composable's module-scope state let a dead component keep handling clicks.
+ */
+import { enableAutoUnmount } from '@vue/test-utils'
+import { afterEach } from 'vitest'
+
+enableAutoUnmount(afterEach)

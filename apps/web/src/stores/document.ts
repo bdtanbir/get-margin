@@ -6,6 +6,7 @@ import { getPdfClient, closeSharedDocument } from '@/workers/pdfClient'
 import { checkFileSize, checkPageCount } from '@/lib/limits'
 import { sha256Hex } from '@/lib/hash'
 import { useEditsStore } from '@/stores/edits'
+import { usePageSelectionStore } from '@/stores/pageSelection'
 
 export type PageId = string
 export type SourceId = string
@@ -222,6 +223,9 @@ export const useDocumentStore = defineStore('document', {
       this.sources = {}
       pageStateCache.clear()
       useEditsStore().reset({}, [], {})
+      // A selection naming the previous document's pages would otherwise
+      // survive into the next one.
+      usePageSelectionStore().clear()
       this.sourceHash = ''
 
       const size = checkFileSize(file.size)
@@ -310,8 +314,10 @@ export const useDocumentStore = defineStore('document', {
       // of WASM on a reset from an already-empty state.
       await closeSharedDocument()
       pageStateCache.clear()
-      // $reset() only clears THIS store; the pages live in the edit store.
+      // $reset() only clears THIS store; the pages live in the edit store
+      // and the selection in its own.
       useEditsStore().reset({}, [], {})
+      usePageSelectionStore().clear()
       this.$reset()
     },
   },
