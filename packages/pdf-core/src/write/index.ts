@@ -9,6 +9,7 @@ import { FontRegistry, createMeasurer, type FontProvider } from './fonts.js'
 import { writeImage } from './objects/image.js'
 import { createXObjectCache, type XObjectCache } from './xobject.js'
 import { writeInk } from './objects/ink.js'
+import { writeLink } from './objects/link.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -62,6 +63,10 @@ WRITERS.image = writeImage
 // Task 33. A NATIVE Ink annotation, not content-stream paths: ink stays
 // selectable and removable in other PDF tools (the semantic split, spec 0).
 WRITERS.ink = writeInk
+
+// Task 34. page.createLink (fz_link), NOT createAnnotation('Link') -- see
+// objects/link.ts for what Phase 0 measured about the difference.
+WRITERS.link = writeLink
 
 /**
  * Build the exported document.
@@ -155,3 +160,4 @@ export { FontRegistry, createMeasurer, pdfString, type FontProvider } from './fo
 export { writeImage } from './objects/image.js'
 export { createXObjectCache, type XObjectCache } from './xobject.js'
 export { writeInk } from './objects/ink.js'
+export { writeLink } from './objects/link.js'

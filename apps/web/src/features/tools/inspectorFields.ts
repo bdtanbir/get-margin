@@ -1,10 +1,20 @@
 import type { ObjectKind } from '@margin/pdf-core'
 import { FONTS } from '@/lib/fonts'
+import { normalizeUri } from '@/lib/linkUrl'
 
 export type Field =
   | { key: string; label: string; type: 'number'; min: number; max: number; step: number }
   | { key: string; label: string; type: 'color' }
-  | { key: string; label: string; type: 'text' }
+  | {
+      key: string; label: string; type: 'text'
+      /**
+       * Applied when the edit is COMMITTED (change/blur), not on every
+       * keystroke -- normalising mid-typing would fight the caret. Throwing
+       * rejects the edit and surfaces the message, which is how a
+       * `javascript:` URL stays unrepresentable in the edit document.
+       */
+      normalize?: (value: string) => string
+    }
   | { key: string; label: string; type: 'select'; options: Array<{ value: string; label: string }> }
 
 const OPACITY: Field = { key: 'opacity', label: 'Opacity', type: 'number', min: 0, max: 1, step: 0.05 }
@@ -55,7 +65,7 @@ const REGISTRY: Partial<Record<ObjectKind, Field[]>> = {
   highlight: [{ key: 'color', label: 'Colour', type: 'color' }, OPACITY],
   underline: [{ key: 'color', label: 'Colour', type: 'color' }, OPACITY],
   strikeout: [{ key: 'color', label: 'Colour', type: 'color' }, OPACITY],
-  link: [{ key: 'uri', label: 'URL', type: 'text' }],
+  link: [{ key: 'uri', label: 'URL', type: 'text', normalize: normalizeUri }],
   image: [OPACITY, ROTATION],
   signature: [OPACITY, ROTATION],
 }

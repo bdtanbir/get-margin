@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PageOverlay from '@/features/overlay/PageOverlay.vue'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
+import { useDocumentStore } from '@/stores/document'
+import { setUriPrompt } from '@/features/overlay/useDrawTool'
 import type { PageState } from '@/stores/document'
 
 const page: PageState = { id: 'p1', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
@@ -142,5 +144,55 @@ describe('drawing shapes', () => {
     move(300, 400)
     up()
     expect(Object.values(edits.doc.objects)[0]).toMatchObject({ rect: { w: 100, h: 100 } })
+  })
+})
+
+describe('drawing a link', () => {
+  let edits: ReturnType<typeof useEditsStore>
+  let tools: ReturnType<typeof useToolsStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    edits = useEditsStore()
+    tools = useToolsStore()
+    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+  })
+
+  afterEach(() => setUriPrompt(undefined))
+
+  function drag() {
+    const w = mount(PageOverlay, { props: { page, zoom: 1 }, attachTo: document.body })
+    stubRect(w.get('[data-draw-surface]').element)
+    down(w.get('[data-draw-surface]').element, 100, 200)
+    move(300, 240)
+    up()
+    return w
+  }
+
+  it('normalises a bare domain into an https URL', () => {
+    tools.setTool('link')
+    setUriPrompt(() => 'example.com/a')
+    drag()
+    expect(Object.values(edits.doc.objects)[0]).toMatchObject({
+      kind: 'link', uri: 'https://example.com/a',
+    })
+  })
+
+  // Spec 2.1: a javascript: URL must never reach the export path, so it is
+  // refused at op-creation time and no object is produced at all.
+  it('creates nothing for a javascript: URL and says why', () => {
+    tools.setTool('link')
+    setUriPrompt(() => 'javascript:alert(1)')
+    drag()
+    expect(Object.keys(edits.doc.objects)).toHaveLength(0)
+    expect(useDocumentStore().error).toMatch(/not allowed/i)
+  })
+
+  it('creates nothing when the prompt is cancelled', () => {
+    tools.setTool('link')
+    setUriPrompt(() => null)
+    drag()
+    expect(Object.keys(edits.doc.objects)).toHaveLength(0)
+    expect(edits.historySize).toBe(0)
   })
 })

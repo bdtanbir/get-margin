@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import Inspector from '@/features/tools/Inspector.vue'
 import { useEditsStore } from '@/stores/edits'
+import { useDocumentStore } from '@/stores/document'
 import type { EditObject } from '@margin/pdf-core'
 
 const rect: EditObject = {
@@ -101,5 +102,65 @@ describe('Inspector', () => {
     await drag(input, '0.4')
     await input.trigger('change')
     expect(edits.historySize).toBe(before + 2)
+  })
+})
+
+// A link's URL is validated when the edit is COMMITTED, not per keystroke:
+// validating mid-typing rejects every prefix of a valid URL, and normalising
+// mid-typing fights the caret.
+describe('Inspector URL validation', () => {
+  const link: EditObject = {
+    id: 'l1', pageId: 'p1', kind: 'link', uri: 'https://example.com/',
+    rect: { x: 10, y: 20, w: 100, h: 20 },
+    rotation: 0, z: 1, locked: false, opacity: 1,
+  }
+
+  let edits: ReturnType<typeof useEditsStore>
+  let doc: ReturnType<typeof useDocumentStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    edits = useEditsStore()
+    doc = useDocumentStore()
+    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.applyOp({ type: 'addObject', object: link }, 'add')
+    edits.select(['l1'])
+  })
+
+  async function setUrl(value: string) {
+    const w = mount(Inspector)
+    const input = w.get('[data-field="uri"] input')
+    ;(input.element as HTMLInputElement).value = value
+    await input.trigger('input')
+    await input.trigger('change')
+    return w
+  }
+
+  it('normalises a bare domain on commit', async () => {
+    await setUrl('example.org/x')
+    expect(edits.doc.objects.l1).toMatchObject({ uri: 'https://example.org/x' })
+  })
+
+  it('does not normalise while the user is still typing', async () => {
+    const w = mount(Inspector)
+    const input = w.get('[data-field="uri"] input')
+    ;(input.element as HTMLInputElement).value = 'exa'
+    await input.trigger('input')
+    // Still the raw prefix -- normalising here would rewrite the field under
+    // the caret on every keystroke.
+    expect(edits.doc.objects.l1).toMatchObject({ uri: 'exa' })
+  })
+
+  it('rejects a javascript: URL and restores the previous value', async () => {
+    await setUrl('javascript:alert(1)')
+    expect(edits.doc.objects.l1).toMatchObject({ uri: 'https://example.com/' })
+    expect(doc.error).toMatch(/not allowed/i)
+  })
+
+  it('leaves no open transaction after a rejected edit', async () => {
+    await setUrl('javascript:alert(1)')
+    const before = edits.historySize
+    edits.applyOp({ type: 'updateObject', id: 'l1', patch: { opacity: 0.5 } }, 'Later')
+    expect(edits.historySize).toBe(before + 1)
   })
 })

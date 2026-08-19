@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { fieldsFor, type Field } from './inspectorFields'
 import { toHex, fromHex } from './colorInput'
 
 const edits = useEditsStore()
+const doc = useDocumentStore()
 
 const selected = computed(() => {
   const id = edits.selection[0]
@@ -43,7 +45,29 @@ function onInput(key: string, value: unknown): void {
   write(key, value)
 }
 
-function onCommit(): void {
+/**
+ * `field` is passed so a text field's `normalize` runs here rather than on
+ * every keystroke: normalising mid-typing fights the caret, and validating
+ * mid-typing rejects every prefix of a valid URL.
+ */
+function onCommit(field?: Field): void {
+  if (field?.type === 'text' && field.normalize) {
+    const o = selected.value
+    const raw = valueOf(field.key)
+    if (o && typeof raw === 'string') {
+      try {
+        write(field.key, field.normalize(raw))
+      } catch (e) {
+        // Revert to what was there before this edit opened, so the document
+        // never holds a value the validator rejects.
+        edits.endTransaction()
+        dragging = false
+        edits.undo()
+        doc.error = e instanceof Error ? e.message : 'That value is not valid.'
+        return
+      }
+    }
+  }
   if (!dragging) return
   dragging = false
   edits.endTransaction()
@@ -101,7 +125,7 @@ function handleInput(field: Field, e: Event): void {
           class="min-h-8 rounded-control border border-border bg-surface-sunken px-2 text-[13px]"
           :disabled="selected.locked"
           :value="valueOf(f.key)"
-          @change="(e) => { onInput(f.key, (e.target as HTMLSelectElement).value); onCommit() }"
+          @change="(e) => { onInput(f.key, (e.target as HTMLSelectElement).value); onCommit(f) }"
         >
           <option v-for="o in f.options" :key="o.value" :value="o.value">{{ o.label }}</option>
         </select>
@@ -114,8 +138,8 @@ function handleInput(field: Field, e: Event): void {
           :disabled="selected.locked"
           :value="toHex(valueOf(f.key) as [number, number, number] | null)"
           @input="(e) => handleInput(f, e)"
-          @change="onCommit"
-          @blur="onCommit"
+          @change="() => onCommit(f)"
+          @blur="() => onCommit(f)"
         />
 
         <input
@@ -129,8 +153,8 @@ function handleInput(field: Field, e: Event): void {
           :step="f.step"
           :value="valueOf(f.key)"
           @input="(e) => handleInput(f, e)"
-          @change="onCommit"
-          @blur="onCommit"
+          @change="() => onCommit(f)"
+          @blur="() => onCommit(f)"
         />
 
         <input
@@ -141,8 +165,8 @@ function handleInput(field: Field, e: Event): void {
           :disabled="selected.locked"
           :value="valueOf(f.key)"
           @input="(e) => handleInput(f, e)"
-          @change="onCommit"
-          @blur="onCommit"
+          @change="() => onCommit(f)"
+          @blur="() => onCommit(f)"
         />
       </div>
     </template>

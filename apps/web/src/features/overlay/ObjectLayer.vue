@@ -9,6 +9,7 @@ import WhiteoutObject from './objects/WhiteoutObject.vue'
 import TextObject from './objects/TextObject.vue'
 import ImageObject from './objects/ImageObject.vue'
 import InkObject from './objects/InkObject.vue'
+import LinkObject from './objects/LinkObject.vue'
 
 const props = defineProps<{ object: EditObject }>()
 
@@ -36,6 +37,7 @@ const COMPONENTS: Partial<Record<ObjectKind, Component>> = {
   text: TextObject,
   image: ImageObject,
   ink: InkObject,
+  link: LinkObject,
 }
 
 const component = computed(() => COMPONENTS[props.object.kind])
