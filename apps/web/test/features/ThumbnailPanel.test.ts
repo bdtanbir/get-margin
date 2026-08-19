@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import ThumbnailPanel from '../../src/features/document/ThumbnailPanel.vue'
 import { useDocumentStore } from '../../src/stores/document'
 import { useViewportStore } from '../../src/stores/viewport'
+import { seedDocument } from '../helpers/seedDocument'
 
 // ThumbnailPanel is the parent responsible for wiring Thumbnail's `select`
 // emit to an actual viewport move, and for feeding each Thumbnail the
@@ -21,17 +22,15 @@ vi.mock('../../src/workers/pdfClient.js', () => ({
 const GEOM = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
 
 function seed() {
-  const doc = useDocumentStore()
-  doc.$patch({
-    status: 'ready',
-    pageOrder: ['p0', 'p1', 'p2'],
-    pages: {
-      p0: { id: 'p0', sourceIndex: 2, geometry: GEOM },
-      p1: { id: 'p1', sourceIndex: 0, geometry: GEOM },
-      p2: { id: 'p2', sourceIndex: 1, geometry: GEOM },
-    },
-  })
-  return doc
+  seedDocument(
+    [
+      { id: 'p0', sourceIndex: 2 },
+      { id: 'p1', sourceIndex: 0 },
+      { id: 'p2', sourceIndex: 1 },
+    ],
+    [GEOM, GEOM, GEOM],
+  )
+  return useDocumentStore()
 }
 
 beforeEach(() => {

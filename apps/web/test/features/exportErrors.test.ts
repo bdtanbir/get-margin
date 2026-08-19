@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import TopBar from '@/app/TopBar.vue'
 import { useDocumentStore } from '@/stores/document'
+import { seedDocument } from '../helpers/seedDocument'
 import { useEditsStore } from '@/stores/edits'
 import { withTimeout } from '@/workers/pdfClient'
 import * as exportFile from '@/lib/exportFile'
@@ -23,15 +24,11 @@ vi.mock('@/lib/fonts', async (importOriginal) => {
 const GEOM = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
 
 function readyDoc(pages: number): void {
-  const doc = useDocumentStore()
-  doc.$patch({
-    status: 'ready',
-    fileName: 'contract.pdf',
-    pageOrder: Array.from({ length: pages }, (_, i) => `p${i}`),
-    pages: Object.fromEntries(
-      Array.from({ length: pages }, (_, i) => [`p${i}`, { id: `p${i}`, sourceIndex: i, geometry: GEOM }]),
-    ),
-  })
+  seedDocument(
+    Array.from({ length: pages }, (_, i) => ({ id: `p${i}`, sourceIndex: i })),
+    Array.from({ length: pages }, () => GEOM),
+  )
+  useDocumentStore().$patch({ fileName: 'contract.pdf' })
 }
 
 describe('export error surfaces', () => {
