@@ -8,6 +8,7 @@ import DropZone from '@/features/document/DropZone.vue'
 import PasswordPrompt from '@/features/document/PasswordPrompt.vue'
 import ErrorBoundary from './ErrorBoundary.vue'
 import RestorePrompt from '@/features/document/RestorePrompt.vue'
+import CommandPalette from '@/features/command/CommandPalette.vue'
 
 useTheme()
 const { isDesktop } = useShell()
@@ -66,5 +67,10 @@ function record(err: Error): void {
       the boundary so a failure in it is caught like any other.
     -->
     <RestorePrompt />
+    <!--
+      An accelerator over commands that already exist and are already
+      reachable, which is why it is built last rather than beside them.
+    -->
+    <CommandPalette />
   </ErrorBoundary>
 </template>
