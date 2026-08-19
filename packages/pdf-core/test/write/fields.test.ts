@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import * as mupdf from 'mupdf'
 import { replay } from '../../src/write/index.js'
@@ -398,5 +398,27 @@ describe('tab order', () => {
     const src = threeFields()
     expect(Buffer.from(ordered(src, ['third', 'first', 'second'])).equals(Buffer.from(src)))
       .toBe(false)
+  })
+})
+
+/**
+ * The fill overlay asks per page, so a document with no form must answer
+ * without loading one -- otherwise a 300-page report pays a page load per
+ * page for an answer that is always empty.
+ */
+describe('listFields on a formless document', () => {
+  it('returns nothing without touching a page', () => {
+    const src = bytes('simple-text')
+    const doc = mupdf.PDFDocument.openDocument(src, 'application/pdf') as mupdf.PDFDocument
+    const loadPage = vi.spyOn(doc, 'loadPage')
+    try {
+      expect(listFields(doc, 0, 'src-0:0')).toEqual([])
+      expect(loadPage).not.toHaveBeenCalled()
+    } finally { loadPage.mockRestore(); doc.destroy() }
+  })
+
+  it('still reads a document that does have one', () => {
+    const out = build([field({ name: 'fullname' })])
+    expect(fieldsOf(out).map((f) => f.name)).toEqual(['fullname'])
   })
 })

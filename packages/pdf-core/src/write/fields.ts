@@ -71,6 +71,16 @@ const FIELD_TYPES: Record<string, SourceFieldType> = {
   button: 'button',
 }
 
+/** Whether the document declares a form at all. */
+export function hasAcroForm(raw: mupdf.PDFDocument): boolean {
+  const root = raw.getTrailer().get('Root')
+  if (!root.isDictionary()) return false
+  const acro = root.get('AcroForm')
+  if (!acro.isDictionary()) return false
+  const fields = acro.get('Fields')
+  return fields.isArray() && fields.length > 0
+}
+
 /** A widget's on-state: the /AP /N key that is not 'Off'. */
 function exportValueOf(annot: mupdf.PDFObject): string | null {
   const ap = annot.get('AP')
@@ -100,6 +110,16 @@ export function listFields(
   pageIndex: number,
   pageRef: string,
 ): SourceField[] {
+  // A document with no /AcroForm has no form fields, by the format's own
+  // definition -- widgets outside it are non-conformant and no viewer
+  // treats them as a form. One catalog lookup here saves LOADING A PAGE
+  // for every page of every document that has no form, which is nearly all
+  // of them: the fill overlay asks per page, so without this a 300-page
+  // report pays a page load per page for an answer that is always empty.
+  // Measured at 41ms per scroll step with this check absent against 36ms
+  // with it (docs/findings/10-large-document-performance.md).
+  if (!hasAcroForm(raw)) return []
+
   const page = raw.loadPage(pageIndex)
   try {
     const annots = page.getObject().get('Annots')

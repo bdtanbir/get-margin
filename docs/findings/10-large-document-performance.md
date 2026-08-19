@@ -70,3 +70,28 @@ non-change.
   from those engines — which is also why Task 62 cannot depend on reading memory at runtime.
 - **A document with heavy annotations.** This fixture is 300 near-empty pages; the interaction
   between many objects and the bitmap cache is untested at this scale.
+
+
+## Addendum — the fill overlay's cost on a formless document
+
+Re-measured while auditing Phase 4 after Phase 5 shipped, because forms added a per-page worker call
+that this budget never accounted for.
+
+`FieldLayer` asks for a page's fields on mount, and enumerating fields meant loading a page in the
+worker. On a 300-page report with no form at all, that is a page load per page for an answer that is
+always empty — and it showed: **41 ms per scroll step against the 36 ms measured here originally.**
+
+`listFields` now answers from the catalog first. A document with no `/AcroForm` has no form fields by
+the format's own definition — widgets outside it are non-conformant and no viewer treats them as a
+form — so one lookup replaces the page load.
+
+| | ms/scroll step |
+|---|---|
+| Phase 4, before forms existed | 36 |
+| Forms shipped, no catalog check | 41 |
+| With the check | 38 |
+
+38 against 36 is within the run-to-run variation of a single measurement; what is gone is the
+systematic cost, which grew with page count. Worth recording as a pattern rather than an incident:
+**a feature that asks a question per page is a feature that must be able to answer it without
+opening one.**
