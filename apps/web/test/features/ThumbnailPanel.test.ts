@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import ThumbnailPanel from '../../src/features/document/ThumbnailPanel.vue'
 import { useDocumentStore } from '../../src/stores/document'
 import { useViewportStore } from '../../src/stores/viewport'
+import { seedDocument } from '../helpers/seedDocument'
 
 // ThumbnailPanel is the parent responsible for wiring Thumbnail's `select`
 // emit to an actual viewport move, and for feeding each Thumbnail the
@@ -11,6 +12,14 @@ import { useViewportStore } from '../../src/stores/viewport'
 // elsewhere in the app. A green Thumbnail suite alone cannot catch either
 // wiring gap — Thumbnail only proves it EMITS `select`, not that anything
 // listens.
+/**
+ * The thumbnails only. PageGrid's header also renders buttons (split, and
+ * the rotate/delete actions once pages are selected), so indexing
+ * `findAll('button')` positionally silently shifts the moment the header
+ * gains a control -- which it did.
+ */
+const thumbnails = (w: ReturnType<typeof mount>) => w.findAll('[data-page-tile] button')
+
 vi.mock('../../src/workers/pdfClient.js', () => ({
   getPdfClient: () => ({
     open: vi.fn(), authenticate: vi.fn(), render: vi.fn(),
@@ -21,17 +30,15 @@ vi.mock('../../src/workers/pdfClient.js', () => ({
 const GEOM = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
 
 function seed() {
-  const doc = useDocumentStore()
-  doc.$patch({
-    status: 'ready',
-    pageOrder: ['p0', 'p1', 'p2'],
-    pages: {
-      p0: { id: 'p0', sourceIndex: 2, geometry: GEOM },
-      p1: { id: 'p1', sourceIndex: 0, geometry: GEOM },
-      p2: { id: 'p2', sourceIndex: 1, geometry: GEOM },
-    },
-  })
-  return doc
+  seedDocument(
+    [
+      { id: 'p0', sourceIndex: 2 },
+      { id: 'p1', sourceIndex: 0 },
+      { id: 'p2', sourceIndex: 1 },
+    ],
+    [GEOM, GEOM, GEOM],
+  )
+  return useDocumentStore()
 }
 
 beforeEach(() => {
@@ -43,7 +50,7 @@ describe('ThumbnailPanel', () => {
     seed()
     const w = mount(ThumbnailPanel)
     // Three buttons, one per page in pageOrder.
-    expect(w.findAll('button').length).toBe(3)
+    expect(thumbnails(w).length).toBe(3)
   })
 
   it('moves the viewport anchor when a thumbnail is clicked', async () => {
@@ -52,7 +59,7 @@ describe('ThumbnailPanel', () => {
     const w = mount(ThumbnailPanel)
     expect(vp.anchorIndex).toBe(0)
     // Click the third thumbnail (display position 3, index 2).
-    await w.findAll('button')[2]!.trigger('click')
+    await thumbnails(w)[2]!.trigger('click')
     expect(vp.anchorIndex).toBe(2)
   })
 
@@ -61,7 +68,7 @@ describe('ThumbnailPanel', () => {
     const vp = useViewportStore()
     vp.setAnchor(1)
     const w = mount(ThumbnailPanel)
-    const buttons = w.findAll('button')
+    const buttons = thumbnails(w)
     expect(buttons[0]!.attributes('aria-current')).toBeUndefined()
     expect(buttons[1]!.attributes('aria-current')).toBe('true')
     expect(buttons[2]!.attributes('aria-current')).toBeUndefined()
@@ -73,7 +80,7 @@ describe('ThumbnailPanel', () => {
     const w = mount(ThumbnailPanel)
     vp.setAnchor(2)
     await w.vm.$nextTick()
-    const buttons = w.findAll('button')
+    const buttons = thumbnails(w)
     expect(buttons[2]!.attributes('aria-current')).toBe('true')
     expect(buttons[0]!.attributes('aria-current')).toBeUndefined()
   })
@@ -83,7 +90,7 @@ describe('ThumbnailPanel', () => {
     const doc = seed()
     expect(doc.pages.p0!.sourceIndex).toBe(2)
     const w = mount(ThumbnailPanel)
-    expect(w.findAll('button')[0]!.text()).toContain('1')
+    expect(thumbnails(w)[0]!.text()).toContain('1')
   })
 
   it('shows the page count in the header', () => {

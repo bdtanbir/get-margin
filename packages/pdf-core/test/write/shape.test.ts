@@ -17,8 +17,8 @@ const bytes = (n: Parameters<typeof fixturePath>[0]): Uint8Array =>
 
 function docWith(objects: EditObject[]): EditDocument {
   return {
-    version: EDIT_DOCUMENT_VERSION, sourceHash: '',
-    pageOrder: ['p0'], pages: { p0: { sourceIndex: 0 } },
+    version: EDIT_DOCUMENT_VERSION, sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+    pageOrder: ['p0'], pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
     objects: Object.fromEntries(objects.map((o) => [o.id, o])), nextZ: 99,
   }
 }
@@ -41,7 +41,7 @@ describe('shape writer', () => {
   const geom = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
 
   it('fills a rect at the stored PDF coordinates', () => {
-    const out = replay(bytes('simple-text'), docWith([{
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([{
       ...base, id: 'r1', kind: 'rect',
       rect: { x: 100, y: 300, w: 120, h: 80 },
       fill: [1, 0, 0], stroke: null,
@@ -53,7 +53,7 @@ describe('shape writer', () => {
   })
 
   it('leaves the interior of an unfilled rect untouched', () => {
-    const out = replay(bytes('simple-text'), docWith([{
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([{
       ...base, id: 'r1', kind: 'rect',
       rect: { x: 100, y: 300, w: 120, h: 80 }, fill: null,
     } as EditObject]))
@@ -65,7 +65,7 @@ describe('shape writer', () => {
   })
 
   it('honours opacity via an ExtGState', () => {
-    const out = replay(bytes('simple-text'), docWith([{
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([{
       ...base, id: 'r1', kind: 'rect', opacity: 0.5,
       rect: { x: 100, y: 300, w: 120, h: 80 }, fill: [1, 0, 0], stroke: null,
     } as EditObject]))
@@ -79,7 +79,7 @@ describe('shape writer', () => {
 
   it('draws all four kinds without throwing', () => {
     const kinds = ['rect', 'ellipse', 'line', 'arrow'] as const
-    const out = replay(bytes('simple-text'), docWith(kinds.map((kind, i) => ({
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith(kinds.map((kind, i) => ({
       ...base, id: `s${i}`, kind,
       rect: { x: 60 + i * 60, y: 500, w: 50, h: 40 },
     } as EditObject))))
@@ -89,7 +89,7 @@ describe('shape writer', () => {
   // A shape with neither fill nor stroke must not fall back to painting
   // something the user did not ask for -- `n` ends the path with no marks.
   it('draws nothing for a shape with neither fill nor stroke', () => {
-    const out = replay(bytes('simple-text'), docWith([{
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([{
       ...base, id: 'r1', kind: 'rect',
       rect: { x: 100, y: 300, w: 120, h: 80 }, fill: null, stroke: null,
     } as EditObject]))
@@ -107,7 +107,7 @@ describe('shape writer', () => {
   it('does not mutate the source bytes', () => {
     const src = bytes('simple-text')
     const before = src.slice()
-    replay(src, docWith([{
+    replay(new Map([['src-0', src]]), docWith([{
       ...base, id: 'r1', kind: 'rect', rect: { x: 10, y: 10, w: 20, h: 20 }, fill: [1, 0, 0],
     } as EditObject]))
     expect(src).toEqual(before)
@@ -122,7 +122,7 @@ describe('shape writer', () => {
     try { g = doc.pageGeometry(0) } finally { doc.close() }
     const [x0, y0] = g.cropBox
     const rect = { x: x0 + 40, y: y0 + 40, w: 80, h: 60 }
-    const out = replay(bytes('offset-cropbox'), docWith([{
+    const out = replay(new Map([['src-0', bytes('offset-cropbox')]]), docWith([{
       ...base, id: 'r1', kind: 'rect', rect, fill: [1, 0, 0], stroke: null,
     } as EditObject]))
     const c = pdfToView({ x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, g, 1)
@@ -132,7 +132,7 @@ describe('shape writer', () => {
   })
 
   it('matches the reviewed golden', async () => {
-    const out = replay(bytes('simple-text'), docWith([
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
       { ...base, id: 'a', kind: 'rect', rect: { x: 60, y: 600, w: 120, h: 60 }, fill: [1, 0.9, 0.2] } as EditObject,
       { ...base, id: 'b', kind: 'ellipse', rect: { x: 220, y: 600, w: 120, h: 60 } } as EditObject,
       { ...base, id: 'c', kind: 'line', rect: { x: 60, y: 540, w: 280, h: 0 } } as EditObject,

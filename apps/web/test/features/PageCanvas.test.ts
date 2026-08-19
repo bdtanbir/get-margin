@@ -4,7 +4,7 @@ import { mount } from '@vue/test-utils'
 import PageCanvas from '../../src/features/viewport/PageCanvas.vue'
 
 const GEOM = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
-const page = { id: 'p1', sourceIndex: 0, geometry: GEOM }
+const page = { id: 'p1', sourceId: 'src-0', sourceIndex: 0, geometry: GEOM }
 
 function bitmap(w: number, h: number) {
   // page/scale are unused by every test below, but RenderResult requires

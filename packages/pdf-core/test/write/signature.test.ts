@@ -27,8 +27,8 @@ function signaturePng(size = 120): Uint8Array {
 
 function docWith(objects: EditObject[]): EditDocument {
   return {
-    version: EDIT_DOCUMENT_VERSION, sourceHash: '',
-    pageOrder: ['p0', 'p1'], pages: { p0: { sourceIndex: 0 }, p1: { sourceIndex: 1 } },
+    version: EDIT_DOCUMENT_VERSION, sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+    pageOrder: ['p0', 'p1'], pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null }, p1: { sourceIndex: 1, sourceId: 'src-0', rotation: 0, cropBox: null } },
     objects: Object.fromEntries(objects.map((o) => [o.id, o])), nextZ: 99,
   }
 }
@@ -60,7 +60,7 @@ describe('signature writer', () => {
   })
 
   it('draws the ink band on the page', () => {
-    const out = replay(bytes('multi-page'), docWith([signature('s1', signaturePng())]))
+    const out = replay(new Map([['src-0', bytes('multi-page')]]), docWith([signature('s1', signaturePng())]))
     // The band sits across the middle of the 200pt-tall box (y 300..500).
     const c = pdfToView({ x: 200, y: 400 }, geom, 1)
     const px = sample(out, c.x, c.y)
@@ -70,7 +70,7 @@ describe('signature writer', () => {
   // The whole point of removeBackground: the surrounding area must stay
   // transparent so the page shows through, not be covered by a white block.
   it('leaves the transparent surround showing the page through', () => {
-    const out = replay(bytes('multi-page'), docWith([signature('s1', signaturePng())]))
+    const out = replay(new Map([['src-0', bytes('multi-page')]]), docWith([signature('s1', signaturePng())]))
     const c = pdfToView({ x: 200, y: 480 }, geom, 1)
     const px = sample(out, c.x, c.y)
     expect(px.r).toBeGreaterThan(200)
@@ -81,8 +81,8 @@ describe('signature writer', () => {
   // One signature applied to every page of a contract must embed once.
   it('embeds once when applied to several pages', () => {
     const data = signaturePng()
-    const one = replay(bytes('multi-page'), docWith([signature('s1', data, 'p0')]))
-    const two = replay(bytes('multi-page'), docWith([
+    const one = replay(new Map([['src-0', bytes('multi-page')]]), docWith([signature('s1', data, 'p0')]))
+    const two = replay(new Map([['src-0', bytes('multi-page')]]), docWith([
       signature('s1', data, 'p0'),
       signature('s2', data, 'p1'),
     ]))

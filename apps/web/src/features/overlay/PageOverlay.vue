@@ -9,10 +9,13 @@ import ObjectLayer from './ObjectLayer.vue'
 import SelectionChrome from './SelectionChrome.vue'
 import TextEditor from './TextEditor.vue'
 import InkCanvas from './InkCanvas.vue'
+import CropOverlay from '@/features/pages/CropOverlay.vue'
 import TextSelectionLayer from './TextSelectionLayer.vue'
 import MarkupObject from './objects/MarkupObject.vue'
 import { useTextSelection } from './useTextSelection'
 import { useSelectionStore } from '@/stores/selection'
+import { useViewportStore } from '@/stores/viewport'
+import { useDocumentStore } from '@/stores/document'
 import { getPdfClient } from '@/workers/pdfClient'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
@@ -54,9 +57,14 @@ const objects = computed(() => onPage.value.filter((o) => !isMarkup(o.kind)))
 const markup = computed(() => onPage.value.filter((o) => isMarkup(o.kind)))
 
 const tools = useToolsStore()
+const docStore = useDocumentStore()
 const draw = useDrawTool(() => props.page, () => props.zoom)
 
 const selection = useSelectionStore()
+const vp = useViewportStore()
+
+/** This page's position in display order, for the anchor comparison above. */
+const pageIndex = computed(() => docStore.pageOrder.indexOf(props.page.id))
 const svgEl = ref<SVGSVGElement | null>(null)
 
 /**
@@ -236,5 +244,14 @@ const draft = computed(() => {
     <SelectionToolbar :page="props.page" :zoom="props.zoom" />
     <TextEditor :page="props.page" :zoom="props.zoom" />
     <InkCanvas :page="props.page" :zoom="props.zoom" />
+    <!--
+      Only on the anchor page: cropping is a page action and showing a
+      dimmed crop surface on every mounted page at once would be noise.
+    -->
+    <CropOverlay
+      v-if="tools.active === 'crop' && vp.anchorIndex === pageIndex"
+      :page="props.page"
+      :zoom="props.zoom"
+    />
   </div>
 </template>

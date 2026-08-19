@@ -12,8 +12,8 @@ const bytes = (n: Parameters<typeof fixturePath>[0]): Uint8Array =>
 
 function docWith(objects: EditObject[]): EditDocument {
   return {
-    version: EDIT_DOCUMENT_VERSION, sourceHash: '',
-    pageOrder: ['p0'], pages: { p0: { sourceIndex: 0 } },
+    version: EDIT_DOCUMENT_VERSION, sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+    pageOrder: ['p0'], pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
     objects: Object.fromEntries(objects.map((o) => [o.id, o])), nextZ: 99,
   }
 }
@@ -102,7 +102,7 @@ describe('markup writer', () => {
     ['underline', 'Underline'],
     ['strikeout', 'StrikeOut'],
   ] as const)('writes %s as a native %s annotation with an /AP', (kind, subtype) => {
-    const annots = annotationsOf(replay(bytes('simple-text'), docWith([markupObject(kind)])))
+    const annots = annotationsOf(replay(new Map([['src-0', bytes('simple-text')]]), docWith([markupObject(kind)])))
     expect(annots).toHaveLength(1)
     expect(annots[0]!.type).toBe(subtype)
     // Phase 0 verified /AP is a real written stream, not viewer-side
@@ -112,7 +112,7 @@ describe('markup writer', () => {
 
   it('survives a save/reopen round trip with its quads intact', () => {
     const obj = markupObject('highlight') as EditObject & { quads: number[][] }
-    const annots = annotationsOf(replay(bytes('simple-text'), docWith([obj])))
+    const annots = annotationsOf(replay(new Map([['src-0', bytes('simple-text')]]), docWith([obj])))
     expect(annots[0]!.quads).toBe(obj.quads.length)
   })
 
@@ -126,7 +126,7 @@ describe('markup writer', () => {
     const q = quads[0]!
     const cx = (q[0]! + q[2]!) / 2
     const cy = (q[1]! + q[5]!) / 2
-    const out = replay(bytes('simple-text'), docWith([markupObject('highlight')]))
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([markupObject('highlight')]))
     const px = sample(out, cx, cy)
     expect(px.r).toBeGreaterThan(180)
     expect(px.b).toBeLessThan(180)
@@ -142,7 +142,7 @@ describe('markup writer', () => {
   })
 
   it('writes one annotation per markup object', () => {
-    const out = replay(bytes('simple-text'), docWith([
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
       markupObject('highlight', 0),
       markupObject('underline', 1),
     ]))
@@ -152,7 +152,7 @@ describe('markup writer', () => {
   it('matches the reviewed golden', async () => {
     // The fixture has two lines, so the third mark takes the back half of
     // the second rather than a line that does not exist.
-    await assertGolden('export-markup', replay(bytes('simple-text'), docWith([
+    await assertGolden('export-markup', replay(new Map([['src-0', bytes('simple-text')]]), docWith([
       markupObject('highlight', 0),
       markupObject('underline', 1, [0, 0.4, 1], 0, 20),
       markupObject('strikeout', 1, [1, 0.1, 0.1], 22),

@@ -1,6 +1,6 @@
 import {
   PdfDocument, renderPage, replay, buildQuadIndex,
-  type EditDocument, type PageQuadIndex,
+  type EditDocument, type PageQuadIndex, type SourceId,
 } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
@@ -8,9 +8,15 @@ export type DocumentInfo = {
   pageCount: number
   geometries: PageGeometry[]
   needsPassword: boolean
+  /**
+   * The id the worker filed this file's bytes under. The main thread stores
+   * it on the page entries rather than minting its own, so both sides agree
+   * on which bytes a page came from -- which is what merge needs.
+   */
+  sourceId: SourceId
 }
 
-export type RenderRequest = { id: number; page: number; scale: number }
+export type RenderRequest = { id: number; page: number; scale: number; sourceId?: SourceId }
 export type RenderResult = { width: number; height: number; rgba: Uint8Array; page: number; scale: number }
 
 /**
@@ -37,7 +43,15 @@ export class PdfService {
    * this worker by pdfClient, so retaining the reference is free; it is not
    * a second copy of anything the main thread still holds.
    */
-  #sourceBytes: Uint8Array | undefined
+  #sources = new Map<SourceId, Uint8Array>()
+  #nextSourceId = 0
+
+  /** The id of the file the user opened first, and the one `#doc` renders. */
+  #primarySource: SourceId | undefined
+
+  /** One extra open handle, for rendering pages merged in from another file. */
+  #secondary: PdfDocument | undefined
+  #secondaryId: SourceId | undefined
 
   /**
    * Per-page text geometry, cached for the life of the open document.
@@ -58,7 +72,12 @@ export class PdfService {
     const geometries = needsPassword
       ? []
       : Array.from({ length: doc.pageCount }, (_, i) => doc.pageGeometry(i))
-    return { pageCount: needsPassword ? 0 : doc.pageCount, geometries, needsPassword }
+    return {
+      pageCount: needsPassword ? 0 : doc.pageCount,
+      geometries,
+      needsPassword,
+      sourceId: this.#primarySource ?? '',
+    }
   }
 
   /**
@@ -71,9 +90,50 @@ export class PdfService {
    */
   open(bytes: Uint8Array): DocumentInfo {
     this.close()
-    this.#sourceBytes = bytes
+    const sourceId = this.#register(bytes)
+    this.#primarySource = sourceId
     this.#doc = PdfDocument.open(bytes)
     return this.#info()
+  }
+
+  /** File bytes under a fresh id, retained for the document's lifetime. */
+  #register(bytes: Uint8Array): SourceId {
+    const id: SourceId = `src-${this.#nextSourceId++}`
+    this.#sources.set(id, bytes)
+    return id
+  }
+
+  /**
+   * Register another file for merging, and report its geometry so the main
+   * thread can seed page entries without reopening the file there.
+   *
+   * The bytes are RETAINED for as long as the merge lasts: several large
+   * documents resident at once is this feature's memory ceiling, which is
+   * why dropSource exists.
+   */
+  addSource(bytes: Uint8Array): { sourceId: SourceId; pageCount: number; geometries: PageGeometry[] } {
+    const doc = PdfDocument.open(bytes)
+    try {
+      const geometries = Array.from({ length: doc.pageCount }, (_, i) => doc.pageGeometry(i))
+      return { sourceId: this.#register(bytes), pageCount: doc.pageCount, geometries }
+    } finally {
+      doc.close()
+    }
+  }
+
+  /** Forget a source's bytes. The only way back under the size cap. */
+  dropSource(id: SourceId): void {
+    if (id === this.#primarySource) return
+    this.#sources.delete(id)
+    if (this.#secondaryId === id) {
+      this.#secondary?.close()
+      this.#secondary = undefined
+      this.#secondaryId = undefined
+    }
+  }
+
+  sourceIds(): SourceId[] {
+    return [...this.#sources.keys()]
   }
 
   authenticate(password: string): DocumentInfo {
@@ -93,10 +153,34 @@ export class PdfService {
    * finest granularity available).
    */
   render(req: RenderRequest): RenderResult | null {
-    const doc = this.#doc
+    const doc = this.#docFor(req.sourceId)
     if (!doc) throw new Error('no document open')
     const { width, height, rgba } = renderPage(doc, req.page, req.scale)
     return { width, height, rgba, page: req.page, scale: req.scale }
+  }
+
+  /**
+   * The open handle for a source, opening it if this is the first page from
+   * that file to be rendered.
+   *
+   * A HANDLE is the expensive resource here, not the bytes: parsing keeps a
+   * page tree and object cache alive. Only the primary document and the
+   * most recently used secondary are kept open, so scrolling through a
+   * merge of two files costs two handles rather than one per source. A grid
+   * spanning many files will reopen as it scrolls; that is a measured
+   * trade-off to revisit if merges get wide, not an oversight.
+   */
+  #docFor(sourceId: SourceId | undefined): PdfDocument | undefined {
+    if (!sourceId || sourceId === this.#primarySource) return this.#doc
+    if (this.#secondaryId === sourceId && this.#secondary) return this.#secondary
+
+    const bytes = this.#sources.get(sourceId)
+    if (!bytes) return this.#doc
+
+    this.#secondary?.close()
+    this.#secondary = PdfDocument.open(bytes)
+    this.#secondaryId = sourceId
+    return this.#secondary
   }
 
   /**
@@ -121,9 +205,12 @@ export class PdfService {
     fonts?: Map<string, Uint8Array>,
     onProgress?: (done: number, total: number) => void,
   ): Uint8Array {
-    const src = this.#sourceBytes
+    const primary = this.#primarySource
+    const src = primary ? this.#sources.get(primary) : undefined
     if (!src) throw new Error('no document open')
-    if (!editDoc || Object.keys(editDoc.objects).length === 0) return src
+    // No edit document at all means "give me the file back" -- the caller
+    // has nothing to replay.
+    if (!editDoc) return src
     // `fonts` is only consulted for text objects; a document without any
     // never touches it, which is why it stays optional (Task 31). Under
     // exactOptionalPropertyTypes, `{ fonts: undefined }` is NOT the same as
@@ -133,7 +220,7 @@ export class PdfService {
     // a promise this deliberately does not await. Awaiting would make the
     // export wait on a main-thread round trip per page, and nothing here
     // needs the acknowledgement.
-    return replay(src, editDoc, {
+    return replay(this.#sources, editDoc, {
       ...(fonts ? { fonts } : {}),
       ...(onProgress ? { onProgress } : {}),
     })
@@ -156,7 +243,13 @@ export class PdfService {
   close(): void {
     this.#doc?.close()
     this.#doc = undefined
-    this.#sourceBytes = undefined
+    this.#secondary?.close()
+    this.#secondary = undefined
+    this.#secondaryId = undefined
+    // Every source, not just the first: a merged-away document still costs
+    // its full byte payload until it is dropped.
+    this.#sources.clear()
+    this.#primarySource = undefined
     this.#quadCache.clear()
   }
 }

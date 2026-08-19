@@ -6,7 +6,7 @@ import { useEditsStore } from '@/stores/edits'
 import type { PageState } from '@/stores/document'
 import type { EditObject } from '@margin/pdf-core'
 
-const page: PageState = { id: 'p1', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
+const page: PageState = { id: 'p1', sourceId: 'src-0', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
 
 const object: EditObject = {
   id: 'o1', pageId: 'p1', kind: 'rect',
@@ -41,7 +41,7 @@ describe('SelectionChrome', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     edits = useEditsStore()
-    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
     edits.applyOp({ type: 'addObject', object }, 'add')
   })
 

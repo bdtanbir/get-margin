@@ -7,7 +7,7 @@ import { useToolsStore } from '@/stores/tools'
 import type { PageState } from '@/stores/document'
 import type { EditObject } from '@margin/pdf-core'
 
-const page: PageState = { id: 'p1', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
+const page: PageState = { id: 'p1', sourceId: 'src-0', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
 
 const textObject: EditObject = {
   id: 't1', pageId: 'p1', kind: 'text', text: 'hello',
@@ -25,7 +25,7 @@ describe('TextEditor', () => {
     vi.useFakeTimers()
     edits = useEditsStore()
     tools = useToolsStore()
-    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
     edits.applyOp({ type: 'addObject', object: textObject }, 'add')
   })
 

@@ -25,12 +25,12 @@ function imageObject(id: string, bytes: number, pageId = 'p1'): EditObject {
 describe('useEditsStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    useEditsStore().reset('hash-abc', ['p1', 'p2'], { p1: { sourceIndex: 0 }, p2: { sourceIndex: 1 } })
+    useEditsStore().reset({ 'src-0': { hash: 'hash-abc', name: 'a.pdf' } }, ['p1', 'p2'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null }, p2: { sourceIndex: 1, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   it('starts empty with the given source hash', () => {
     const s = useEditsStore()
-    expect(s.doc.sourceHash).toBe('hash-abc')
+    expect(s.doc.sources['src-0']!.hash).toBe('hash-abc')
     expect(Object.keys(s.doc.objects)).toHaveLength(0)
     expect(s.canUndo).toBe(false)
   })
@@ -310,5 +310,146 @@ describe('useEditsStore', () => {
       ['applyOp', 'beginTransaction', 'clearSelection', 'endTransaction', 'nextZ', 'redo', 'reset',
         'select', 'undo', 'withTransaction'].sort(),
     )
+  })
+})
+
+describe('page operations', () => {
+  function seed(): ReturnType<typeof useEditsStore> {
+    const s = useEditsStore()
+    s.reset(
+      { 'src-0': { hash: 'h', name: 'a.pdf' } },
+      ['p1', 'p2', 'p3'],
+      {
+        p1: { sourceId: 'src-0', sourceIndex: 0, rotation: 0, cropBox: null },
+        p2: { sourceId: 'src-0', sourceIndex: 1, rotation: 0, cropBox: null },
+        p3: { sourceId: 'src-0', sourceIndex: 2, rotation: 0, cropBox: null },
+      },
+    )
+    return s
+  }
+
+  it('rotates a page by the given quarter turns', () => {
+    const s = seed()
+    s.applyOp({ type: 'rotatePage', pageId: 'p2', by: 90 }, 'Rotate')
+    expect(s.doc.pages.p2!.rotation).toBe(90)
+  })
+
+  it('accumulates rotation and wraps at 360', () => {
+    const s = seed()
+    for (let i = 0; i < 5; i++) s.applyOp({ type: 'rotatePage', pageId: 'p1', by: 90 }, 'Rotate')
+    expect(s.doc.pages.p1!.rotation).toBe(90)
+  })
+
+  it('reorders pages', () => {
+    const s = seed()
+    s.applyOp({ type: 'reorderPages', pageOrder: ['p3', 'p1', 'p2'] }, 'Reorder')
+    expect(s.doc.pageOrder).toEqual(['p3', 'p1', 'p2'])
+  })
+
+  // A stale order must not resurrect a deleted page or introduce an id
+  // with no entry behind it.
+  it('filters an order containing unknown ids', () => {
+    const s = seed()
+    s.applyOp({ type: 'reorderPages', pageOrder: ['p3', 'ghost', 'p1', 'p2'] }, 'Reorder')
+    expect(s.doc.pageOrder).toEqual(['p3', 'p1', 'p2'])
+  })
+
+  it('deletes pages from both the order and the map', () => {
+    const s = seed()
+    s.applyOp({ type: 'deletePages', pageIds: ['p2'] }, 'Delete')
+    expect(s.doc.pageOrder).toEqual(['p1', 'p3'])
+    expect(s.doc.pages.p2).toBeUndefined()
+  })
+
+  // Objects are keyed by pageId. Leaving them behind would make
+  // EditDocument hold objects pointing at pages that no longer exist.
+  it('takes a deleted page’s objects with it', () => {
+    const s = seed()
+    s.applyOp({ type: 'addObject', object: rectObject('o1', 'p2') }, 'Add')
+    s.applyOp({ type: 'addObject', object: rectObject('o2', 'p1') }, 'Add')
+    s.applyOp({ type: 'deletePages', pageIds: ['p2'] }, 'Delete')
+    expect(s.doc.objects.o1).toBeUndefined()
+    expect(s.doc.objects.o2).toBeDefined()
+  })
+
+  // One Ctrl+Z brings back the page AND the annotations that were on it.
+  it('restores a deleted page with its objects in one undo', () => {
+    const s = seed()
+    s.applyOp({ type: 'addObject', object: rectObject('o1', 'p2') }, 'Add')
+    s.applyOp({ type: 'deletePages', pageIds: ['p2'] }, 'Delete')
+    s.undo()
+    expect(s.doc.pageOrder).toEqual(['p1', 'p2', 'p3'])
+    expect(s.doc.objects.o1).toBeDefined()
+  })
+
+  it('deletes several pages in one op and one undo step', () => {
+    const s = seed()
+    const before = s.historySize
+    s.applyOp({ type: 'deletePages', pageIds: ['p1', 'p3'] }, 'Delete')
+    expect(s.doc.pageOrder).toEqual(['p2'])
+    expect(s.historySize).toBe(before + 1)
+    s.undo()
+    expect(s.doc.pageOrder).toEqual(['p1', 'p2', 'p3'])
+  })
+
+  // A document with no pages has nothing to render and no way back but undo.
+  it('refuses to delete every page', () => {
+    const s = seed()
+    s.applyOp({ type: 'deletePages', pageIds: ['p1', 'p2', 'p3'] }, 'Delete')
+    expect(s.doc.pageOrder).toEqual(['p1', 'p2', 'p3'])
+  })
+
+  it('crops a page and clears the crop again', () => {
+    const s = seed()
+    s.applyOp({ type: 'cropPage', pageId: 'p1', cropBox: { x: 10, y: 20, w: 100, h: 200 } }, 'Crop')
+    expect(s.doc.pages.p1!.cropBox).toEqual([10, 20, 110, 220])
+    s.applyOp({ type: 'cropPage', pageId: 'p1', cropBox: null }, 'Uncrop')
+    expect(s.doc.pages.p1!.cropBox).toBeNull()
+  })
+
+  it('inserts pages at a position', () => {
+    const s = seed()
+    s.applyOp({
+      type: 'insertPages',
+      at: 1,
+      pages: [{ id: 'n1', sourceId: 'src-1', sourceIndex: 0, rotation: 0, cropBox: null }],
+    }, 'Insert')
+    expect(s.doc.pageOrder).toEqual(['p1', 'n1', 'p2', 'p3'])
+    expect(s.doc.pages.n1!.sourceId).toBe('src-1')
+  })
+
+  it('appends when inserting past the end', () => {
+    const s = seed()
+    s.applyOp({
+      type: 'insertPages',
+      at: 99,
+      pages: [{ id: 'n1', sourceId: 'src-1', sourceIndex: 0, rotation: 0, cropBox: null }],
+    }, 'Insert')
+    expect(s.doc.pageOrder[3]).toBe('n1')
+  })
+
+  // Registering the source inside the op is what keeps applyOp the only
+  // writer -- and what makes undoing a merge remove the source too.
+  it('registers a source in the same op, and undo removes it again', () => {
+    const s = seed()
+    s.applyOp({
+      type: 'insertPages',
+      at: 99,
+      source: { id: 'src-1', hash: 'h2', name: 'b.pdf' },
+      pages: [{ id: 'n1', sourceId: 'src-1', sourceIndex: 0, rotation: 0, cropBox: null }],
+    }, 'Add b.pdf')
+    expect(s.doc.sources['src-1']).toEqual({ hash: 'h2', name: 'b.pdf' })
+    s.undo()
+    expect(s.doc.sources['src-1']).toBeUndefined()
+    expect(s.doc.pageOrder).toEqual(['p1', 'p2', 'p3'])
+  })
+
+  it('ignores an op naming a page that does not exist', () => {
+    const s = seed()
+    s.applyOp({ type: 'rotatePage', pageId: 'nope', by: 90 }, 'Rotate')
+    s.applyOp({ type: 'cropPage', pageId: 'nope', cropBox: null }, 'Crop')
+    s.applyOp({ type: 'deletePages', pageIds: ['nope'] }, 'Delete')
+    expect(s.doc.pageOrder).toEqual(['p1', 'p2', 'p3'])
+    expect(s.historySize).toBe(0)
   })
 })

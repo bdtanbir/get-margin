@@ -159,6 +159,100 @@ describe('useDocumentStore.openFile', () => {
     const edits = useEditsStore()
     await doc.openFile(fakeFile('contract.pdf', PDF_BYTES))
     expect(edits.doc.pageOrder).toEqual(doc.pageOrder)
-    expect(edits.doc.sourceHash).toBe(doc.sourceHash)
+    // The source id is minted per open, so look it up rather than assuming.
+    expect(Object.values(edits.doc.sources)[0]!.hash).toBe(doc.sourceHash)
+  })
+})
+
+// Task 43. `doc.pages` returns EFFECTIVE geometry -- the source page's own
+// box and rotation with the edit store's overrides folded in -- so every
+// existing consumer of `page.geometry` picks up rotate and crop with no
+// change to any of them.
+describe('effective page geometry', () => {
+  async function opened() {
+    const doc = useDocumentStore()
+    const edits = useEditsStore()
+    await doc.openFile(fakeFile('a.pdf', PDF_BYTES))
+    return { doc, edits, id: doc.pageOrder[0]! }
+  }
+
+  it('reports the source geometry when nothing overrides it', async () => {
+    const { doc, id } = await opened()
+    expect(doc.pages[id]!.geometry).toEqual(GEOM)
+  })
+
+  it('adds the edit rotation to the source rotation', async () => {
+    const { doc, edits, id } = await opened()
+    edits.applyOp({ type: 'rotatePage', pageId: id, by: 90 }, 'Rotate')
+    expect(doc.pages[id]!.geometry.rotate).toBe(90)
+  })
+
+  it('normalises a rotation that wraps past 360', async () => {
+    const { doc, edits, id } = await opened()
+    edits.applyOp({ type: 'rotatePage', pageId: id, by: 270 }, 'Rotate')
+    edits.applyOp({ type: 'rotatePage', pageId: id, by: 180 }, 'Rotate')
+    expect(doc.pages[id]!.geometry.rotate).toBe(90)
+  })
+
+  it('leaves other pages alone when one is rotated', async () => {
+    const { doc, edits, id } = await opened()
+    const other = doc.pageOrder[1]!
+    edits.applyOp({ type: 'rotatePage', pageId: id, by: 90 }, 'Rotate')
+    expect(doc.pages[other]!.geometry.rotate).toBe(0)
+  })
+
+  it('prefers the crop override over the source CropBox', async () => {
+    const { doc, edits, id } = await opened()
+    edits.applyOp({ type: 'cropPage', pageId: id, cropBox: { x: 10, y: 20, w: 100, h: 200 } }, 'Crop')
+    expect(doc.pages[id]!.geometry.cropBox).toEqual([10, 20, 110, 220])
+  })
+
+  it('follows the edit store’s page order, not the source order', async () => {
+    const { doc, edits } = await opened()
+    const [a, b, c] = doc.pageOrder
+    edits.applyOp({ type: 'reorderPages', pageOrder: [c!, a!, b!] }, 'Reorder')
+    expect(doc.pageOrder).toEqual([c, a, b])
+    expect(doc.pageCount).toBe(3)
+  })
+
+  it('drops a deleted page from both getters', async () => {
+    const { doc, edits, id } = await opened()
+    edits.applyOp({ type: 'deletePages', pageIds: [id] }, 'Delete')
+    expect(doc.pageOrder).not.toContain(id)
+    expect(doc.pages[id]).toBeUndefined()
+    expect(doc.pageCount).toBe(2)
+  })
+
+  it('registers the opened file as a source', async () => {
+    const doc = useDocumentStore()
+    await doc.openFile(fakeFile('contract.pdf', PDF_BYTES))
+    const sources = Object.values(doc.sources)
+    expect(sources).toHaveLength(1)
+    expect(sources[0]!.name).toBe('contract.pdf')
+    expect(sources[0]!.geometries).toHaveLength(3)
+  })
+
+  // `edits.doc` is replaced wholesale on every op, so without memoisation
+  // the getter would hand every mounted page a fresh PageState object sixty
+  // times a second during a drag and re-render all of them.
+  it('keeps a page’s identity stable across unrelated edits', async () => {
+    const { doc, edits, id } = await opened()
+    const before = doc.pages[id]
+    edits.applyOp({ type: 'rotatePage', pageId: doc.pageOrder[1]!, by: 90 }, 'Rotate')
+    expect(doc.pages[id]).toBe(before)
+  })
+
+  it('gives a page a new identity when its own geometry changes', async () => {
+    const { doc, edits, id } = await opened()
+    const before = doc.pages[id]
+    edits.applyOp({ type: 'rotatePage', pageId: id, by: 90 }, 'Rotate')
+    expect(doc.pages[id]).not.toBe(before)
+  })
+
+  // pageOrder indexes pages; an id in one and not the other is an undefined
+  // page prop downstream.
+  it('never lists a page in pageOrder that pages cannot resolve', async () => {
+    const { doc } = await opened()
+    for (const id of doc.pageOrder) expect(doc.pages[id]).toBeDefined()
   })
 })

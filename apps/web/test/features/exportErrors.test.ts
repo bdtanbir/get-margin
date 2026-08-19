@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import TopBar from '@/app/TopBar.vue'
 import { useDocumentStore } from '@/stores/document'
+import { seedDocument } from '../helpers/seedDocument'
 import { useEditsStore } from '@/stores/edits'
 import { withTimeout } from '@/workers/pdfClient'
 import * as exportFile from '@/lib/exportFile'
@@ -23,15 +24,11 @@ vi.mock('@/lib/fonts', async (importOriginal) => {
 const GEOM = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
 
 function readyDoc(pages: number): void {
-  const doc = useDocumentStore()
-  doc.$patch({
-    status: 'ready',
-    fileName: 'contract.pdf',
-    pageOrder: Array.from({ length: pages }, (_, i) => `p${i}`),
-    pages: Object.fromEntries(
-      Array.from({ length: pages }, (_, i) => [`p${i}`, { id: `p${i}`, sourceIndex: i, geometry: GEOM }]),
-    ),
-  })
+  seedDocument(
+    Array.from({ length: pages }, (_, i) => ({ id: `p${i}`, sourceIndex: i })),
+    Array.from({ length: pages }, () => GEOM),
+  )
+  useDocumentStore().$patch({ fileName: 'contract.pdf' })
 }
 
 describe('export error surfaces', () => {
@@ -43,7 +40,7 @@ describe('export error surfaces', () => {
     save.mockResolvedValue(new Uint8Array([1, 2, 3]))
     downloadBytes = vi.spyOn(exportFile, 'downloadBytes').mockImplementation(() => {})
     readyDoc(3)
-    useEditsStore().reset('h', ['p0'], { p0: { sourceIndex: 0 } })
+    useEditsStore().reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p0'], { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   const click = async (w: ReturnType<typeof mount>) => {
@@ -118,7 +115,7 @@ describe('export progress', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     vi.spyOn(exportFile, 'downloadBytes').mockImplementation(() => {})
-    useEditsStore().reset('h', ['p0'], { p0: { sourceIndex: 0 } })
+    useEditsStore().reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p0'], { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   // A bar that flashes and vanishes on a 3-page document reads as a glitch.
@@ -186,7 +183,7 @@ describe('undo and redo controls', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     readyDoc(1)
-    useEditsStore().reset('h', ['p0'], { p0: { sourceIndex: 0 } })
+    useEditsStore().reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p0'], { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   const rect: EditObject = {

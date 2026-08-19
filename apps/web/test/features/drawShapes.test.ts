@@ -8,7 +8,7 @@ import { useDocumentStore } from '@/stores/document'
 import { setUriPrompt } from '@/features/overlay/useDrawTool'
 import type { PageState } from '@/stores/document'
 
-const page: PageState = { id: 'p1', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
+const page: PageState = { id: 'p1', sourceId: 'src-0', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
 
 /**
  * jsdom gives every element a zero-size, zero-origin client rect, which is
@@ -49,7 +49,7 @@ describe('drawing shapes', () => {
     setActivePinia(createPinia())
     edits = useEditsStore()
     tools = useToolsStore()
-    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   function overlay() {
@@ -155,7 +155,7 @@ describe('drawing a link', () => {
     setActivePinia(createPinia())
     edits = useEditsStore()
     tools = useToolsStore()
-    edits.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
   })
 
   afterEach(() => setUriPrompt(undefined))

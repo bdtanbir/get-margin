@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Thumbnail from './Thumbnail.vue'
+import PageGrid from '@/features/pages/PageGrid.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useViewportStore } from '@/stores/viewport'
 
@@ -38,18 +38,10 @@ function select(index: number): void {
     class="flex h-full w-60 shrink-0 flex-col border-r border-border bg-surface"
     aria-label="Pages"
   >
-    <header class="flex h-11 shrink-0 items-center px-3 text-[13px] font-medium text-text-muted">
-      {{ doc.pageCount }} {{ doc.pageCount === 1 ? 'page' : 'pages' }}
-    </header>
-    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-3">
-      <Thumbnail
-        v-for="(id, i) in doc.pageOrder"
-        :key="id"
-        :page="doc.pages[id]!"
-        :index="i"
-        :active="vp.anchorIndex === i"
-        @select="select"
-      />
-    </div>
+    <!--
+      Task 46: the grid owns the page count, the selection, and the page
+      actions. This panel is now just the sidebar frame around it.
+    -->
+    <PageGrid @select="select" />
   </aside>
 </template>

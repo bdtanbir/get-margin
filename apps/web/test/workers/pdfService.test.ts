@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { PdfService } from '../../src/workers/pdfService.js'
+import { PdfDocument } from '@margin/pdf-core'
 import { generateFixtures, fixturePath } from '../../../../packages/pdf-core/test/fixtures/index.js'
 
 beforeAll(async () => { await generateFixtures() }, 60_000)
@@ -121,8 +122,8 @@ describe('PdfService.save', () => {
     const src = bytes('simple-text')
     svc.open(src.slice())
     const empty = {
-      version: 1, sourceHash: '', pageOrder: ['p0'],
-      pages: { p0: { sourceIndex: 0 } }, objects: {}, nextZ: 1,
+      version: 2, sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } }, objects: {}, nextZ: 1,
     }
     expect(Array.from(svc.save(empty))).toEqual(Array.from(src))
   })
@@ -140,8 +141,8 @@ describe('PdfService.save', () => {
     const svc = new PdfService()
     svc.open(bytes('simple-text'))
     const edits = {
-      version: 1, sourceHash: '', pageOrder: ['p0'],
-      pages: { p0: { sourceIndex: 0 } },
+      version: 2, sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       objects: { a1: { id: 'a1', pageId: 'p0', kind: 'not-a-real-kind', z: 1 } as any },
       nextZ: 2,
@@ -157,8 +158,8 @@ describe('PdfService.save', () => {
     const src = bytes('simple-text')
     svc.open(src.slice())
     const edits = {
-      version: 1, sourceHash: '', pageOrder: ['p0'],
-      pages: { p0: { sourceIndex: 0 } },
+      version: 2, sources: { 'src-0': { hash: '', name: 'a.pdf' } }, pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
       objects: {
         a1: {
           id: 'a1', pageId: 'p0', kind: 'rect',
@@ -205,5 +206,141 @@ describe('PdfService.quadIndex', () => {
     svc.close()
     svc.open(bytes('multi-page'))
     expect(svc.quadIndex(0)).not.toBe(first)
+  })
+})
+
+// Task 50. Several documents open at once, which is the only part of the
+// phase that puts more than one file's bytes in memory.
+describe('PdfService multi-source', () => {
+  const twoSourceDoc = (a: string, b: string) => ({
+    version: 2,
+    sources: { [a]: { hash: '', name: 'a.pdf' }, [b]: { hash: '', name: 'b.pdf' } },
+    pageOrder: ['x', 'y'],
+    pages: {
+      x: { sourceId: a, sourceIndex: 0, rotation: 0, cropBox: null },
+      y: { sourceId: b, sourceIndex: 0, rotation: 0, cropBox: null },
+    },
+    objects: {},
+    nextZ: 1,
+  })
+
+  it('registers a second source and reports its pages', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+    expect(added.pageCount).toBe(12)
+    expect(added.geometries).toHaveLength(12)
+    expect(added.sourceId).not.toBe('')
+  })
+
+  it('keeps every source registered', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+    expect(svc.sourceIds()).toHaveLength(2)
+    expect(svc.sourceIds()).toContain(added.sourceId)
+  })
+
+  // A merged-away source still costs its full byte payload; dropping it is
+  // the only way back under the size cap.
+  it('drops a source and its bytes', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+    svc.dropSource(added.sourceId)
+    expect(svc.sourceIds()).toHaveLength(1)
+  })
+
+  // Dropping the file the user opened would leave nothing to render.
+  it('refuses to drop the primary source', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const [primary] = svc.sourceIds()
+    svc.dropSource(primary!)
+    expect(svc.sourceIds()).toContain(primary)
+  })
+
+  it('refuses a source that is not a PDF', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    expect(() => svc.addSource(new Uint8Array([1, 2, 3]))).toThrow()
+  })
+
+  it('exports pages drawn from both sources', () => {
+    const svc = new PdfService()
+    const primary = svc.open(bytes('simple-text')).sourceId
+    const added = svc.addSource(bytes('multi-page'))
+    const out = svc.save(twoSourceDoc(primary, added.sourceId) as never)
+    expect(out.byteLength).toBeGreaterThan(0)
+    // Two pages in, two pages out.
+    const doc = PdfDocument.open(out)
+    try { expect(doc.pageCount).toBe(2) } finally { doc.close() }
+  })
+
+  it('closes every source, not just the first', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    svc.addSource(bytes('multi-page'))
+    svc.close()
+    expect(svc.sourceIds()).toHaveLength(0)
+  })
+
+  it('reports the primary source id when a document is opened', () => {
+    const svc = new PdfService()
+    const info = svc.open(bytes('simple-text'))
+    expect(info.sourceId).toBe(svc.sourceIds()[0])
+  })
+})
+
+// The bug this guards: render() used to always use the PRIMARY document, so
+// a merged-in page rendered whatever the primary happened to have at that
+// index -- silently the wrong page, not an error.
+describe('PdfService.render across sources', () => {
+  it('renders a page from the source it belongs to', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+
+    const primary = svc.render({ id: 1, page: 0, scale: 1 })!
+    const secondary = svc.render({ id: 2, page: 3, scale: 1, sourceId: added.sourceId })!
+
+    // Different documents, so the rendered pixels must differ.
+    expect(Array.from(primary.rgba)).not.toEqual(Array.from(secondary.rgba))
+  })
+
+  it('renders the same page identically whichever way the source is named', () => {
+    const svc = new PdfService()
+    const primary = svc.open(bytes('simple-text')).sourceId
+    const implicit = svc.render({ id: 1, page: 0, scale: 1 })!
+    const explicit = svc.render({ id: 2, page: 0, scale: 1, sourceId: primary })!
+    expect(Array.from(implicit.rgba)).toEqual(Array.from(explicit.rgba))
+  })
+
+  it('falls back to the primary for an unknown source rather than throwing', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    expect(() => svc.render({ id: 1, page: 0, scale: 1, sourceId: 'gone' })).not.toThrow()
+  })
+
+  it('renders a merged page after the primary was rendered, and back again', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+    const first = svc.render({ id: 1, page: 0, scale: 1 })!
+    svc.render({ id: 2, page: 5, scale: 1, sourceId: added.sourceId })
+    // Swapping the secondary handle out and back must not corrupt the primary.
+    const again = svc.render({ id: 3, page: 0, scale: 1 })!
+    expect(Array.from(again.rgba)).toEqual(Array.from(first.rgba))
+  })
+
+  it('closes the secondary handle when its source is dropped', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+    svc.render({ id: 1, page: 5, scale: 1, sourceId: added.sourceId })
+    svc.dropSource(added.sourceId)
+    // The source is gone, so it falls back to the primary rather than
+    // rendering through a handle whose bytes were dropped.
+    expect(() => svc.render({ id: 2, page: 0, scale: 1, sourceId: added.sourceId })).not.toThrow()
   })
 })

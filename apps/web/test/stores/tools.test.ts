@@ -19,7 +19,7 @@ describe('useToolsStore', () => {
   it('clears the selection when leaving the select tool', () => {
     const t = useToolsStore()
     const e = useEditsStore()
-    e.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    e.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
     e.select(['o1'])
     t.setTool('rect')
     expect(e.selection).toEqual([])
@@ -36,7 +36,7 @@ describe('useToolsStore', () => {
   it('never records tool state in edit history', () => {
     const t = useToolsStore()
     const e = useEditsStore()
-    e.reset('h', ['p1'], { p1: { sourceIndex: 0 } })
+    e.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
     t.setTool('rect')
     t.setDraft({ pageId: 'p1', rect: { x: 0, y: 0, w: 10, h: 10 } })
     expect(e.canUndo).toBe(false)

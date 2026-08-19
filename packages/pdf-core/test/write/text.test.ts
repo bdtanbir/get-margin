@@ -20,8 +20,8 @@ const FONTS = new Map([['Inter', fontFile('Inter.ttf')]])
 
 function docWith(objects: EditObject[]): EditDocument {
   return {
-    version: EDIT_DOCUMENT_VERSION, sourceHash: '',
-    pageOrder: ['p0'], pages: { p0: { sourceIndex: 0 } },
+    version: EDIT_DOCUMENT_VERSION, sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+    pageOrder: ['p0'], pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
     objects: Object.fromEntries(objects.map((o) => [o.id, o])), nextZ: 99,
   }
 }
@@ -51,37 +51,37 @@ function extract(pdf: Uint8Array): string {
 
 describe('text writer', () => {
   it('draws text that is extractable from the exported file', () => {
-    const out = replay(bytes('simple-text'), docWith([textObject('Hello margin')]), { fonts: FONTS })
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([textObject('Hello margin')]), { fonts: FONTS })
     expect(extract(out)).toContain('Hello margin')
   })
 
   it('embeds the custom font rather than silently falling back', () => {
-    const out = replay(bytes('simple-text'), docWith([textObject('Hello')]), { fonts: FONTS })
-    const bare = replay(bytes('simple-text'), docWith([]), { fonts: FONTS })
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([textObject('Hello')]), { fonts: FONTS })
+    const bare = replay(new Map([['src-0', bytes('simple-text')]]), docWith([]), { fonts: FONTS })
     // addSimpleFont embeds the whole font program (no subsetting), so an
     // embed is unmistakable against an un-embedded baseline.
     expect(out.byteLength).toBeGreaterThan(bare.byteLength + 20_000)
   })
 
   it('escapes characters that would terminate a PDF string literal', () => {
-    const out = replay(bytes('simple-text'), docWith([textObject('a(b)c\\d')]), { fonts: FONTS })
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([textObject('a(b)c\\d')]), { fonts: FONTS })
     // An unescaped ")" would end the string early and corrupt every operator
     // after it, so the text would not come back at all.
     expect(extract(out)).toContain('a(b)c')
   })
 
   it('throws a named error when the font was never provided', () => {
-    expect(() => replay(bytes('simple-text'), docWith([textObject('x')]), { fonts: new Map() }))
+    expect(() => replay(new Map([['src-0', bytes('simple-text')]]), docWith([textObject('x')]), { fonts: new Map() }))
       .toThrow(/Inter/)
   })
 
   it('throws when no fonts option is passed at all', () => {
-    expect(() => replay(bytes('simple-text'), docWith([textObject('x')])))
+    expect(() => replay(new Map([['src-0', bytes('simple-text')]]), docWith([textObject('x')])))
       .toThrow(/Inter/)
   })
 
   it('writes every line of a multi-line object', () => {
-    const out = replay(bytes('simple-text'), docWith([textObject('first\nsecond\nthird')]), { fonts: FONTS })
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([textObject('first\nsecond\nthird')]), { fonts: FONTS })
     const text = extract(out)
     for (const line of ['first', 'second', 'third']) expect(text).toContain(line)
   })
@@ -89,7 +89,7 @@ describe('text writer', () => {
   // Alignment is computed from MuPDF's own glyph advances, so a right-aligned
   // line must actually END at the box's right edge, not merely differ from left.
   it('right-aligns against the box edge using real glyph advances', () => {
-    const out = replay(bytes('simple-text'), docWith([
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
       textObject('short', 'right', 600),
       textObject('a much longer line', 'right', 500),
     ]), { fonts: FONTS })
@@ -106,7 +106,7 @@ describe('text writer', () => {
   })
 
   it('centres a line within the box', () => {
-    const out = replay(bytes('simple-text'), docWith([textObject('centred', 'center', 600)]), { fonts: FONTS })
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([textObject('centred', 'center', 600)]), { fonts: FONTS })
     const blocks = JSON.parse(extract(out)).blocks as Array<{
       lines: Array<{ text: string; bbox: { x: number; w: number } }>
     }>
@@ -117,17 +117,17 @@ describe('text writer', () => {
   })
 
   it('embeds a family only once however many objects use it', () => {
-    const many = replay(bytes('simple-text'), docWith(
+    const many = replay(new Map([['src-0', bytes('simple-text')]]), docWith(
       Array.from({ length: 6 }, (_, i) => textObject(`line ${i}`, 'left', 600 - i * 40)),
     ), { fonts: FONTS })
-    const one = replay(bytes('simple-text'), docWith([textObject('line 0')]), { fonts: FONTS })
+    const one = replay(new Map([['src-0', bytes('simple-text')]]), docWith([textObject('line 0')]), { fonts: FONTS })
     // Six objects add six short content fragments, not six copies of a
     // ~66KB font program.
     expect(many.byteLength).toBeLessThan(one.byteLength + 10_000)
   })
 
   it('matches the reviewed golden', async () => {
-    await assertGolden('export-text', replay(bytes('simple-text'), docWith([
+    await assertGolden('export-text', replay(new Map([['src-0', bytes('simple-text')]]), docWith([
       textObject('Left aligned', 'left', 600),
       textObject('Centred', 'center', 550),
       textObject('Right aligned', 'right', 500),

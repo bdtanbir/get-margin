@@ -30,15 +30,15 @@ async function seededStores() {
   const { useDocumentStore } = await import('../../src/stores/document.js')
   const { useViewportStore } = await import('../../src/stores/viewport.js')
   const doc = useDocumentStore()
-  doc.$patch({
-    status: 'ready',
-    pageOrder: ['p0', 'p1', 'p2'],
-    pages: {
-      p0: { id: 'p0', sourceIndex: 0, geometry: GEOM },
-      p1: { id: 'p1', sourceIndex: 1, geometry: GEOM },
-      p2: { id: 'p2', sourceIndex: 2, geometry: GEOM },
-    },
-  })
+  const { seedDocument } = await import('../helpers/seedDocument.js')
+  seedDocument(
+    [
+      { id: 'p0', sourceIndex: 0 },
+      { id: 'p1', sourceIndex: 1 },
+      { id: 'p2', sourceIndex: 2 },
+    ],
+    [GEOM, GEOM, GEOM],
+  )
   return { doc, vp: useViewportStore() }
 }
 
@@ -162,11 +162,11 @@ describe('useViewportStore', () => {
     const { doc, vp } = await seededStores()
     // A bigger document so the initial plan has many placeholder tasks to
     // grind through if it were not abandoned.
-    const pageOrder = Array.from({ length: 20 }, (_, i) => `q${i}`)
-    const pages = Object.fromEntries(
-      pageOrder.map((id, i) => [id, { id, sourceIndex: i, geometry: GEOM }]),
+    const { seedDocument } = await import('../helpers/seedDocument.js')
+    seedDocument(
+      Array.from({ length: 20 }, (_, i) => ({ id: `q${i}`, sourceIndex: i })),
+      Array.from({ length: 20 }, () => GEOM),
     )
-    doc.$patch({ pageOrder, pages })
     vp.setDpr(2) // deterministic scale regardless of the test environment's devicePixelRatio
     vp.setAnchor(0)
 

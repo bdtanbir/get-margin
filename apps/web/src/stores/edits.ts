@@ -24,7 +24,7 @@ type HistoryEntry = {
 function emptyDocument(): EditDocument {
   return {
     version: EDIT_DOCUMENT_VERSION,
-    sourceHash: '',
+    sources: {},
     pageOrder: [],
     pages: {},
     objects: {},
@@ -92,6 +92,63 @@ function reduce(draft: EditDocument, op: Op): void {
       if (!target) return
       target.z = op.z
       if (op.z >= draft.nextZ) draft.nextZ = op.z + 1
+      break
+    }
+
+    // ---- Page structure (Task 42). Same linear history as object ops, so
+    // Ctrl+Z is globally predictable rather than mode-dependent.
+
+    case 'rotatePage': {
+      const page = draft.pages[op.pageId]
+      if (!page) return
+      // Normalised: an unbounded accumulator would eventually be compared
+      // against a normalised source rotation and disagree.
+      page.rotation = (((page.rotation + op.by) % 360) + 360) % 360
+      break
+    }
+
+    case 'reorderPages':
+      // Filtered against `pages` so a stale order cannot resurrect a
+      // deleted page or introduce an id with no entry.
+      draft.pageOrder = op.pageOrder.filter((id) => draft.pages[id])
+      break
+
+    case 'deletePages': {
+      const doomed = new Set(op.pageIds.filter((id) => draft.pages[id]))
+      if (doomed.size === 0) return
+      // A document with no pages has nothing to render and no way back
+      // except undo. Refuse rather than producing that state.
+      if (doomed.size >= draft.pageOrder.length) return
+      draft.pageOrder = draft.pageOrder.filter((id) => !doomed.has(id))
+      for (const id of doomed) delete draft.pages[id]
+      // Objects are keyed by pageId; leaving them behind would orphan them.
+      // Both go in ONE patch, so one undo brings the page back with its
+      // annotations still on it.
+      for (const [objectId, object] of Object.entries(draft.objects)) {
+        if (doomed.has(object.pageId)) delete draft.objects[objectId]
+      }
+      break
+    }
+
+    case 'cropPage': {
+      const page = draft.pages[op.pageId]
+      if (!page) return
+      // Stored as a PDF rect [x0,y0,x1,y1] to match PageGeometry.cropBox,
+      // which is the shape every consumer of geometry already reads.
+      page.cropBox = op.cropBox
+        ? [op.cropBox.x, op.cropBox.y, op.cropBox.x + op.cropBox.w, op.cropBox.y + op.cropBox.h]
+        : null
+      break
+    }
+
+    case 'insertPages': {
+      // Registering the source here, rather than through a second store
+      // method, is what keeps applyOp the only writer -- and means undo
+      // takes the source entry away with the pages it brought in.
+      if (op.source) draft.sources[op.source.id] = { hash: op.source.hash, name: op.source.name }
+      const at = Math.max(0, Math.min(op.at, draft.pageOrder.length))
+      for (const { id, ...entry } of op.pages) draft.pages[id] = entry
+      draft.pageOrder.splice(at, 0, ...op.pages.map((p) => p.id))
       break
     }
   }
@@ -244,15 +301,16 @@ export const useEditsStore = defineStore('edits', () => {
   function clearSelection(): void { selectedIds.value = [] }
 
   function reset(
-    sourceHash: string,
+    sources: EditDocument['sources'],
     pageOrder: string[],
     pages: EditDocument['pages'],
   ): void {
-    state.value = { ...emptyDocument(), sourceHash, pageOrder, pages }
+    state.value = { ...emptyDocument(), sources, pageOrder, pages }
     past.value = []
     future.value = []
     selectedIds.value = []
   }
+
 
   return {
     // computed(), NOT readonly(). Pinia's setup-store type extraction treats

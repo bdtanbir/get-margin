@@ -14,8 +14,8 @@ const bytes = (n: Parameters<typeof fixturePath>[0]): Uint8Array =>
 // module would couple every writer's test to every other writer's needs.
 function docWith(objects: EditObject[]): EditDocument {
   return {
-    version: EDIT_DOCUMENT_VERSION, sourceHash: '',
-    pageOrder: ['p0'], pages: { p0: { sourceIndex: 0 } },
+    version: EDIT_DOCUMENT_VERSION, sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+    pageOrder: ['p0'], pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
     objects: Object.fromEntries(objects.map((o) => [o.id, o])), nextZ: 99,
   }
 }
@@ -39,7 +39,7 @@ describe('whiteout writer', () => {
   const geom = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
 
   it('covers existing text with an opaque fill', () => {
-    const out = replay(bytes('simple-text'), docWith([fullPage()]))
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([fullPage()]))
     // A full-page cover means no dark pixels survive anywhere.
     const doc = PdfDocument.open(out)
     try {
@@ -51,7 +51,7 @@ describe('whiteout writer', () => {
   })
 
   it('does NOT remove the underlying text — it is still extractable', () => {
-    const out = replay(bytes('simple-text'), docWith([fullPage()]))
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([fullPage()]))
     const doc = PdfDocument.open(out)
     try {
       const page = doc._raw().loadPage(0)
@@ -67,7 +67,7 @@ describe('whiteout writer', () => {
   })
 
   it('covers only its own rect, leaving the rest of the page alone', () => {
-    const out = replay(bytes('simple-text'), docWith([{
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([{
       pageId: 'p0', id: 'w1', kind: 'whiteout',
       rect: { x: 60, y: 690, w: 200, h: 40 },
       rotation: 0, z: 1, locked: false, opacity: 1, fill: [1, 1, 1],
@@ -87,7 +87,7 @@ describe('whiteout writer', () => {
   })
 
   it('paints a non-white cover in the colour it was given', () => {
-    const out = replay(bytes('simple-text'), docWith([{
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([{
       pageId: 'p0', id: 'w1', kind: 'whiteout',
       rect: { x: 60, y: 690, w: 200, h: 40 },
       rotation: 0, z: 1, locked: false, opacity: 1, fill: [0, 0, 0],

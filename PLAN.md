@@ -550,7 +550,23 @@ links** into the edit store (Task 34 Step 5).
 
 ### Phase 3 — Page operations · weeks 6–7
 
+**Built.** Design: `PHASE-3-DESIGN.md`. Plan: `PLAN-PHASE-3.md` (Tasks 41–51). Pre-flight
+measurements: `docs/findings/07-phase-3-preflight.md`. Verification record:
+`docs/findings/08-phase-3-verification.md`.
+
 Rotate · delete · reorder · crop UI · extract · split · merge (multi-document open) · pages-panel interactions.
+
+Page order and per-page rotation/crop moved into `EditDocument` (schema v2), so page operations
+share the object ops' single undo stack and ⌘Z is globally predictable. The write path grew three
+assembly tiers: byte-identical pass-through, lossless in-place restructuring for one source, and
+graft **plus an explicit `/Annots` graft** for merge — without that last step every merge silently
+destroys the annotations already in the user's file.
+
+**Outstanding**, recorded in the verification file rather than implied complete:
+cross-viewer checks in Acrobat/Preview/Chrome (no GUI available, as in Phase 2); **page selection —
+rotate and delete — is desktop-only**, because the phone's pages panel closes on tap and needs a
+touch-specific select affordance; and bookmarks/page labels are lost across a merge, which the UI
+states.
 
 ### Phase 4 — MVP hardening · weeks 7–9
 

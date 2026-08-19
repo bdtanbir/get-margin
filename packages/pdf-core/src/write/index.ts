@@ -1,5 +1,8 @@
 import * as mupdf from 'mupdf'
-import { withDocument, withPage, SAVE_OPTIONS } from './session.js'
+import { withPage, SAVE_OPTIONS } from './session.js'
+import { assemble, isUntouched, type SourceBytes } from './assemble.js'
+import { applyPageBoxes } from './objects/page.js'
+import { geometryFromPageObject } from '../geometry.js'
 import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectKind } from './types.js'
 import type { PageGeometry } from '@margin/transform'
 import { writeShape } from './objects/shape.js'
@@ -112,7 +115,7 @@ export type ReplayOptions = {
 }
 
 export function replay(
-  sourceBytes: Uint8Array,
+  sources: SourceBytes,
   editDoc: EditDocument,
   opts: ReplayOptions = {},
 ): Uint8Array {
@@ -125,8 +128,30 @@ export function replay(
 
   const provider: FontProvider = opts.fonts ?? new Map()
   const measure = createMeasurer(provider)
+  const hasObjects = Object.keys(editDoc.objects).length > 0
 
-  return withDocument(sourceBytes, (doc, raw) => {
+  // See assemble(). Pages come back already in pageOrder, so from here on a
+  // page is addressed by its POSITION, not its sourceIndex.
+  const { raw, unchanged } = assemble(sources, editDoc)
+  try {
+    // TIER 1. The edit describes exactly the file that was opened and adds
+    // nothing to it, so hand back the user's own bytes rather than a
+    // re-serialisation. e2e/download.spec.ts asserts this byte-for-byte.
+    if (unchanged && !hasObjects) {
+      const original = sources.get(Object.keys(editDoc.sources)[0]!)
+      if (original) return original
+    }
+
+    // Read geometry off the assembled document, so a page that was rotated
+    // or cropped by an earlier op is measured as it now is.
+    const geometryOf = (index: number): PageGeometry =>
+      withPage(raw, index, (page) => geometryFromPageObject(page.getObject()))
+
+    // Page boxes BEFORE objects: an object's rect is raw PDF user space and
+    // a crop only changes the window, but the geometry the writers receive
+    // must be the final one.
+    applyPageBoxes(raw, editDoc, geometryOf)
+
     // One registry per replay call, so a family used on five pages is parsed
     // and embedded once rather than five times.
     const fonts = new FontRegistry(raw, provider)
@@ -147,22 +172,19 @@ export function replay(
     // Only pages carrying objects are visited, so that is what progress is
     // measured against -- reporting against the document's full page count
     // would show a bar that jumps to 100% and sits there.
-    const pagesToWrite = editDoc.pageOrder.filter((id) => (byPage.get(id)?.length ?? 0) > 0)
+    const pagesToWrite = editDoc.pageOrder
+      .map((pageId, index) => ({ pageId, index }))
+      .filter(({ pageId }) => (byPage.get(pageId)?.length ?? 0) > 0)
     let done = 0
 
-    for (const pageId of pagesToWrite) {
+    for (const { pageId, index } of pagesToWrite) {
       const objects = byPage.get(pageId)
       if (!objects || objects.length === 0) continue
 
-      const sourceIndex = editDoc.pages[pageId]?.sourceIndex
-      if (sourceIndex === undefined) {
-        throw new Error(`edit document references unknown page "${pageId}"`)
-      }
-
       objects.sort((a, b) => a.z - b.z)
-      const geometry = doc.pageGeometry(sourceIndex)
+      const geometry = geometryOf(index)
 
-      withPage(raw, sourceIndex, (page) => {
+      withPage(raw, index, (page) => {
         for (const object of objects) {
           const writer = WRITERS[object.kind]
           if (!writer) {
@@ -181,7 +203,7 @@ export function replay(
             // tells them exactly which edit to remove and retry.
             const reason = cause instanceof Error ? cause.message : String(cause)
             throw new Error(
-              `Could not export the ${object.kind} on page ${sourceIndex + 1}: ${reason}`,
+              `Could not export the ${object.kind} on page ${index + 1}: ${reason}`,
               { cause },
             )
           }
@@ -193,10 +215,16 @@ export function replay(
     }
 
     return raw.saveToBuffer(SAVE_OPTIONS).asUint8Array()
-  })
+  } finally {
+    // Disposal is a correctness requirement: omitting it hard-crashes the
+    // WASM heap rather than leaking gradually.
+    raw.destroy()
+  }
 }
 
 export { withDocument, withPage, SAVE_OPTIONS } from './session.js'
+export { assemble, isUntouched, type SourceBytes } from './assemble.js'
+export { applyPageBoxes } from './objects/page.js'
 export { toAnnotSpace, toContentSpace, num } from './coords.js'
 export { appendContent, addResource, fillColor, strokeColor, alphaState } from './content.js'
 export { writeShape } from './objects/shape.js'
@@ -208,3 +236,4 @@ export { createXObjectCache, type XObjectCache } from './xobject.js'
 export { writeInk } from './objects/ink.js'
 export { writeLink } from './objects/link.js'
 export { writeMarkup } from './objects/markup.js'
+export { migrateEditDocument, LEGACY_SOURCE_ID } from './migrate.js'

@@ -12,8 +12,8 @@ const bytes = (n: Parameters<typeof fixturePath>[0]): Uint8Array =>
 
 function docWith(objects: EditObject[]): EditDocument {
   return {
-    version: EDIT_DOCUMENT_VERSION, sourceHash: '',
-    pageOrder: ['p0'], pages: { p0: { sourceIndex: 0 } },
+    version: EDIT_DOCUMENT_VERSION, sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+    pageOrder: ['p0'], pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
     objects: Object.fromEntries(objects.map((o) => [o.id, o])), nextZ: 99,
   }
 }
@@ -37,7 +37,7 @@ function linksOf(pdf: Uint8Array, page = 0): Array<{ uri: string; bounds: number
 
 describe('link writer', () => {
   it('writes a link hotspot carrying the URI', () => {
-    const out = replay(bytes('simple-text'), docWith([linkObject('https://example.com/')]))
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([linkObject('https://example.com/')]))
     const links = linksOf(out)
     expect(links).toHaveLength(1)
     expect(links[0]!.uri).toBe('https://example.com/')
@@ -49,7 +49,7 @@ describe('link writer', () => {
   // area on the mirror image of the visible affordance.
   it('places the hotspot where the overlay drew it', () => {
     const rect = { x: 100, y: 400, w: 200, h: 30 }
-    const out = replay(bytes('simple-text'), docWith([linkObject('https://example.com/', rect)]))
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([linkObject('https://example.com/', rect)]))
     const geom = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
     const expected = pdfRectToView(rect, geom, 1)
     const [x0, y0, x1, y1] = linksOf(out)[0]!.bounds as [number, number, number, number]
@@ -65,7 +65,7 @@ describe('link writer', () => {
     try { g = doc.pageGeometry(0) } finally { doc.close() }
     const [x0, y0] = g.cropBox
     const rect = { x: x0 + 50, y: y0 + 100, w: 120, h: 24 }
-    const out = replay(bytes('offset-cropbox'), docWith([linkObject('https://example.com/', rect)]))
+    const out = replay(new Map([['src-0', bytes('offset-cropbox')]]), docWith([linkObject('https://example.com/', rect)]))
     const expected = pdfRectToView(rect, g, 1)
     const bounds = linksOf(out)[0]!.bounds as [number, number, number, number]
     expect(Math.abs(bounds[0] - expected.x)).toBeLessThan(1)
@@ -73,7 +73,7 @@ describe('link writer', () => {
   })
 
   it('writes several links on one page', () => {
-    const out = replay(bytes('simple-text'), docWith([
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
       { ...linkObject('https://a.example/'), id: 'l1' } as EditObject,
       { ...linkObject('https://b.example/', { x: 100, y: 300, w: 200, h: 30 }), id: 'l2' } as EditObject,
     ]))
@@ -81,7 +81,7 @@ describe('link writer', () => {
   })
 
   it('preserves a mailto: link verbatim', () => {
-    const out = replay(bytes('simple-text'), docWith([linkObject('mailto:someone@example.com')]))
+    const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([linkObject('mailto:someone@example.com')]))
     expect(linksOf(out)[0]!.uri).toBe('mailto:someone@example.com')
   })
 
@@ -94,8 +94,8 @@ describe('link writer', () => {
       const doc = PdfDocument.open(pdf)
       try { return [...renderPage(doc, 0, 1).rgba] } finally { doc.close() }
     }
-    const bare = replay(bytes('simple-text'), docWith([]))
-    const linked = replay(bytes('simple-text'), docWith([linkObject('https://example.com/')]))
+    const bare = replay(new Map([['src-0', bytes('simple-text')]]), docWith([]))
+    const linked = replay(new Map([['src-0', bytes('simple-text')]]), docWith([linkObject('https://example.com/')]))
     expect(pixels(linked)).toEqual(pixels(bare))
   })
 })
