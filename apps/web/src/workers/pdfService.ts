@@ -1,6 +1,6 @@
 import {
   PdfDocument, renderPage, replay, buildQuadIndex, listFields, readMetadata, recompressImages,
-  findInPage,
+  findInPage, missingGlyphsFor,
   type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
   type SourceField, type Protection, type DocumentMetadata,
   type CompressionPreset, type CompressionResult, type FindOptions, type Match,
@@ -352,6 +352,17 @@ export class PdfService {
       }
     }
     return { matches, capped: false }
+  }
+
+  /**
+   * Which characters a font cannot draw.
+   *
+   * Asked of the worker because only it has the font machinery. MuPDF
+   * returns glyph 0 -- the .notdef box -- rather than failing, so without
+   * this check a patch silently becomes a row of empty rectangles.
+   */
+  missingGlyphs(fontBytes: Uint8Array, family: string, text: string): string[] {
+    return missingGlyphsFor(fontBytes, family, text)
   }
 
   close(): void {

@@ -2,7 +2,7 @@ import type { Component } from 'vue'
 import {
   MousePointer2, Type, Image, Square, Circle, Minus, ArrowRight,
   Pen, Eraser, Link2, Signature, Highlighter, Underline, Strikethrough, Crop, TextCursorInput,
-  SquareSlash,
+  SquareSlash, TextSelect,
 } from 'lucide-vue-next'
 import type { ToolId } from '@/stores/tools'
 
@@ -41,4 +41,8 @@ export const TOOLS: Array<{ id: ToolId; label: string; icon: Component }> = [
   // the rail would invite exactly the confusion the whiteout copy exists to
   // prevent.
   { id: 'redact', label: 'Redact', icon: SquareSlash },
+  // "Edit text" rather than "text": the Text tool ADDS text, this one
+  // replaces what the document already says, and the two are easy to
+  // confuse from an icon alone.
+  { id: 'patch', label: 'Edit text', icon: TextSelect },
 ]

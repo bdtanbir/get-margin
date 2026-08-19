@@ -384,7 +384,9 @@ export { writeInk } from './objects/ink.js'
 export { writeLink } from './objects/link.js'
 export { writeMarkup } from './objects/markup.js'
 export { writeStamp, resolveTokens, batesNumber, type StampContext } from './objects/stamp.js'
-export { writeTextPatch, hashText, missingGlyphs, PatchRefused } from './objects/patch.js'
+export {
+  writeTextPatch, hashText, missingGlyphs, missingGlyphsFor, PatchRefused,
+} from './objects/patch.js'
 export {
   writeField, ensureAcroForm, pageAnnots, commonFlags, newWidget,
   FIELD_READ_ONLY, FIELD_REQUIRED, TX_MULTILINE, BTN_NO_TOGGLE_OFF, BTN_RADIO, CH_COMBO,

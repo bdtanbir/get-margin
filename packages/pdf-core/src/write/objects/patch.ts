@@ -50,6 +50,21 @@ export function missingGlyphs(font: mupdf.Font, text: string): string[] {
 }
 
 /**
+ * The same check, from font BYTES.
+ *
+ * Exists so the web app can ask without importing mupdf itself: the
+ * engine stays behind pdf-core, and the app ships no second copy of a
+ * 10MB wasm module to answer a question about three characters.
+ */
+export function missingGlyphsFor(
+  fontBytes: Uint8Array,
+  family: string,
+  text: string,
+): string[] {
+  return missingGlyphs(new mupdf.Font(family, fontBytes), text)
+}
+
+/**
  * Replace a line of the document's own text.
  *
  * COVER AND REDRAW, not removal. An opaque rectangle in the sampled

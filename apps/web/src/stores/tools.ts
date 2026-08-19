@@ -18,6 +18,9 @@ export type ToolId =
   // Task 82. Text-selection driven, like the markup tools -- and the only
   // one of them that REMOVES what it covers.
   | 'redact'
+  // Task 92. Replaces a line of the DOCUMENT's own text, unlike the text
+  // tool, which adds a new one.
+  | 'patch'
 
 /** An object being dragged out but not yet committed. */
 export type Draft = { pageId: string; rect: Rect }

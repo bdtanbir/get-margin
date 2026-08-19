@@ -74,6 +74,8 @@ export type PdfClient = {
     options?: FindOptions,
     limit?: number,
   ): Promise<{ matches: Array<{ page: number } & Match>; capped: boolean }>
+  /** Characters the font cannot draw. See PdfService.missingGlyphs. */
+  missingGlyphs(fontBytes: Uint8Array, family: string, text: string): Promise<string[]>
   /** Compress the export. See PdfService.compress. */
   compress(
     preset: CompressionPreset,
@@ -240,6 +242,11 @@ export function createPdfClient(): PdfClient {
     async find(query, options, limit) {
       await ready
       return remote.find(query, options, limit)
+    },
+
+    async missingGlyphs(fontBytes, family, text) {
+      await ready
+      return remote.missingGlyphs(fontBytes, family, text)
     },
 
     async compress(preset, editDoc, fonts) {
