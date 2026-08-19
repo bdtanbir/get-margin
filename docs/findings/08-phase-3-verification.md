@@ -25,6 +25,7 @@ automated coverage.
 | A page renders from the source it belongs to, not the primary document | `test/workers/pdfService.test.ts` |
 | Deleting a page takes its objects and restores them together on undo | `test/stores/edits.test.ts` |
 | v1 edit documents migrate, and a newer schema is refused loudly | `test/write/migrate.test.ts` |
+| `replay` lifts a v1 document rather than failing on its missing `sources` | `test/write/migrate.test.ts` |
 
 The `pageops-cropped.png` golden is deliberately a **mirror detector**: it crops to the half of the
 page the fixture's text sits in, so a correct crop renders the label and a vertically mirrored one
@@ -76,6 +77,13 @@ user would notice if that ever stopped working.
    merged-in page rendered whatever the primary happened to have at that index — silently the wrong
    page rather than an error. Render requests now name their source, pinned by
    `test/workers/pdfService.test.ts`.
-4. **Adopting a document's existing links into the edit store** — Phase 2's Task 34 Step 5, still
+4. **A merged file's bytes are held until the document is closed.** `PdfService.dropSource` exists
+   but is deliberately not called automatically: adding a file is an undoable `insertPages` op, so
+   undo removes its pages and redo brings them back — freeing the bytes in between would leave a
+   redo that cannot render or export. Merging several large files therefore grows memory for the
+   session. An explicit "remove this file" action could drop them sooner, but it would have to
+   discard that source's history as well.
+
+5. **Adopting a document's existing links into the edit store** — Phase 2's Task 34 Step 5, still
    deferred. The v2 schema makes it tractable.
-5. **In-browser export throughput and mid-range phone limits**, unchanged from Phase 2.
+6. **In-browser export throughput and mid-range phone limits**, unchanged from Phase 2.

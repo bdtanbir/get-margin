@@ -107,9 +107,16 @@ export class PdfService {
    * Register another file for merging, and report its geometry so the main
    * thread can seed page entries without reopening the file there.
    *
-   * The bytes are RETAINED for as long as the merge lasts: several large
-   * documents resident at once is this feature's memory ceiling, which is
-   * why dropSource exists.
+   * The bytes are RETAINED for as long as the document is open: several
+   * large files resident at once is this feature's memory ceiling.
+   *
+   * `dropSource` is NOT called automatically, and that is deliberate.
+   * Adding a file is an undoable `insertPages` op, so undo removes its
+   * pages and REDO brings them back -- freeing the bytes in between would
+   * leave a redo that cannot render or export. Everything is released when
+   * the document is closed. An explicit "remove this file" action could
+   * drop them sooner, but it would have to discard that source's history
+   * too; see docs/findings/08-phase-3-verification.md.
    */
   addSource(bytes: Uint8Array): { sourceId: SourceId; pageCount: number; geometries: PageGeometry[] } {
     const doc = PdfDocument.open(bytes)
@@ -121,7 +128,13 @@ export class PdfService {
     }
   }
 
-  /** Forget a source's bytes. The only way back under the size cap. */
+  /**
+   * Forget a source's bytes.
+   *
+   * Not wired to anything yet -- see addSource for why an automatic drop is
+   * unsafe while undo/redo can bring a source's pages back. Kept because
+   * close() and any future explicit "remove file" action need it.
+   */
   dropSource(id: SourceId): void {
     if (id === this.#primarySource) return
     this.#sources.delete(id)

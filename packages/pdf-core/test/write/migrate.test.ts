@@ -59,3 +59,34 @@ describe('migrateEditDocument', () => {
     expect(() => migrateEditDocument({ version: 1 })).toThrow()
   })
 })
+
+// The migration is only worth having if the write path uses it. Before this
+// was wired, replay() on a v1 document failed with "Cannot convert undefined
+// or null to object" -- it read `sources`, which v1 does not have.
+describe('replay accepts an older schema', () => {
+  it('exports a v1 edit document by migrating it first', async () => {
+    const { replay } = await import('../../src/write/index.js')
+    const { generateFixtures, fixturePath } = await import('../fixtures/index.js')
+    const { readFileSync } = await import('node:fs')
+    await generateFixtures()
+
+    const src = new Uint8Array(readFileSync(fixturePath('multi-page')))
+    const v1Doc = {
+      version: 1,
+      sourceHash: 'abc',
+      pageOrder: ['p0', 'p1'],
+      pages: { p0: { sourceIndex: 0 }, p1: { sourceIndex: 1 } },
+      objects: {},
+      nextZ: 1,
+    }
+    // LEGACY_SOURCE_ID is what the migration names the implicit source, so
+    // that is the key the bytes must be filed under.
+    const out = replay(new Map([[LEGACY_SOURCE_ID, src]]), v1Doc as never)
+    expect(out.byteLength).toBeGreaterThan(0)
+  })
+
+  it('still refuses a newer schema through replay', async () => {
+    const { replay } = await import('../../src/write/index.js')
+    expect(() => replay(new Map(), { ...v1, version: 99 } as never)).toThrow(/newer version/i)
+  })
+})

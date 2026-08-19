@@ -14,6 +14,7 @@ import { createXObjectCache, type XObjectCache } from './xobject.js'
 import { writeInk } from './objects/ink.js'
 import { writeLink } from './objects/link.js'
 import { writeMarkup } from './objects/markup.js'
+import { migrateEditDocument } from './migrate.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -116,15 +117,18 @@ export type ReplayOptions = {
 
 export function replay(
   sources: SourceBytes,
-  editDoc: EditDocument,
+  input: EditDocument,
   opts: ReplayOptions = {},
 ): Uint8Array {
-  if (editDoc.version > EDIT_DOCUMENT_VERSION) {
-    throw new Error(
-      `This document was edited by a newer version of get-margin ` +
-        `(schema version ${editDoc.version}, this build understands ${EDIT_DOCUMENT_VERSION}).`,
-    )
-  }
+  // Lift an older schema before touching anything. This also performs the
+  // "newer than this build" check, so there is exactly one place that
+  // decides what versions mean.
+  //
+  // Not decoration: a v1 document reaching here untouched has no `sources`
+  // map, and the first thing that reads it fails with "Cannot convert
+  // undefined or null to object" -- an error naming nothing the user or a
+  // developer could act on.
+  const editDoc = migrateEditDocument(input)
 
   const provider: FontProvider = opts.fonts ?? new Map()
   const measure = createMeasurer(provider)
