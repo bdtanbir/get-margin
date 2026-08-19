@@ -64,6 +64,8 @@ export type PdfClient = {
   }>
   /** Forget a source's bytes. Ignored for the primary document. */
   dropSource(id: SourceId): Promise<void>
+  /** Total retained source bytes, for bounding a merge. */
+  openBytes(): Promise<number>
   close(): Promise<void>
   terminate(): void
 }
@@ -229,6 +231,11 @@ export function createPdfClient(): PdfClient {
     async dropSource(id) {
       await ready
       return remote.dropSource(id)
+    },
+
+    async openBytes() {
+      await ready
+      return remote.openBytes()
     },
 
     async close() {

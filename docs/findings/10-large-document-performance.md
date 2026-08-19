@@ -41,9 +41,26 @@ Two runs agreed within noise (298/321 ms, 1701/1851 ms, 215 MB both times).
 
 ## What was changed as a result
 
-**Nothing yet, deliberately.** The two timing numbers need no work. The memory number does, and it
-is Task 62's subject: the cap is a fixed constant that does not know what device it is on. Recording
-the number first is what makes that a targeted change rather than a guess.
+The two timing numbers needed no work. The memory number produced two changes, and one deliberate
+non-change.
+
+1. **The bitmap cap is now resolved per device** (`lib/memoryBudget.ts`), scaling with
+   `navigator.deviceMemory` between a 12-megapixel floor and a 100-megapixel ceiling. 4 GB lands
+   exactly on the previous constant, so nothing regresses on the hardware it was chosen for, and a
+   device that does not report its memory — Safari, Firefox — gets that same constant rather than
+   whatever a careless fallback would have produced.
+
+2. **The total bytes of all open source files is now bounded** at 300 MB
+   (`MAX_TOTAL_SOURCE_BYTES`). `MAX_BYTES` bounded one file; nothing bounded the sum, so merging
+   several large documents grew memory without limit. A merge that would cross it is refused with a
+   message that says what to do instead.
+
+3. **A merged file's bytes are still not freed while the document is open**, unchanged from Phase 3.
+   The plan permitted dropping them once a source was "beyond the undo horizon"; establishing that
+   safely means walking Immer patch values in both the undo and redo stacks for source references,
+   and being wrong leaves a redo that cannot render or export. That is not a cheap condition, so it
+   was not implemented — refusing the merge that would cross the budget is the safe half of the
+   problem and the half worth having.
 
 ## Not measured
 

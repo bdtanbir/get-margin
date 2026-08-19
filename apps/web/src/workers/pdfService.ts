@@ -149,6 +149,13 @@ export class PdfService {
     return [...this.#sources.keys()]
   }
 
+  /** Total retained source bytes, so the main thread can bound a merge. */
+  openBytes(): number {
+    let total = 0
+    for (const bytes of this.#sources.values()) total += bytes.byteLength
+    return total
+  }
+
   authenticate(password: string): DocumentInfo {
     const doc = this.#doc
     if (!doc) throw new Error('no document open')
