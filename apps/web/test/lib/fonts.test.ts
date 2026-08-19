@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { FONTS, DEFAULT_FAMILY, fontUrl, cssFamily, fontBytes, fontsForExport } from '@/lib/fonts'
+import {
+  FONTS, SIGNATURE_FACES, DEFAULT_FAMILY, fontUrl, cssFamily, fontBytes, fontsForExport,
+} from '@/lib/fonts'
 import { ASCENT_RATIO, LINE_HEIGHT } from '@/lib/fonts'
 
 describe('the curated font set', () => {
@@ -69,5 +71,45 @@ describe('fontsForExport', () => {
   it('reports a failed font load rather than exporting without it', async () => {
     globalThis.fetch = vi.fn(async () => ({ ok: false, status: 404 })) as unknown as typeof fetch
     await expect(fontBytes('Inter')).rejects.toThrow(/Inter/)
+  })
+})
+
+// Task 35 Step 4: the typed signature uses SCRIPT faces. A signature typed
+// in a body face reads as typed text rather than a signature -- the same
+// "feels broken" failure spec 2.1 calls out for an un-cleaned photo.
+describe('signature script faces', () => {
+  it('offers at least three script faces', () => {
+    expect(SIGNATURE_FACES.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('keeps them out of the document text picker', () => {
+    const documentFaces = FONTS.map((f) => f.family)
+    for (const f of SIGNATURE_FACES) expect(documentFaces).not.toContain(f.family)
+  })
+
+  it('resolves each to a self-hosted path', () => {
+    for (const f of SIGNATURE_FACES) {
+      expect(fontUrl(f.family)).toBe(`/fonts/${f.file}`)
+    }
+  })
+
+  it('falls back to cursive, not a body generic', () => {
+    for (const f of SIGNATURE_FACES) expect(cssFamily(f.family)).toContain('cursive')
+  })
+
+  // A typed signature is rasterised to a PNG, so its face is never embedded.
+  // Letting one through would silently add ~60KB to a document for a face the
+  // writer was never meant to see.
+  it('never sends a script face to the export', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]).buffer,
+    })) as unknown as typeof fetch
+    try {
+      const map = await fontsForExport(['Inter', 'Great Vibes', 'Caveat'])
+      expect([...map.keys()]).toEqual(['Inter'])
+    } finally {
+      globalThis.fetch = original
+    }
   })
 })

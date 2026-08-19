@@ -50,6 +50,16 @@ function resize(): void {
   if (c) c.setTransform(dpr, 0, 0, dpr, 0, 0)
 }
 
+/**
+ * A constant-width polyline, NOT perfect-freehand's tapered outline.
+ *
+ * Deliberate: a freehand ink object exports as a NATIVE Ink annotation whose
+ * /AP MuPDF draws at constant width (write/objects/ink.ts). A tapered
+ * preview would promise a pen feel the exported file does not deliver --
+ * the same preview-equals-export rule Task 31 established for fonts.
+ * perfect-freehand is used in the SIGNATURE pad instead, where strokes are
+ * rasterised to a PNG and the preview genuinely is the artwork.
+ */
 function paint(): void {
   const c = ctx2d()
   const el = surface.value

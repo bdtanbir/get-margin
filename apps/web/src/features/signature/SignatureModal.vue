@@ -7,7 +7,8 @@ import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { importImage } from '@/features/tools/importImage'
-import { canvasToPng, cleanUpload, inkBounds } from './signatureImage'
+import { SIGNATURE_FACES, cssFamily, loadSignatureFaces } from '@/lib/fonts'
+import { canvasToPng, cleanUpload, inkBounds, fillStroke } from './signatureImage'
 import {
   listSignatures, saveSignature, deleteSignature, type SavedSignature,
 } from './signatureStore'
@@ -39,11 +40,13 @@ const remember = ref(false)
 const uploadPreview = ref<string>('')
 let previewUrl = ''
 
-const TYPE_FACES = [
-  { label: 'Formal', css: '"Source Serif 4", serif' },
-  { label: 'Plain', css: '"Inter", sans-serif' },
-  { label: 'Mono', css: '"JetBrains Mono", monospace' },
-]
+/**
+ * Script faces, not body faces. A signature typed in Inter reads as typed
+ * text rather than a signature, which is the same "feels broken" failure
+ * spec 2.1 calls out for an un-background-removed photo. Loaded on demand
+ * when this modal opens -- see loadSignatureFaces.
+ */
+const TYPE_FACES = SIGNATURE_FACES.map((f) => ({ label: f.family, css: cssFamily(f.family) }))
 const face = ref(TYPE_FACES[0]!.css)
 
 /** The in-flight pad stroke, deliberately outside reactivity (as InkCanvas). */
@@ -55,21 +58,17 @@ function padCtx(): CanvasRenderingContext2D | null {
   return pad.value?.getContext('2d') ?? null
 }
 
+/**
+ * Repaint the pad from `strokes` plus the one in flight. Shares fillStroke
+ * with the final rasterisation below, so what the user sees while drawing is
+ * exactly the artwork that gets placed.
+ */
 function repaint(): void {
   const c = padCtx()
   if (!c) return
   c.clearRect(0, 0, PAD.w, PAD.h)
-  c.strokeStyle = '#111'
-  c.lineWidth = 3
-  c.lineCap = 'round'
-  c.lineJoin = 'round'
-  for (const s of [...strokes, stroke]) {
-    if (s.length < 4) continue
-    c.beginPath()
-    c.moveTo(s[0]!, s[1]!)
-    for (let i = 2; i + 1 < s.length; i += 2) c.lineTo(s[i]!, s[i + 1]!)
-    c.stroke()
-  }
+  c.fillStyle = '#111'
+  for (const s of [...strokes, stroke]) fillStroke(c, s)
 }
 
 function padPoint(e: PointerEvent): [number, number] {
@@ -122,17 +121,8 @@ async function render(): Promise<{ data: Uint8Array; w: number; h: number } | un
 
   if (tab.value === 'draw') {
     if (strokes.length === 0) return undefined
-    c.strokeStyle = '#111'
-    c.lineWidth = 3
-    c.lineCap = 'round'
-    c.lineJoin = 'round'
-    for (const s of strokes) {
-      if (s.length < 4) continue
-      c.beginPath()
-      c.moveTo(s[0]!, s[1]!)
-      for (let i = 2; i + 1 < s.length; i += 2) c.lineTo(s[i]!, s[i + 1]!)
-      c.stroke()
-    }
+    c.fillStyle = '#111'
+    for (const s of strokes) fillStroke(c, s)
   } else {
     if (!typed.value.trim()) return undefined
     c.fillStyle = '#111'
@@ -233,6 +223,10 @@ async function forget(id: number | undefined): Promise<void> {
 
 onMounted(async () => {
   repaint()
+  // Without this the Type tab first renders in the fallback cursive and
+  // snaps to the real face mid-typing -- and worse, a signature rendered
+  // before the face loads is rasterised in the WRONG one.
+  void loadSignatureFaces()
   saved.value = await listSignatures()
 })
 

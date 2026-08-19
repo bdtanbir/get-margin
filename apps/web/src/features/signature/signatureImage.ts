@@ -1,4 +1,49 @@
+import { getStroke } from 'perfect-freehand'
 import { removeBackground } from './removeBackground'
+
+/**
+ * Pen feel for the signature pad. `thinning` is what makes a fast stroke
+ * thinner than a slow one, which is the difference between a signature and
+ * a drawn line.
+ */
+const FREEHAND = {
+  size: 6,
+  thinning: 0.6,
+  smoothing: 0.5,
+  streamline: 0.5,
+  simulatePressure: true,
+}
+
+/**
+ * A flat [x0,y0,x1,y1,...] stroke as the filled OUTLINE perfect-freehand
+ * produces -- a variable-width polygon, not a constant-width polyline.
+ *
+ * Used ONLY by the signature pad, whose strokes are rasterised to a PNG:
+ * there the preview is literally the exported artwork, so a tapered stroke
+ * is faithful. InkCanvas deliberately does NOT use this -- a freehand ink
+ * object exports as a native Ink ANNOTATION whose /AP MuPDF draws at
+ * constant width, so a tapered preview there would promise something the
+ * exported file does not deliver.
+ */
+export function strokeOutline(flat: number[]): number[][] {
+  const points: number[][] = []
+  for (let i = 0; i + 1 < flat.length; i += 2) points.push([flat[i]!, flat[i + 1]!])
+  return getStroke(points, FREEHAND)
+}
+
+/**
+ * Paint one stroke. Both the live pad and the final rasterisation call this,
+ * which is what guarantees what the user drew is what gets placed.
+ */
+export function fillStroke(ctx: CanvasRenderingContext2D, flat: number[]): void {
+  const outline = strokeOutline(flat)
+  if (outline.length < 3) return
+  ctx.beginPath()
+  ctx.moveTo(outline[0]![0]!, outline[0]![1]!)
+  for (let i = 1; i < outline.length; i++) ctx.lineTo(outline[i]![0]!, outline[i]![1]!)
+  ctx.closePath()
+  ctx.fill()
+}
 
 /**
  * Rasterise a set of view-space strokes into a transparent PNG.

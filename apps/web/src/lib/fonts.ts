@@ -17,6 +17,28 @@ export const FONTS = [
   { family: 'JetBrains Mono', file: 'JetBrainsMono.ttf', fallback: 'monospace' },
 ] as const
 
+/**
+ * Script faces for the TYPED SIGNATURE only (Task 35 Step 4).
+ *
+ * Deliberately NOT in FONTS above. These are browser-only: a typed
+ * signature is rasterised to a transparent PNG and placed as an image, so
+ * the face never needs embedding and never costs a document its ~66KB font
+ * program. Keeping them out of FONTS also keeps them out of the text tool's
+ * font picker, where a signature script is not what anyone wants for body
+ * copy.
+ *
+ * Self-hosted for the same reason as FONTS (spec 2.5): no third-party
+ * request when a document is opened.
+ */
+export const SIGNATURE_FACES = [
+  { family: 'Caveat', file: 'Caveat.ttf', fallback: 'cursive' },
+  { family: 'Dancing Script', file: 'DancingScript.ttf', fallback: 'cursive' },
+  { family: 'Great Vibes', file: 'GreatVibes.ttf', fallback: 'cursive' },
+] as const
+
+/** Every face this app can load, whether or not it is embeddable. */
+const ALL_FACES = [...FONTS, ...SIGNATURE_FACES]
+
 export type FontFamily = (typeof FONTS)[number]['family']
 
 export const DEFAULT_FAMILY: FontFamily = 'Inter'
@@ -30,7 +52,7 @@ export const DEFAULT_FAMILY: FontFamily = 'Inter'
 export const ASCENT_RATIO = 0.8
 export const LINE_HEIGHT = 1.2
 
-const entry = (family: string) => FONTS.find((f) => f.family === family)
+const entry = (family: string) => ALL_FACES.find((f) => f.family === family)
 
 export function fontUrl(family: string): string {
   const f = entry(family)
@@ -66,6 +88,11 @@ export function loadFont(family: string): Promise<void> {
 
 export function preloadFonts(): Promise<void[]> {
   return Promise.all(FONTS.map((f) => loadFont(f.family)))
+}
+
+/** The script faces, loaded on demand when the signature modal opens. */
+export function loadSignatureFaces(): Promise<void[]> {
+  return Promise.all(SIGNATURE_FACES.map((f) => loadFont(f.family)))
 }
 
 let ctx: CanvasRenderingContext2D | null | undefined
@@ -104,7 +131,12 @@ export async function fontBytes(family: string): Promise<Uint8Array> {
 export async function fontsForExport(
   families: Iterable<string>,
 ): Promise<Map<string, Uint8Array>> {
-  const unique = [...new Set(families)]
+  // Only embeddable faces. A signature script reaching here would mean a
+  // TEXT object had been given one, which the picker cannot produce -- and
+  // embedding it would silently add ~60KB to a document for a face the
+  // writer was never meant to see.
+  const embeddable = new Set(FONTS.map((f) => f.family))
+  const unique = [...new Set(families)].filter((f) => embeddable.has(f as FontFamily))
   const loaded = await Promise.all(unique.map(async (f) => [f, await fontBytes(f)] as const))
   return new Map(loaded)
 }

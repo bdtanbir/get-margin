@@ -32,6 +32,11 @@ const FONTS = [
   { query: 'Source+Serif+4', file: 'SourceSerif4.ttf' },
   { query: 'Merriweather', file: 'Merriweather.ttf' },
   { query: 'JetBrains+Mono', file: 'JetBrainsMono.ttf' },
+  // Signature script faces. Browser-only -- never embedded in a PDF, because
+  // a typed signature is rasterised to a PNG. See LICENSES.md.
+  { query: 'Caveat', file: 'Caveat.ttf' },
+  { query: 'Dancing+Script', file: 'DancingScript.ttf' },
+  { query: 'Great+Vibes', file: 'GreatVibes.ttf' },
 ]
 
 async function ttfUrl(query) {

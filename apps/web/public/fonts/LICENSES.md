@@ -13,6 +13,19 @@ linked.
 | `Merriweather.ttf` | Merriweather | Copyright 2020 The Merriweather Project Authors, with Reserved Font Name "Merriweather" | https://github.com/EbenSorkin/Merriweather4 |
 | `JetBrainsMono.ttf` | JetBrains Mono | Copyright 2020 The JetBrains Mono Project Authors | https://github.com/JetBrains/JetBrainsMono |
 
+### Signature script faces (browser-only)
+
+These three are offered by the typed-signature tab and are **never embedded in a PDF**: a typed
+signature is rasterised to a transparent PNG and placed as an image, so the face is needed only to
+draw that raster. They are deliberately absent from the text tool's font picker — a signature
+script is not body copy — and `fontsForExport` filters them out so one can never reach the writer.
+
+| File | Family | Copyright | Upstream |
+|---|---|---|---|
+| `Caveat.ttf` | Caveat | Copyright 2014 The Caveat Project Authors | https://github.com/googlefonts/caveat |
+| `DancingScript.ttf` | Dancing Script | Copyright 2016 The Dancing Script Project Authors, with Reserved Font Name 'Dancing Script' | https://github.com/googlefonts/DancingScript |
+| `GreatVibes.ttf` | Great Vibes | Copyright 2015 The Great Vibes Pro Project Authors | https://github.com/googlefonts/great-vibes |
+
 ## Why these files, self-hosted
 
 Spec §2.5: the preview and the export must use **byte-identical** font files,

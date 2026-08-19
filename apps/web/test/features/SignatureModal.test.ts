@@ -14,10 +14,15 @@ vi.mock('@/features/signature/signatureStore', () => ({
   clearSignatures: vi.fn(async () => {}),
 }))
 
-/** Enough of a 2D context for the pad and the offscreen render. */
+/**
+ * Enough of a 2D context for the pad and the offscreen render. `closePath`
+ * and `fill` are what perfect-freehand's outline path needs: the pad fills a
+ * variable-width polygon rather than stroking a polyline (signatureImage.ts).
+ */
 function fakeCtx(inked: boolean) {
   return {
     clearRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+    closePath: vi.fn(), fill: vi.fn(),
     stroke: vi.fn(), fillText: vi.fn(), drawImage: vi.fn(), putImageData: vi.fn(),
     getImageData: (_x: number, _y: number, w: number, h: number) => ({
       data: new Uint8ClampedArray(w * h * 4).fill(inked ? 255 : 0),
