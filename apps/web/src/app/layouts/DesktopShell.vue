@@ -7,10 +7,13 @@ import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
 import ToolRail from '@/features/tools/ToolRail.vue'
 import Inspector from '@/features/tools/Inspector.vue'
 import ImagePicker from '@/features/tools/ImagePicker.vue'
+import SignatureModal from '@/features/signature/SignatureModal.vue'
+import { useToolsStore } from '@/stores/tools'
 import { useDocumentStore } from '@/stores/document'
 import { useViewportShortcuts } from '@/features/viewport/useViewportShortcuts'
 
 const doc = useDocumentStore()
+const tools = useToolsStore()
 const panelOpen = ref(true)
 
 // Task 21: keyboard shortcuts are desktop-only (no physical keyboard
@@ -35,6 +38,8 @@ useViewportShortcuts()
   <div class="flex h-dvh flex-col">
     <!-- Hidden file input for the Image tool; see ImagePicker.vue. -->
     <ImagePicker v-if="doc.isReady" />
+    <!-- The Signature tool is a modal, not a page gesture. -->
+    <SignatureModal v-if="doc.isReady && tools.active === 'signature'" />
     <TopBar :panel-open="panelOpen" @toggle-panel="panelOpen = !panelOpen" />
     <div class="flex min-h-0 flex-1">
       <!--

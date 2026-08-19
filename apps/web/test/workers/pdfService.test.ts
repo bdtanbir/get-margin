@@ -131,12 +131,11 @@ describe('PdfService.save', () => {
   // through replay -- and replay refuses a kind it has no writer for rather
   // than silently exporting a document missing the user's edit.
   //
-  // The kind here must be one with NO writer registered. It was 'rect' until
-  // Task 29 gave rect a writer, at which point this test started exercising
-  // the shape writer against a stub object instead of the branch it names.
-  // 'signature' is the last kind to gain a writer (Task 35); when it does,
-  // move this to whichever kind is still unregistered, or drop it in favour
-  // of a WRITERS-map assertion.
+  // The kind here is deliberately NOT a real ObjectKind. It was 'rect' until
+  // Task 29 gave rect a writer, then 'signature' until Task 35 gave it one,
+  // at which point the test silently stopped exercising the branch it names
+  // and started exercising a writer against a stub object. A kind that will
+  // never be registered keeps this test about the guard itself, permanently.
   it('routes through replay once the edit document has objects', () => {
     const svc = new PdfService()
     svc.open(bytes('simple-text'))
@@ -144,7 +143,7 @@ describe('PdfService.save', () => {
       version: 1, sourceHash: '', pageOrder: ['p0'],
       pages: { p0: { sourceIndex: 0 } },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      objects: { a1: { id: 'a1', pageId: 'p0', kind: 'signature', z: 1 } as any },
+      objects: { a1: { id: 'a1', pageId: 'p0', kind: 'not-a-real-kind', z: 1 } as any },
       nextZ: 2,
     }
     expect(() => svc.save(edits)).toThrow(/no writer registered/)

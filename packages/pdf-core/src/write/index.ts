@@ -68,6 +68,13 @@ WRITERS.ink = writeInk
 // objects/link.ts for what Phase 0 measured about the difference.
 WRITERS.link = writeLink
 
+// Task 35. A signature is a raster placed on the page, so it exports through
+// the SAME writer as an image rather than a near-copy of it -- the two differ
+// only in provenance and in which inspector fields they offer. Sharing the
+// writer also means they share the embed-once XObject cache, so one signature
+// applied to every page of a contract embeds once.
+WRITERS.signature = writeImage
+
 /**
  * Build the exported document.
  *

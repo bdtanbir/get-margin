@@ -8,10 +8,13 @@ import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
 import ToolStrip from '@/features/tools/ToolStrip.vue'
 import InspectorSheet from '@/features/tools/InspectorSheet.vue'
 import ImagePicker from '@/features/tools/ImagePicker.vue'
+import SignatureModal from '@/features/signature/SignatureModal.vue'
+import { useToolsStore } from '@/stores/tools'
 import IconButton from '@/ui/IconButton.vue'
 import { useDocumentStore } from '@/stores/document'
 
 const doc = useDocumentStore()
+const tools = useToolsStore()
 const pagesOpen = ref(false)
 
 // Amendment A2: no ResizeObserver/applyFit wiring here — see the identical
@@ -23,6 +26,8 @@ const pagesOpen = ref(false)
   <div class="flex h-dvh flex-col">
     <!-- Hidden file input for the Image tool; see ImagePicker.vue. -->
     <ImagePicker v-if="doc.isReady" />
+    <!-- The Signature tool is a modal, not a page gesture. -->
+    <SignatureModal v-if="doc.isReady && tools.active === 'signature'" />
     <TopBar compact />
     <!--
       Amendment A3 (Task 21, supersedes the Task 20 version of this
