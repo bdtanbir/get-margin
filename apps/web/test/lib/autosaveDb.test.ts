@@ -4,18 +4,16 @@ import {
   putEdit, findEdit, deleteEdit, pruneEdits, clearEdits,
   RETENTION_MS, MAX_RECORDS, type SavedEdit,
 } from '@/lib/autosaveDb'
-import { EDIT_DOCUMENT_VERSION, type EditDocument } from '@margin/pdf-core'
+import { emptyEditDocument, type EditDocument } from '@margin/pdf-core'
 
 const NOW = 1_700_000_000_000
 
 function editDoc(): EditDocument {
   return {
-    version: EDIT_DOCUMENT_VERSION,
+    ...emptyEditDocument(),
     sources: { 'src-0': { hash: 'h', name: 'a.pdf' } },
     pageOrder: ['p0'],
     pages: { p0: { sourceId: 'src-0', sourceIndex: 0, rotation: 0, cropBox: null } },
-    objects: {},
-    nextZ: 1,
   }
 }
 

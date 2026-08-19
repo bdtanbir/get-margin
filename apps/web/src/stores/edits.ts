@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef, computed } from 'vue'
 import { produceWithPatches, enablePatches, applyPatches, type Patch } from 'immer'
-import { EDIT_DOCUMENT_VERSION, type EditDocument, type Op, type ObjectId } from '@margin/pdf-core'
+import { emptyEditDocument, type EditDocument, type Op, type ObjectId } from '@margin/pdf-core'
 
 // Immer ships patch support opt-in. Without this, produceWithPatches returns
 // empty patch arrays and every undo silently does nothing.
@@ -22,14 +22,7 @@ type HistoryEntry = {
 }
 
 function emptyDocument(): EditDocument {
-  return {
-    version: EDIT_DOCUMENT_VERSION,
-    sources: {},
-    pageOrder: [],
-    pages: {},
-    objects: {},
-    nextZ: 1,
-  }
+  return emptyEditDocument()
 }
 
 /**
