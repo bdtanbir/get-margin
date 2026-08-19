@@ -213,6 +213,16 @@ export type Op =
       at: number
       source?: { id: SourceId; hash: string; name: string }
     }
+  /**
+   * Task 71 -- fill a field the SOURCE document already had.
+   *
+   * Not an object op, because a field someone else authored is not an
+   * object: it has no rect of the user's choosing, no z, and nothing to
+   * drag. See PHASE-5-DESIGN.md 0.
+   */
+  | { type: 'setFieldValue'; key: string; value: FieldValue }
+  /** Task 72 -- flatten form fields into page content on export. */
+  | { type: 'setFlattenForms'; on: boolean }
 
 export const EDIT_DOCUMENT_VERSION = 3
 

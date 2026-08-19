@@ -453,3 +453,82 @@ describe('page operations', () => {
     expect(s.historySize).toBe(0)
   })
 })
+
+/**
+ * Coalescing. Distinct from a transaction, which brackets edits whose
+ * extent the caller knows: typing has no such bracket -- there is no event
+ * meaning "the user has finished with this field", only a keystroke that
+ * happens to be the last one.
+ */
+describe('history coalescing', () => {
+  const seeded = () => {
+    const s = useEditsStore()
+    s.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'],
+      { p1: { sourceId: 'src-0', sourceIndex: 0, rotation: 0, cropBox: null } })
+    s.clearHistory()
+    return s
+  }
+  const type = (s: ReturnType<typeof useEditsStore>, key: string, text: string) => {
+    for (let i = 1; i <= text.length; i++) {
+      s.applyOp({ type: 'setFieldValue', key, value: text.slice(0, i) }, 'Fill field', `field:${key}`)
+    }
+  }
+
+  it('makes typing one undo entry, not one per keystroke', () => {
+    const s = seeded()
+    type(s, 'fullname', 'Ada')
+    expect(s.doc.fieldValues.fullname).toBe('Ada')
+    expect(s.historySize).toBe(1)
+  })
+
+  /**
+   * Inverses unwind in reverse, so a merged entry has to run the LATER
+   * inverse first. Get that backwards and undo restores a value from the
+   * middle of the burst instead of the one before it.
+   */
+  it('undoes the whole burst, back to before it started', () => {
+    const s = seeded()
+    s.applyOp({ type: 'setFieldValue', key: 'fullname', value: 'seed' }, 'Fill field', 'field:fullname')
+    s.clearHistory()
+    type(s, 'fullname', 'Ada')
+    s.undo()
+    expect(s.doc.fieldValues.fullname).toBe('seed')
+  })
+
+  it('redoes it as one step too', () => {
+    const s = seeded()
+    type(s, 'fullname', 'Ada')
+    s.undo()
+    s.redo()
+    expect(s.doc.fieldValues.fullname).toBe('Ada')
+    expect(s.canRedo).toBe(false)
+  })
+
+  // Moving to the next field starts a new entry, so one undo per field is
+  // what the user gets -- which is what they would expect.
+  it('starts a new entry for a different field', () => {
+    const s = seeded()
+    type(s, 'fullname', 'Ada')
+    type(s, 'email', 'a@b.c')
+    expect(s.historySize).toBe(2)
+    s.undo()
+    expect(s.doc.fieldValues.email).toBeUndefined()
+    expect(s.doc.fieldValues.fullname).toBe('Ada')
+  })
+
+  it('does not coalesce ops that ask for no key', () => {
+    const s = seeded()
+    s.applyOp({ type: 'setFlattenForms', on: true }, 'Flatten form')
+    s.applyOp({ type: 'setFlattenForms', on: false }, 'Keep form fields')
+    expect(s.historySize).toBe(2)
+  })
+
+  // An empty string is a real value: clearing a field someone pre-filled is
+  // an edit, and dropping the key would make replay skip it.
+  it('keeps an emptied field as an empty value, not a missing one', () => {
+    const s = seeded()
+    s.applyOp({ type: 'setFieldValue', key: 'fullname', value: '' }, 'Fill field', 'field:fullname')
+    expect('fullname' in s.doc.fieldValues).toBe(true)
+    expect(s.doc.fieldValues.fullname).toBe('')
+  })
+})

@@ -19,6 +19,16 @@ type HistoryEntry = {
   patches: Patch[]
   inversePatches: Patch[]
   weight: number
+  /**
+   * Entries sharing a coalesce key merge into one, so a burst of small
+   * edits to the same thing is one undo step.
+   *
+   * Distinct from a transaction, which brackets edits the caller knows the
+   * extent of. Typing has no such bracket: there is no event that means
+   * "the user has finished with this field", only a keystroke that happens
+   * to be the last one.
+   */
+  coalesceKey?: string
 }
 
 function emptyDocument(): EditDocument {
@@ -144,6 +154,17 @@ function reduce(draft: EditDocument, op: Op): void {
       draft.pageOrder.splice(at, 0, ...op.pages.map((p) => p.id))
       break
     }
+
+    case 'setFieldValue':
+      // An empty string is a real value -- clearing a field someone
+      // pre-filled is an edit -- so this never deletes the key. A stale key
+      // costs nothing: replay skips one it cannot match.
+      draft.fieldValues[op.key] = op.value
+      break
+
+    case 'setFlattenForms':
+      draft.flattenForms = op.on
+      break
   }
 }
 
@@ -175,9 +196,36 @@ export const useEditsStore = defineStore('edits', () => {
   let txInverse: Patch[] = []
   let txLabel = ''
 
-  function push(label: string, patches: Patch[], inversePatches: Patch[]): void {
+  function push(
+    label: string,
+    patches: Patch[],
+    inversePatches: Patch[],
+    coalesceKey?: string,
+  ): void {
     if (patches.length === 0) return
-    const next = [...past.value, { label, patches, inversePatches, weight: weigh(patches, inversePatches) }]
+
+    const top = past.value[past.value.length - 1]
+    if (coalesceKey && top && top.coalesceKey === coalesceKey) {
+      // Inverses unwind in reverse, so the EARLIER entry's inverse must run
+      // last -- prepend rather than append, or undo restores the value from
+      // the middle of the burst instead of the one before it.
+      const merged: HistoryEntry = {
+        label,
+        coalesceKey,
+        patches: [...top.patches, ...patches],
+        inversePatches: [...inversePatches, ...top.inversePatches],
+        weight: weigh([...top.patches, ...patches], [...inversePatches, ...top.inversePatches]),
+      }
+      past.value = [...past.value.slice(0, -1), merged]
+      future.value = []
+      return
+    }
+
+    const entry: HistoryEntry = {
+      label, patches, inversePatches, weight: weigh(patches, inversePatches),
+    }
+    if (coalesceKey) entry.coalesceKey = coalesceKey
+    const next = [...past.value, entry]
     let bytes = next.reduce((n, e) => n + e.weight, 0)
     while (next.length > HISTORY_LIMIT || (bytes > HISTORY_BYTES_LIMIT && next.length > 1)) {
       const dropped = next.shift()
@@ -187,7 +235,14 @@ export const useEditsStore = defineStore('edits', () => {
     future.value = []
   }
 
-  function applyOp(op: Op, label: string): void {
+  /**
+   * The single write path (design 1.2), now with an optional coalesce key.
+   *
+   * Deliberately NOT wrapped in per-op convenience methods: the surface is
+   * held flat on purpose, and an `edits.test.ts` invariant enumerates it.
+   * Callers name their own coalesce key -- see `fieldCoalesceKey`.
+   */
+  function applyOp(op: Op, label: string, coalesceKey?: string): void {
     const [next, patches, inversePatches] = produceWithPatches(state.value, (draft) => {
       reduce(draft, op)
     })
@@ -199,7 +254,7 @@ export const useEditsStore = defineStore('edits', () => {
       txInverse.unshift(...inversePatches)
       return
     }
-    push(label, patches, inversePatches)
+    push(label, patches, inversePatches, coalesceKey)
   }
 
   /**
