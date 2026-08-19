@@ -124,7 +124,18 @@ function remove(): void {
       </template>
     </header>
 
-    <div ref="listEl" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-3">
+    <!--
+      role=option is only meaningful inside a listbox; on its own it tells a
+      screen reader an option exists but not what it belongs to or that the
+      selection is multiple.
+    -->
+    <div
+      ref="listEl"
+      role="listbox"
+      aria-label="Pages"
+      aria-multiselectable="true"
+      class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-3"
+    >
       <p
         v-if="merged"
         data-merge-notice

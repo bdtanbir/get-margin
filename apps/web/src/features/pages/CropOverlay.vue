@@ -8,6 +8,7 @@ import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { useViewportStore } from '@/stores/viewport'
 import { useDragGesture } from '@/features/overlay/useDragGesture'
+import { useFocusTrap } from '@/lib/useFocusTrap'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 
@@ -19,6 +20,7 @@ const vp = useViewportStore()
 /** Below this the drag is a stray click, not a crop. */
 const MIN_DRAG_PX = 6
 
+const controls = ref<HTMLElement | null>(null)
 const box = ref<ViewRect | undefined>(undefined)
 const applyToAll = ref(false)
 
@@ -70,6 +72,10 @@ function cancel(): void {
   tools.setTool('select')
 }
 
+// Escape cancels the crop rather than closing a dialog -- which is why the
+// trap routes Escape out rather than deciding for itself.
+useFocusTrap(controls, { onEscape: cancel })
+
 function apply(): void {
   const b = box.value
   if (!b) return
@@ -113,6 +119,10 @@ function clearCrop(): void {
     />
 
     <div
+      ref="controls"
+      tabindex="-1"
+      role="dialog"
+      aria-label="Crop this page"
       class="pointer-events-auto absolute inset-x-2 bottom-2 flex flex-col gap-2 rounded-panel
              border border-border bg-surface p-3 shadow-high"
     >

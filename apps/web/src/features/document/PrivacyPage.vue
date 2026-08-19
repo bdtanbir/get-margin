@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useFocusTrap } from '@/lib/useFocusTrap'
 import { X } from 'lucide-vue-next'
 import Button from '@/ui/Button.vue'
 import IconButton from '@/ui/IconButton.vue'
@@ -8,7 +9,10 @@ import { clearSignatures } from '@/features/signature/signatureStore'
 import { MAX_BYTES, MAX_PAGES } from '@/lib/limits'
 
 const emit = defineEmits<{ close: [] }>()
+const surface = ref<HTMLElement | null>(null)
 const cleared = ref(false)
+
+useFocusTrap(surface, { onEscape: () => emit('close') })
 
 /**
  * Clear everything this app has stored. Deliberately reachable from the
@@ -37,7 +41,7 @@ const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`
     data-privacy-page
     @click.self="emit('close')"
   >
-    <div class="my-8 flex w-full max-w-lg flex-col gap-4 rounded-panel bg-surface p-5 shadow-high">
+    <div ref="surface" tabindex="-1" class="my-8 flex w-full max-w-lg flex-col gap-4 rounded-panel bg-surface p-5 shadow-high">
       <div class="flex items-start justify-between gap-3">
         <h2 class="text-[17px] font-medium">Privacy</h2>
         <IconButton size="sm" label="Close" data-privacy-close @click="emit('close')">
