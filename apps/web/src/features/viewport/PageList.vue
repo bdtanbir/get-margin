@@ -3,6 +3,7 @@ import { computed, watch, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { pageViewSize } from '@margin/transform'
 import PageCanvas from './PageCanvas.vue'
+import PageOverlay from '@/features/overlay/PageOverlay.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useViewportStore } from '@/stores/viewport'
 
@@ -124,12 +125,27 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
         class="absolute left-0 top-0 w-full flex justify-center"
         :style="{ transform: `translateY(${item.start}px)` }"
       >
-        <PageCanvas
-          v-if="doc.pages[doc.pageOrder[item.index]!]"
-          :page="doc.pages[doc.pageOrder[item.index]!]!"
-          :zoom="vp.zoom"
-          :bitmap="vp.bitmapFor(doc.pageOrder[item.index]!)"
-        />
+        <div class="relative">
+          <PageCanvas
+            v-if="doc.pages[doc.pageOrder[item.index]!]"
+            :page="doc.pages[doc.pageOrder[item.index]!]!"
+            :zoom="vp.zoom"
+            :bitmap="vp.bitmapFor(doc.pageOrder[item.index]!)"
+          />
+          <!--
+            Spec 1.3: only pages within +/-1 of the anchor mount an overlay.
+            Pages outside that window keep their bitmap and drop their objects
+            from the DOM, which is what keeps a 300-page annotated document
+            responsive. `overscan: 2` on the virtualizer means `items` is
+            already wider than this window, so the guard is a real filter, not
+            a no-op.
+          -->
+          <PageOverlay
+            v-if="doc.pages[doc.pageOrder[item.index]!] && Math.abs(item.index - vp.anchorIndex) <= 1"
+            :page="doc.pages[doc.pageOrder[item.index]!]!"
+            :zoom="vp.zoom"
+          />
+        </div>
       </div>
     </div>
   </div>

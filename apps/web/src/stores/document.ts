@@ -5,6 +5,7 @@ import type { PageGeometry } from '@margin/transform'
 import { getPdfClient, closeSharedDocument } from '@/workers/pdfClient'
 import { checkFileSize, checkPageCount } from '@/lib/limits'
 import { sha256Hex } from '@/lib/hash'
+import { useEditsStore } from '@/stores/edits'
 
 export type PageId = string
 
@@ -64,6 +65,16 @@ export const useDocumentStore = defineStore('document', {
       }
       this.pageOrder = order
       this.pages = pages
+
+      // Objects reference a synthetic pageId, never a page index (spec
+      // 1.2b) -- so the edit store must be seeded with THESE ids, from the
+      // one place they are minted. Deriving them a second time elsewhere is
+      // how objects end up orphaned or attributed to the wrong page.
+      useEditsStore().reset(
+        this.sourceHash,
+        order,
+        Object.fromEntries(order.map((id, i) => [id, { sourceIndex: i }])),
+      )
     },
 
     async openFile(file: File): Promise<void> {
