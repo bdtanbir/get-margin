@@ -210,3 +210,36 @@ describe('nothing worth saving', () => {
     expect(putEdit).toHaveBeenCalledTimes(1)
   })
 })
+
+// Clearing the prompt before the delete landed made "discard, then close the
+// tab" a race the record could win -- and the user would be offered the same
+// edits again, having explicitly said no.
+describe('discard ordering', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    seedPages(1)
+  })
+
+  it('does not clear the prompt until the record is deleted', async () => {
+    let resolveDelete: () => void = () => {}
+    deleteEdit.mockImplementationOnce(
+      () => new Promise<void>((r) => { resolveDelete = r }),
+    )
+    findEdit.mockResolvedValueOnce({
+      hash: 'h', name: 'a.pdf', savedAt: 1, doc: { objects: {} },
+    })
+
+    const store = useAutosaveStore()
+    await store.checkForSaved()
+    expect(store.offered).toBeDefined()
+
+    const pending = store.discard()
+    // Still offered: the delete has not finished.
+    expect(store.offered).toBeDefined()
+
+    resolveDelete()
+    await pending
+    expect(store.offered).toBeUndefined()
+  })
+})

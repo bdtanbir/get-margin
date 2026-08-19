@@ -57,6 +57,9 @@ test('declining leaves a clean document and does not ask again', async ({ page }
   await page.reload()
   await open(page)
   await page.locator('[data-restore-discard]').click()
+  // The prompt only clears once the record is actually deleted, so this is
+  // the signal that it is safe to reload.
+  await expect(page.locator('[data-restore-prompt]')).toBeHidden()
   await expect(page.locator('[data-object-id]')).toHaveCount(0)
 
   // Discarded for good: reopening the same file offers nothing.

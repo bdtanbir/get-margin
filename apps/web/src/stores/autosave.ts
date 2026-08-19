@@ -169,10 +169,19 @@ export const useAutosaveStore = defineStore('autosave', () => {
     edits.clearHistory()
   }
 
+  /**
+   * Forget the offered edits for good.
+   *
+   * The delete is awaited BEFORE the prompt is cleared, so the prompt
+   * disappearing means the record is actually gone. Clearing first made
+   * discarding and immediately closing the tab a race the record could win
+   * -- and the user would be offered the same edits again next time, having
+   * explicitly said no.
+   */
   async function discard(): Promise<void> {
     const hash = primaryHash()
-    offered.value = undefined
     if (hash) await deleteEdit(hash)
+    offered.value = undefined
   }
 
   return {
