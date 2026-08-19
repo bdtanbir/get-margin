@@ -1,7 +1,7 @@
 import {
   PdfDocument, renderPage, replay, buildQuadIndex, listFields,
   type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
-  type SourceField,
+  type SourceField, type Protection,
 } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
@@ -226,13 +226,21 @@ export class PdfService {
     fonts?: Map<string, Uint8Array>,
     onProgress?: (done: number, total: number) => void,
     onStripped?: (found: StrippedContent) => void,
+    protection?: Protection,
   ): Uint8Array {
     const primary = this.#primarySource
     const src = primary ? this.#sources.get(primary) : undefined
     if (!src) throw new Error('no document open')
     // No edit document at all means "give me the file back" -- the caller
     // has nothing to replay.
-    if (!editDoc) return src
+    // No edit document AND no protection means "give me the file back".
+    // Protection alone is a reason to go through the write path: someone
+    // who opened a file and asked only for a password must get an
+    // encrypted file, not their original.
+    if (!editDoc && !protection) return src
+    if (!editDoc) {
+      throw new Error('Cannot protect a document with no edit state.')
+    }
     // `fonts` is only consulted for text objects; a document without any
     // never touches it, which is why it stays optional (Task 31). Under
     // exactOptionalPropertyTypes, `{ fonts: undefined }` is NOT the same as
@@ -246,6 +254,7 @@ export class PdfService {
       ...(fonts ? { fonts } : {}),
       ...(onProgress ? { onProgress } : {}),
       ...(onStripped ? { onStripped } : {}),
+      ...(protection ? { protection } : {}),
     })
   }
 

@@ -8,6 +8,7 @@ import DropZone from '@/features/document/DropZone.vue'
 import PasswordPrompt from '@/features/document/PasswordPrompt.vue'
 import ErrorBoundary from './ErrorBoundary.vue'
 import StampDialog from '@/features/stamp/StampDialog.vue'
+import ProtectDialog from '@/features/protect/ProtectDialog.vue'
 import { useDialogsStore } from '@/stores/dialogs'
 import RestorePrompt from '@/features/document/RestorePrompt.vue'
 import CommandPalette from '@/features/command/CommandPalette.vue'
@@ -82,5 +83,6 @@ function record(err: Error): void {
       one modal" invariant that focus trapping already assumes.
     -->
     <StampDialog v-if="dialogs.isOpen('stamp')" @close="dialogs.close()" />
+    <ProtectDialog v-if="dialogs.isOpen('protect')" @close="dialogs.close()" />
   </ErrorBoundary>
 </template>

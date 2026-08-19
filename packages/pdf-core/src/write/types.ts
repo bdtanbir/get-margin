@@ -263,19 +263,6 @@ export type EditDocument = {
   flattenForms: boolean
 }
 
-/**
- * Encryption settings for the exported file.
- *
- * NOT part of EditDocument, and deliberately so: a password is a secret,
- * and EditDocument is the thing autosaved to IndexedDB. Storing one there
- * would write the user's password to disk in plain text, which is a worse
- * outcome than losing the setting on reload.
- */
-export type ProtectionSettings = {
-  userPassword: string
-  ownerPassword: string
-  permissions: string[]
-}
 
 export type Op =
   | { type: 'addObject'; object: EditObject }

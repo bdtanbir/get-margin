@@ -1,7 +1,7 @@
 import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
 import type {
-  EditDocument, PageQuadIndex, SourceId, StrippedContent, SourceField,
+  EditDocument, PageQuadIndex, SourceId, StrippedContent, SourceField, Protection,
 } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
@@ -50,6 +50,7 @@ export type PdfClient = {
     fonts?: Map<string, Uint8Array>,
     onProgress?: (done: number, total: number) => void,
     onStripped?: (found: StrippedContent) => void,
+    protection?: Protection,
   ): Promise<Uint8Array>
   /**
    * Character-level text geometry for one page, cached in the worker. See
@@ -216,14 +217,14 @@ export function createPdfClient(): PdfClient {
       return remote.listFields(sourceId, page)
     },
 
-    async save(editDoc, fonts, onProgress, onStripped) {
+    async save(editDoc, fonts, onProgress, onStripped, protection) {
       await ready
       // Comlink.proxy so the worker can CALL these rather than receiving a
       // structured clone of them (functions do not clone).
       const progress = onProgress ? Comlink.proxy(onProgress) : undefined
       const stripped = onStripped ? Comlink.proxy(onStripped) : undefined
       return withTimeout(
-        remote.save(editDoc, fonts, progress, stripped),
+        remote.save(editDoc, fonts, progress, stripped, protection),
         EXPORT_TIMEOUT_MS,
         'The export took too long and was stopped. Try again, or remove some edits.',
       )

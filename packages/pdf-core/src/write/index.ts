@@ -23,6 +23,7 @@ import { migrateEditDocument } from './migrate.js'
 import { stripActiveContent, anythingStripped, type StrippedContent } from './sanitize.js'
 import { applyFieldValues } from './fields.js'
 import { applyRedactions } from './objects/redact.js'
+import { protectedSave, type Protection } from './protect.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -136,6 +137,15 @@ export type ReplayOptions = {
    * can say so. Stripping happens whether or not this is supplied.
    */
   onStripped?: (found: StrippedContent) => void
+  /**
+   * Encrypt the exported file.
+   *
+   * Passed per call rather than stored on the EditDocument, because a
+   * password is a secret and the EditDocument is what autosave writes to
+   * IndexedDB. Keeping it here means the setting is lost on reload, which
+   * is the right trade against writing someone's password to disk.
+   */
+  protection?: Protection
 }
 
 export function replay(
@@ -165,6 +175,11 @@ export function replay(
   const hasTabOrder = editDoc.pageOrder.some(
     (id) => (editDoc.pages[id]?.tabOrder?.length ?? 0) > 0,
   )
+  // Protecting an otherwise-untouched document is an edit to its bytes,
+  // even though it is not an edit to its content. Without this the
+  // pass-through would hand back the original, unencrypted, having been
+  // asked for a password.
+  const protection = opts.protection
 
   // See assemble(). Pages come back already in pageOrder, so from here on a
   // page is addressed by its POSITION, not its sourceIndex.
@@ -180,7 +195,7 @@ export function replay(
     // the user's own bytes rather than a re-serialisation.
     // e2e/download.spec.ts asserts this byte-for-byte.
     if (
-      unchanged && !hasObjects && !hasFills && !flatten && !hasTabOrder
+      unchanged && !hasObjects && !hasFills && !flatten && !hasTabOrder && !protection
       && !anythingStripped(stripped)
     ) {
       const original = sources.get(Object.keys(editDoc.sources)[0]!)
@@ -294,6 +309,11 @@ export function replay(
     // wholesale -- it is not undoable, and doing it to the document being
     // edited would destroy the user's form rather than their copy of it.
     if (flatten) raw.bake(false, true)
+
+    // protectedSave verifies its own output rather than trusting a call
+    // that did not throw -- see protect.ts for the three silent ways a
+    // "protected" save produces an unprotected file.
+    if (protection) return protectedSave(raw, protection, SAVE_OPTIONS)
 
     return raw.saveToBuffer(SAVE_OPTIONS).asUint8Array()
   } finally {

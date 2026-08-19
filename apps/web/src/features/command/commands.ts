@@ -95,6 +95,13 @@ export function useCommands(): ComputedRef<Command[]> {
         run: () => dialogs.show('stamp'),
       },
       {
+        id: 'doc:protect',
+        label: 'Protect with a password…',
+        group: 'Document',
+        available: hasDocument,
+        run: () => dialogs.show('protect'),
+      },
+      {
         id: 'doc:undo',
         label: 'Undo',
         group: 'Document',
