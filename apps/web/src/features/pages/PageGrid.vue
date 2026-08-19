@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RotateCcw, RotateCw, Trash2 } from 'lucide-vue-next'
 import Thumbnail from '@/features/document/Thumbnail.vue'
 import IconButton from '@/ui/IconButton.vue'
@@ -7,6 +7,7 @@ import { useDocumentStore, type PageId } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
 import { usePageSelectionStore } from '@/stores/pageSelection'
+import { useDragReorder } from './useDragReorder'
 
 const doc = useDocumentStore()
 const edits = useEditsStore()
@@ -27,6 +28,33 @@ function onClick(id: PageId, index: number, e: MouseEvent): void {
     emit('select', index)
   }
 }
+
+const listEl = ref<HTMLElement | null>(null)
+
+/**
+ * Vertical midpoint of each tile, in client coordinates and in display
+ * order. Read from the DOM at drag time rather than tracked reactively:
+ * the layout is the authority on where the tiles actually are, and it
+ * cannot go stale between the read and the drop.
+ */
+function midpoints(): number[] {
+  const el = listEl.value
+  if (!el) return []
+  return [...el.querySelectorAll('[data-page-tile]')].map((tile) => {
+    const box = tile.getBoundingClientRect()
+    return box.top + box.height / 2
+  })
+}
+
+// Destructured, not kept as an object: Vue unwraps refs that are top-level
+// setup bindings, but NOT refs nested inside a returned object -- the
+// template would compare a ComputedRef against a string and never match.
+const { draggingId, dropIndex, onPointerDown: startReorder } = useDragReorder({
+  order: () => doc.pageOrder,
+  midpoints,
+  // One op per completed drag, so a drag is one undo step.
+  commit: (next) => edits.applyOp({ type: 'reorderPages', pageOrder: next }, 'Reorder pages'),
+})
 
 function rotate(by: 90 | 270): void {
   const ids = [...selection.selected]
@@ -68,17 +96,32 @@ function remove(): void {
       </template>
     </header>
 
-    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-3">
+    <div ref="listEl" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-3">
       <div
         v-for="(id, i) in doc.pageOrder"
         :key="id"
         :data-page-tile="id"
         role="option"
         :aria-selected="selection.isSelected(id) ? 'true' : 'false'"
-        class="rounded-control"
-        :class="selection.isSelected(id) ? 'ring-2 ring-accent' : ''"
+        :aria-grabbed="draggingId === id ? 'true' : undefined"
+        class="relative rounded-control"
+        :class="[
+          selection.isSelected(id) ? 'ring-2 ring-accent' : '',
+          draggingId === id ? 'opacity-40' : '',
+        ]"
         @click="(e) => onClick(id, i, e)"
+        @pointerdown="(e) => startReorder(id, e)"
       >
+        <!--
+          An insertion marker rather than animating the tiles apart: the
+          marker says exactly where the page will land, and animation during
+          a drag competes with the drag itself for frames.
+        -->
+        <div
+          v-if="dropIndex === i"
+          data-drop-marker
+          class="pointer-events-none absolute inset-x-1 -top-0.5 h-0.5 rounded bg-accent"
+        />
         <Thumbnail
           :page="doc.pages[id]!"
           :index="i"
@@ -86,6 +129,12 @@ function remove(): void {
           @select="() => {}"
         />
       </div>
+      <!-- The gap after the last tile, so a page can be dropped at the end. -->
+      <div
+        v-if="dropIndex === doc.pageOrder.length"
+        data-drop-marker
+        class="pointer-events-none mx-1 h-0.5 rounded bg-accent"
+      />
     </div>
   </div>
 </template>

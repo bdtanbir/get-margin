@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PageGrid from '@/features/pages/PageGrid.vue'
@@ -129,5 +129,97 @@ describe('PageGrid', () => {
     await tile(w, 0).trigger('click')
     await w.get('[data-rotate-right]').trigger('click')
     expect(seen).toEqual(['p0'])
+  })
+})
+
+// Task 47. Dragging a tile to a new position.
+describe('PageGrid drag to reorder', () => {
+  let edits: ReturnType<typeof useEditsStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    seedPages(4)
+    edits = useEditsStore()
+  })
+
+  /** Tiles stacked 100px apart, so midpoints land at 50, 150, 250, 350. */
+  function stubLayout(w: ReturnType<typeof mount>): void {
+    w.findAll('[data-page-tile]').forEach((tile, i) => {
+      vi.spyOn(tile.element, 'getBoundingClientRect').mockReturnValue({
+        top: i * 100, height: 100, bottom: i * 100 + 100,
+        left: 0, right: 200, width: 200, x: 0, y: i * 100,
+        toJSON: () => ({}),
+      } as DOMRect)
+    })
+  }
+
+  function dragTile(w: ReturnType<typeof mount>, id: string, toY: number): void {
+    const el = w.get(`[data-page-tile="${id}"]`).element
+    const down = new Event('pointerdown', { bubbles: true }) as PointerEvent
+    Object.assign(down, { clientX: 0, clientY: 50, pointerId: 1 })
+    Object.defineProperty(down, 'currentTarget', { value: el, configurable: true })
+    el.dispatchEvent(down)
+
+    const move = new Event('pointermove', { bubbles: true }) as PointerEvent
+    Object.assign(move, { clientX: 0, clientY: toY, pointerId: 1 })
+    window.dispatchEvent(move)
+
+    window.dispatchEvent(new Event('pointerup', { bubbles: true }))
+  }
+
+  it('moves a page to where it was dropped', () => {
+    const w = mount(PageGrid)
+    stubLayout(w)
+    // Drag p0 down past the midpoint of p2 (250) -> index 3.
+    dragTile(w, 'p0', 260)
+    expect(edits.doc.pageOrder).toEqual(['p1', 'p2', 'p0', 'p3'])
+  })
+
+  it('moves a page to the very end', () => {
+    const w = mount(PageGrid)
+    stubLayout(w)
+    dragTile(w, 'p0', 999)
+    expect(edits.doc.pageOrder).toEqual(['p1', 'p2', 'p3', 'p0'])
+  })
+
+  it('is one history entry per drag', () => {
+    const w = mount(PageGrid)
+    stubLayout(w)
+    const before = edits.historySize
+    dragTile(w, 'p0', 260)
+    expect(edits.historySize).toBe(before + 1)
+  })
+
+  // A click that does not move must not create an undo step.
+  it('creates no history entry for a drag that changes nothing', () => {
+    const w = mount(PageGrid)
+    stubLayout(w)
+    const before = edits.historySize
+    dragTile(w, 'p0', 10)
+    expect(edits.doc.pageOrder).toEqual(['p0', 'p1', 'p2', 'p3'])
+    expect(edits.historySize).toBe(before)
+  })
+
+  it('shows a drop marker while dragging', async () => {
+    const w = mount(PageGrid)
+    stubLayout(w)
+    const el = w.get('[data-page-tile="p0"]').element
+    const down = new Event('pointerdown', { bubbles: true }) as PointerEvent
+    Object.assign(down, { clientX: 0, clientY: 50, pointerId: 1 })
+    Object.defineProperty(down, 'currentTarget', { value: el, configurable: true })
+    el.dispatchEvent(down)
+    const move = new Event('pointermove', { bubbles: true }) as PointerEvent
+    Object.assign(move, { clientX: 0, clientY: 260, pointerId: 1 })
+    window.dispatchEvent(move)
+    await w.vm.$nextTick()
+    expect(w.findAll('[data-drop-marker]').length).toBeGreaterThan(0)
+    window.dispatchEvent(new Event('pointerup', { bubbles: true }))
+  })
+
+  it('never loses or duplicates a page', () => {
+    const w = mount(PageGrid)
+    stubLayout(w)
+    dragTile(w, 'p2', 10)
+    expect([...edits.doc.pageOrder].sort()).toEqual(['p0', 'p1', 'p2', 'p3'])
   })
 })
