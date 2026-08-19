@@ -19,6 +19,7 @@ import { useDocumentStore } from '@/stores/document'
 import { getPdfClient } from '@/workers/pdfClient'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
+import FieldLayer from '@/features/forms/FieldLayer.vue'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -168,6 +169,13 @@ const draft = computed(() => {
     same geometry, so the two can never disagree about size.
   -->
   <div class="pointer-events-none absolute inset-0">
+    <!--
+      FIRST, so it sits below everything else in the stack. A form field the
+      document already had is not one of the user's objects: clicking it
+      focuses it and never selects. Above ObjectLayer it would swallow
+      clicks meant for annotations the user drew over the form.
+    -->
+    <FieldLayer :page="props.page" :zoom="props.zoom" />
     <!--
       BELOW the <svg> in the stack, deliberately. Objects inside the svg are
       pointer-events-auto over a pointer-events-none svg, so a click on an

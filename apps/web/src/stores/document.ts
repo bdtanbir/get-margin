@@ -6,6 +6,7 @@ import { getPdfClient, closeSharedDocument } from '@/workers/pdfClient'
 import { checkFileSize, checkPageCount } from '@/lib/limits'
 import { sha256Hex } from '@/lib/hash'
 import { useEditsStore } from '@/stores/edits'
+import { useFieldsStore } from '@/stores/fields'
 import { usePageSelectionStore } from '@/stores/pageSelection'
 import { useAutosaveStore } from '@/stores/autosave'
 
@@ -227,6 +228,10 @@ export const useDocumentStore = defineStore('document', {
       this.sources = {}
       pageStateCache.clear()
       useEditsStore().reset({}, [], {})
+      // Field enumerations are keyed by sourceId, and source ids are reused
+      // across documents -- so a stale cache would draw the previous file's
+      // fields over the new one's pages.
+      useFieldsStore().reset()
       // A selection naming the previous document's pages would otherwise
       // survive into the next one.
       usePageSelectionStore().clear()
@@ -259,6 +264,7 @@ export const useDocumentStore = defineStore('document', {
         if (info.needsPassword) {
           this.sources = {}
           useEditsStore().reset({}, [], {})
+          useFieldsStore().reset()
           this.status = 'needs-password'
           return
         }
@@ -326,9 +332,10 @@ export const useDocumentStore = defineStore('document', {
       // of WASM on a reset from an already-empty state.
       await closeSharedDocument()
       pageStateCache.clear()
-      // $reset() only clears THIS store; the pages live in the edit store
-      // and the selection in its own.
+      // $reset() only clears THIS store; the pages live in the edit store,
+      // the selection in its own, and the field enumerations in theirs.
       useEditsStore().reset({}, [], {})
+      useFieldsStore().reset()
       usePageSelectionStore().clear()
       this.$reset()
     },
