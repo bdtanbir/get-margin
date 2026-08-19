@@ -12,6 +12,8 @@ export type {
 } from './write/types.js'
 export { EDIT_DOCUMENT_VERSION, emptyEditDocument } from './write/types.js'
 export { listFields, fieldKey, hasAcroForm } from './write/fields.js'
+export { resolveTokens, batesNumber } from './write/objects/stamp.js'
+export type { StampContext } from './write/objects/stamp.js'
 export type { SourceField, SourceFieldType } from './write/fields.js'
 export { migrateEditDocument, LEGACY_SOURCE_ID } from './write/migrate.js'
 export { replay, WRITERS, type ObjectWriter, type WriteContext } from './write/index.js'
