@@ -23,6 +23,8 @@ export {
 } from './write/metadata.js'
 export type { DocumentMetadata } from './write/metadata.js'
 export { recompressImages, PRESETS as COMPRESSION_PRESETS } from './write/compress.js'
+export { findInPage } from './text/find.js'
+export type { Match, FindOptions } from './text/find.js'
 export type { CompressionPreset, CompressionResult } from './write/compress.js'
 export type { StampContext } from './write/objects/stamp.js'
 export type { SourceField, SourceFieldType } from './write/fields.js'
