@@ -21,6 +21,7 @@ const quad = (i: number): Quad => [i * 10, 0, i * 10 + 10, 0, i * 10, 18, i * 10
 
 const match = (page: number, text = 'hit'): PageMatch => ({
   page, lineIndex: 0, start: 0, end: text.length, text,
+  lineText: text,
   quads: [...text].map((_, i) => quad(i)),
 })
 
@@ -184,19 +185,28 @@ describe('FindPanel', () => {
   it('scrolls to where the page actually is after a reorder', async () => {
     const edits = useEditsStore()
     seed(3)
-    // Reverse the document: source page 2 is now displayed first.
+    // Reverse the document: source page 2 is now displayed FIRST and
+    // source page 0 is displayed last.
     edits.applyOp({ type: 'reorderPages', pageOrder: ['p2', 'p1', 'p0'] }, 'Reorder')
-    const vp = useViewportStore()
+    /**
+     * Asserted on the CALL rather than on anchorIndex, because setAnchor
+     * clamps against the document store's page count -- which is zero here,
+     * since these tests seed the edit store only. An earlier version
+     * checked anchorIndex and passed while the lookup returned "not found"
+     * every time and nothing was ever called: 0 was both the expected
+     * answer and the untouched default.
+     */
+    const setAnchor = vi.spyOn(useViewportStore(), 'setAnchor')
 
     mount(FindPanel)
     const store = useFindStore()
-    find.mockResolvedValue({ matches: [match(2)], capped: false })
+    find.mockResolvedValue({ matches: [match(0)], capped: false })
     store.query = 'hit'
     await store.search()
     await flushPromises()
 
-    // Source page 2 is display index 0, not 2.
-    expect(vp.anchorIndex).toBe(0)
+    // Source page 0 is display index 2 after the reversal.
+    expect(setAnchor).toHaveBeenCalledWith(2)
   })
 
   it('clears the search when closed', async () => {
@@ -246,5 +256,125 @@ describe('FindHighlights', () => {
     const marks = w.findAll('[data-find-mark]').map((p) => p.attributes('data-find-mark'))
     expect(marks).toContain('current')
     expect(marks).toContain('other')
+  })
+})
+
+/**
+ * Replace is patching applied to search hits, which is why it ships after
+ * patching rather than beside find.
+ */
+describe('replace', () => {
+  const patches = (edits: ReturnType<typeof useEditsStore>) =>
+    Object.values(edits.doc.objects).filter((o) => o.kind === 'textPatch')
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    seed()
+  })
+
+  async function open(matches: PageMatch[]) {
+    find.mockResolvedValue({ matches, capped: false })
+    const w = mount(FindPanel)
+    const store = useFindStore()
+    store.query = 'the'
+    await store.search()
+    await flushPromises()
+    await w.get('[data-find-toggle-replace]').trigger('click')
+    return w
+  }
+
+  it('is hidden until asked for', () => {
+    expect(mount(FindPanel).find('[data-find-replace-row]').exists()).toBe(false)
+  })
+
+  it('replaces the current match', async () => {
+    const edits = useEditsStore()
+    const w = await open([
+      { ...match(0), lineText: 'the cat', start: 0, end: 3 },
+    ])
+    await w.get('[data-find-replacement]').setValue('a')
+    await w.get('[data-find-replace-one]').trigger('click')
+
+    const made = patches(edits)
+    expect(made).toHaveLength(1)
+    expect((made[0] as { text: string }).text).toBe('a cat')
+  })
+
+  it('replaces every match', async () => {
+    const edits = useEditsStore()
+    const w = await open([
+      { ...match(0), lineText: 'the cat', start: 0, end: 3 },
+      { ...match(1), lineText: 'the dog', start: 0, end: 3 },
+    ])
+    await w.get('[data-find-replacement]').setValue('a')
+    await w.get('[data-find-replace-all]').trigger('click')
+    expect(patches(edits)).toHaveLength(2)
+  })
+
+  // Replacing forty occurrences is one decision and should cost one Cmd+Z.
+  it('records replace-all as ONE undo entry', async () => {
+    const edits = useEditsStore()
+    const w = await open([
+      { ...match(0), lineText: 'the cat', start: 0, end: 3 },
+      { ...match(1), lineText: 'the dog', start: 0, end: 3 },
+    ])
+    edits.clearHistory()
+    await w.get('[data-find-replacement]').setValue('a')
+    await w.get('[data-find-replace-all]').trigger('click')
+    expect(edits.historySize).toBe(1)
+    edits.undo()
+    expect(patches(edits)).toHaveLength(0)
+  })
+
+  it('leaves the other matches alone when replacing one', async () => {
+    const edits = useEditsStore()
+    const w = await open([
+      { ...match(0), lineText: 'the cat', start: 0, end: 3 },
+      { ...match(1), lineText: 'the dog', start: 0, end: 3 },
+    ])
+    await w.get('[data-find-replacement]').setValue('a')
+    await w.get('[data-find-replace-one]').trigger('click')
+    expect(patches(edits)).toHaveLength(1)
+  })
+
+  /**
+   * The count the user was shown has to reconcile with what happened, or a
+   * partial result becomes an unexplained silence.
+   */
+  it('reports what it did', async () => {
+    const w = await open([
+      { ...match(0), lineText: 'the cat', start: 0, end: 3 },
+      { ...match(1), lineText: 'the dog', start: 0, end: 3 },
+    ])
+    await w.get('[data-find-replacement]').setValue('a')
+    await w.get('[data-find-replace-all]').trigger('click')
+    expect(w.get('[data-find-report]').text()).toContain('Replaced 2 of 2')
+  })
+
+  /**
+   * Replace-all reaches pages the user has never scrolled to, which have
+   * no bitmap to sample -- so it says how many may show a mark rather than
+   * pretending they were all checked.
+   */
+  it('warns how many may show a visible mark', async () => {
+    const w = await open([{ ...match(0), lineText: 'the cat', start: 0, end: 3 }])
+    await w.get('[data-find-replacement]').setValue('a')
+    await w.get('[data-find-replace-all]').trigger('click')
+    expect(w.get('[data-find-report]').text()).toMatch(/visible mark/)
+  })
+
+  it('can delete text by replacing with nothing', async () => {
+    const edits = useEditsStore()
+    const w = await open([{ ...match(0), lineText: 'the cat', start: 0, end: 3 }])
+    await w.get('[data-find-replace-all]').trigger('click')
+    expect((patches(edits)[0] as { text: string }).text).toBe(' cat')
+  })
+
+  it('does nothing with no matches', async () => {
+    find.mockResolvedValue({ matches: [], capped: false })
+    const w = mount(FindPanel)
+    await w.get('[data-find-toggle-replace]').trigger('click')
+    expect(w.get('[data-find-replace-all]').attributes('disabled')).toBeDefined()
   })
 })

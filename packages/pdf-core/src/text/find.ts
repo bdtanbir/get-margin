@@ -13,6 +13,15 @@ export type Match = {
   end: number
   /** The matched text as it appears in the document. */
   text: string
+  /**
+   * The WHOLE line the match sits in.
+   *
+   * Carried because replacement is line-level (PLAN.md 2.4 chose
+   * line/span patching), so acting on a match means rewriting its line --
+   * and re-deriving the line from a page index the caller may not have is
+   * work the search has already done.
+   */
+  lineText: string
   /** One quad per matched character, for highlighting. */
   quads: Quad[]
 }
@@ -130,6 +139,7 @@ export function findInPage(
           start,
           end,
           text: source.slice(start, end),
+          lineText: source,
           quads: line.chars.slice(start, end).map((c) => c.quad),
         })
       }

@@ -1,16 +1,25 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick } from 'vue'
-import { ChevronUp, ChevronDown, X } from 'lucide-vue-next'
+import { ChevronUp, ChevronDown, X, Replace } from 'lucide-vue-next'
 import IconButton from '@/ui/IconButton.vue'
 import { useFindStore } from '@/stores/find'
 import { useViewportStore } from '@/stores/viewport'
-import { useDocumentStore } from '@/stores/document'
+import { useEditsStore } from '@/stores/edits'
+import { useViewportStore as useVp } from '@/stores/viewport'
+import { DEFAULT_FAMILY } from '@/lib/fonts'
+import { sampleBackground } from '@/features/patch/sampleBackground'
+import { buildReplacements } from './buildReplacements'
+import type { PageMatch } from '@/stores/find'
 
 const emit = defineEmits<{ close: [] }>()
 
 const find = useFindStore()
 const vp = useViewportStore()
-const doc = useDocumentStore()
+const edits = useEditsStore()
+
+const replacement = ref('')
+const showReplace = ref(false)
+const report = ref('')
 
 /**
  * Where a match's page sits in the document AS DISPLAYED.
@@ -23,7 +32,13 @@ const doc = useDocumentStore()
  * deleted, which is a real state and not an error.
  */
 function displayIndexOf(sourceIndex: number): number {
-  return doc.pageOrder.findIndex((id) => doc.pages[id]?.sourceIndex === sourceIndex)
+  // The EDIT store's page entries, not the document store's: they carry
+  // the same sourceIndex, and the document store's PageState additionally
+  // needs a registered source to build geometry -- so reading it here
+  // would return nothing for a page whose source is still loading.
+  return edits.doc.pageOrder.findIndex(
+    (id) => edits.doc.pages[id]?.sourceIndex === sourceIndex,
+  )
 }
 const input = ref<HTMLInputElement | null>(null)
 
@@ -53,6 +68,75 @@ watch(() => find.active, (match) => {
   const index = displayIndexOf(match.page)
   if (index >= 0) vp.setAnchor(index)
 })
+
+/** The edit-document page id for a source page, or undefined if it is gone. */
+function pageIdFor(sourcePage: number): string | undefined {
+  return edits.doc.pageOrder.find(
+    (id) => edits.doc.pages[id]?.sourceIndex === sourcePage,
+  )
+}
+
+/**
+ * The background behind a match's line, if that page has been rendered.
+ *
+ * Replace-all reaches pages the user has never scrolled to, which have no
+ * bitmap -- so most replacements will report zero confidence, and the
+ * summary says how many rather than pretending they were all sampled.
+ */
+function sampleFor(sourcePage: number, match: PageMatch) {
+  const pageId = pageIdFor(sourcePage)
+  if (!pageId) return undefined
+  const bitmap = useVp().bitmapFor(pageId)
+  if (!bitmap) return undefined
+
+  const xs = match.quads.flatMap((q) => [q[0], q[2], q[4], q[6]])
+  const ys = match.quads.flatMap((q) => [q[1], q[3], q[5], q[7]])
+  return sampleBackground(
+    bitmap,
+    {
+      x: Math.min(...xs), y: Math.min(...ys),
+      w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys),
+    },
+    bitmap.scale,
+  )
+}
+
+function apply(matches: PageMatch[], label: string): void {
+  if (matches.length === 0) return
+  const plan = buildReplacements(matches, replacement.value, {
+    pageIdFor,
+    sampleFor,
+    fontFamily: DEFAULT_FAMILY,
+    nextZ: () => edits.nextZ(),
+  })
+
+  // ONE history entry for the whole run: replacing forty occurrences is
+  // one decision and should cost one Cmd+Z.
+  edits.withTransaction(label, () => {
+    for (const patch of plan.patches) {
+      edits.applyOp({ type: 'addObject', object: patch }, label)
+    }
+  })
+
+  // The count the user was shown has to reconcile with what happened.
+  const parts = [`Replaced ${matches.length - plan.skipped.length} of ${matches.length}`]
+  if (plan.skipped.length) parts.push(`${plan.skipped.length} skipped`)
+  if (plan.lowConfidence) {
+    parts.push(`${plan.lowConfidence} may show a visible mark`)
+  }
+  report.value = parts.join(' · ')
+
+  void find.search()
+}
+
+function replaceOne(): void {
+  const match = find.active
+  if (match) apply([match], 'Replace')
+}
+
+function replaceAll(): void {
+  apply([...find.matches], 'Replace all')
+}
 
 function close(): void {
   find.clear()
@@ -117,8 +201,56 @@ function close(): void {
       Word
     </label>
 
+    <IconButton
+      size="sm"
+      label="Replace"
+      data-find-toggle-replace
+      :active="showReplace"
+      @click="showReplace = !showReplace"
+    >
+      <Replace :size="15" :stroke-width="1.5" />
+    </IconButton>
+
     <IconButton size="sm" label="Close find" data-find-close @click="close()">
       <X :size="15" :stroke-width="1.5" />
     </IconButton>
+  </div>
+
+  <!--
+    A second row rather than a wider one: replace is the less common half,
+    and someone who only wants to find should not have to look past a
+    control they are not using.
+  -->
+  <div
+    v-if="showReplace"
+    data-find-replace-row
+    class="pointer-events-auto absolute right-4 top-16 z-40 flex items-center gap-1
+           rounded-panel border border-border bg-surface-raised p-1.5 shadow-high"
+  >
+    <input
+      v-model="replacement"
+      type="text"
+      placeholder="Replace with"
+      data-find-replacement
+      aria-label="Replace with"
+      class="min-h-8 w-48 rounded-control border border-border bg-surface-sunken px-2 text-[13px]"
+    >
+    <button
+      type="button"
+      data-find-replace-one
+      class="min-h-8 rounded-control border border-border px-2 text-[12px] disabled:opacity-40"
+      :disabled="find.count === 0"
+      @click="replaceOne()"
+    >Replace</button>
+    <button
+      type="button"
+      data-find-replace-all
+      class="min-h-8 rounded-control border border-border px-2 text-[12px] disabled:opacity-40"
+      :disabled="find.count === 0"
+      @click="replaceAll()"
+    >All</button>
+    <span v-if="report" data-find-report class="px-1 text-[12px] text-text-muted" role="status">
+      {{ report }}
+    </span>
   </div>
 </template>
