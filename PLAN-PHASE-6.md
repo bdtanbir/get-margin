@@ -196,7 +196,7 @@ tests `apps/web/test/features/CompressDialog.test.ts`
       cannot be made smaller says so rather than offering a no-op.
 - [ ] Gates, commit.
 
-## Task 89: Font subsetting
+## Task 89: Font subsetting — ATTEMPTED, NOT DELIVERED (see findings 14 §6)
 
 **Files:** create `packages/pdf-core/src/write/subset.ts`; modify `fonts.ts`;
 test `packages/pdf-core/test/write/subset.test.ts`

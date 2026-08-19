@@ -190,14 +190,23 @@ ordinary edit would be slower and would destroy more than intended.
 be cleanly patched gets a normal affordance; a low-confidence one is marked. Every serious tool has
 these limits; the difference is whether the user learns them before or after they trust one.
 
-## 8. Font subsetting
+## 8. Font subsetting — attempted, and deferred again
 
-`pdf-lib` + `@pdf-lib/fontkit`, scoped strictly to subsetting and embedding for the custom-font path.
-MuPDF remains the single engine for rendering, annotations, composition, and save — this is a narrow
-carve-out for the one job it does not do automatically, not a second write path.
+**Not delivered in this phase, for a measured reason.** See the correction in findings 14 §6.
 
-Measured at 2–3% of a font's raw size against MuPDF's 49–55% (findings 14 §6). On a document using
-two faces that is the difference between ~130 KB and ~5 KB of every export.
+MuPDF's `subsetFonts()` turned out to work far better than §2.5 recorded — 88% off an export — but
+only because §2.5 measured it on a font that had been registered and never drawn. Once glyphs are in
+a content stream it shrinks the file dramatically **and renders the document wrong**: it rewrites the
+font without keeping `/Widths` in step, so right-aligned text missed its box edge by 113 points and
+four Phase 2 golden images moved. Text extraction kept working throughout, which is precisely what
+makes it a trap.
+
+`@pdf-lib/fontkit`'s own subsetter throws on `encode()` for this font, so the fallback path §2.5
+assumed was available is not, at least not without work this phase did not budget.
+
+Exports therefore still embed full faces, at 49–55% of a font's raw bytes. `subsetAttempt.test.ts`
+pins the measurement, the failure, and the size of the prize, so the next attempt starts from
+evidence rather than from the spec's assumption.
 
 ## 9. Out of scope, stated
 

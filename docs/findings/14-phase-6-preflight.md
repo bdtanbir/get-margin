@@ -162,6 +162,31 @@ deferred twice — from Phase 2, and again in Phase 4 §0 — on the honest grou
 optimisation rather than a capability. Text patching changes that: its font-fallback path embeds a
 substitute face on any glyph miss, so a deferred optimisation becomes a per-export cost.
 
+### Correction, from building Task 89: it is deferred again, now for a measured reason
+
+Two things turned out differently once this was implemented.
+
+**MuPDF's own `subsetFonts()` is not useless — §2.5 measured it under the wrong condition.** The spec
+records that it "made zero measurable difference", which is true for a font *registered but not yet
+drawn*: there are no glyph usages to subset against, so there is nothing for it to do. Once text is
+actually written it does something dramatic — a document using one face went from **33 KB to 4 KB**,
+an 88% saving, with the text still extracting correctly.
+
+**And it renders the document wrong.** It rewrites the embedded font without keeping `/Widths` in
+step, so every glyph advance changes: right-aligned text missed its box edge by **113 points**, and
+four of Phase 2's golden images moved. Text extraction kept working the whole time, which is what
+makes it dangerous — the cheap verification passes on a visibly broken document, and anyone checking
+subsetting by extracting text would ship it.
+
+**`@pdf-lib/fontkit`'s subsetter does not work here either.** `createSubset()` exists, but `encode()`
+throws `Cannot read properties of undefined (reading 'pos')` for both glyph objects and glyph ids.
+Not investigated further, because the MuPDF result made the cheaper path look viable first.
+
+So subsetting is **deferred a third time, and this time the reason is measured rather than
+scheduling**. `test/write/subsetAttempt.test.ts` pins all of it — including the 88% prize — and will
+fail if a future MuPDF fixes the metrics, at which point the saving is worth taking. The dependency
+§2.5 decided on has been removed again, so MuPDF remains the only engine that touches a PDF.
+
 ## 7. One API gotcha, recorded so it is not rediscovered
 
 `PDFObject.isStream()` **follows an indirect reference**, but the object returned by `.resolve()`
