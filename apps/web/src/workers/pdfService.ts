@@ -1,8 +1,9 @@
 import {
   PdfDocument, renderPage, replay, buildQuadIndex, listFields, readMetadata, recompressImages,
+  findInPage,
   type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
   type SourceField, type Protection, type DocumentMetadata,
-  type CompressionPreset, type CompressionResult,
+  type CompressionPreset, type CompressionResult, type FindOptions, type Match,
 } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
@@ -319,6 +320,38 @@ export class PdfService {
   ): CompressionResult {
     const exported = this.save(editDoc, fonts)
     return recompressImages(exported, preset)
+  }
+
+  /**
+   * Every match for `query` across the whole document.
+   *
+   * Runs IN THE WORKER rather than shipping quad indices to the main
+   * thread. A 300-page document would otherwise mean 300 round trips and
+   * 300 index payloads for a search that touches each page once -- and the
+   * worker already caches the indices it builds, so a second search over
+   * the same document costs no extraction at all.
+   *
+   * `limit` bounds the result set. A one-letter query on a long document
+   * matches tens of thousands of times, and neither the panel nor the
+   * highlight layer can use that many; the count is reported honestly as
+   * capped rather than the extras being dropped in silence.
+   */
+  find(query: string, options: FindOptions = {}, limit = 500): {
+    matches: Array<{ page: number } & Match>
+    capped: boolean
+  } {
+    const doc = this.#doc
+    if (!doc) throw new Error('no document open')
+    if (query === '') return { matches: [], capped: false }
+
+    const matches: Array<{ page: number } & Match> = []
+    for (let page = 0; page < doc.pageCount; page++) {
+      for (const match of findInPage(this.quadIndex(page), query, options)) {
+        if (matches.length >= limit) return { matches, capped: true }
+        matches.push({ page, ...match })
+      }
+    }
+    return { matches, capped: false }
   }
 
   close(): void {

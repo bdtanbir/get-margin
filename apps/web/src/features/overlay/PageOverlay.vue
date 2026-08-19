@@ -21,6 +21,7 @@ import { getPdfClient } from '@/workers/pdfClient'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
 import FieldLayer from '@/features/forms/FieldLayer.vue'
+import FindHighlights from '@/features/find/FindHighlights.vue'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -243,6 +244,12 @@ const draft = computed(() => {
         <MarkupObject v-else :object="(o as never)" />
       </g>
       <TextSelectionLayer :page="props.page" />
+      <!--
+        Above the text selection layer and below the objects: a search
+        result is a thing the DOCUMENT contains, so it should not obscure
+        what the user has drawn on top of it.
+      -->
+      <FindHighlights :page="props.page" />
     </svg>
 
     <!--

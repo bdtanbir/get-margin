@@ -2,7 +2,7 @@ import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
 import type {
   EditDocument, PageQuadIndex, SourceId, StrippedContent, SourceField, Protection,
-  DocumentMetadata, CompressionPreset, CompressionResult,
+  DocumentMetadata, CompressionPreset, CompressionResult, FindOptions, Match,
 } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
@@ -68,6 +68,12 @@ export type PdfClient = {
   listFields(sourceId: SourceId | undefined, page: number): Promise<SourceField[]>
   /** The description the source document carries. See PdfService.metadata. */
   metadata(): Promise<DocumentMetadata>
+  /** Every match across the document. See PdfService.find. */
+  find(
+    query: string,
+    options?: FindOptions,
+    limit?: number,
+  ): Promise<{ matches: Array<{ page: number } & Match>; capped: boolean }>
   /** Compress the export. See PdfService.compress. */
   compress(
     preset: CompressionPreset,
@@ -229,6 +235,11 @@ export function createPdfClient(): PdfClient {
     async metadata() {
       await ready
       return remote.metadata()
+    },
+
+    async find(query, options, limit) {
+      await ready
+      return remote.find(query, options, limit)
     },
 
     async compress(preset, editDoc, fonts) {

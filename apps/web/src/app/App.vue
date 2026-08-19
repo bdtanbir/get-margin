@@ -11,6 +11,7 @@ import StampDialog from '@/features/stamp/StampDialog.vue'
 import ProtectDialog from '@/features/protect/ProtectDialog.vue'
 import MetadataDialog from '@/features/metadata/MetadataDialog.vue'
 import CompressDialog from '@/features/compress/CompressDialog.vue'
+import FindPanel from '@/features/find/FindPanel.vue'
 import { useDialogsStore } from '@/stores/dialogs'
 import RestorePrompt from '@/features/document/RestorePrompt.vue'
 import CommandPalette from '@/features/command/CommandPalette.vue'
@@ -88,5 +89,10 @@ function record(err: Error): void {
     <ProtectDialog v-if="dialogs.isOpen('protect')" @close="dialogs.close()" />
     <MetadataDialog v-if="dialogs.isOpen('metadata')" @close="dialogs.close()" />
     <CompressDialog v-if="dialogs.isOpen('compress')" @close="dialogs.close()" />
+    <!--
+      A panel, not a dialog: searching is something you do WHILE reading,
+      and a modal would cover the document being searched.
+    -->
+    <FindPanel v-if="dialogs.isOpen('find')" @close="dialogs.close()" />
   </ErrorBoundary>
 </template>

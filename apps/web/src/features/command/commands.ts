@@ -116,6 +116,13 @@ export function useCommands(): ComputedRef<Command[]> {
         run: () => dialogs.show('compress'),
       },
       {
+        id: 'doc:find',
+        label: 'Find in document…',
+        group: 'Document',
+        available: hasDocument,
+        run: () => dialogs.show('find'),
+      },
+      {
         id: 'doc:undo',
         label: 'Undo',
         group: 'Document',
