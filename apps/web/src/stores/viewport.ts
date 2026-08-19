@@ -172,7 +172,7 @@ export const useViewportStore = defineStore('viewport', () => {
             // to the next task instead of abandoning the whole drain.
             let result
             try {
-              result = await getPdfClient().render(task.sourceIndex, task.scale)
+              result = await getPdfClient().render(task.sourceIndex, task.scale, task.sourceId)
             } catch (e) {
               lastError.value = e instanceof Error ? e.message : String(e)
               continue

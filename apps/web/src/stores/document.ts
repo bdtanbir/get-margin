@@ -13,7 +13,9 @@ export type SourceId = string
 
 export type PageState = {
   id: PageId
-  /** Index in the ORIGINAL document. Never used for display ordering. */
+  /** Which opened file this page came from. Required to render it once merge exists. */
+  sourceId: SourceId
+  /** Index in THAT source. Never used for display ordering. */
   sourceIndex: number
   /**
    * EFFECTIVE geometry: the source page's own box and rotation with the
@@ -120,6 +122,7 @@ export const useDocumentStore = defineStore('document', {
 
         const state: PageState = {
           id,
+          sourceId: entry.sourceId,
           sourceIndex: entry.sourceIndex,
           geometry: {
             cropBox: entry.cropBox ?? base.cropBox,

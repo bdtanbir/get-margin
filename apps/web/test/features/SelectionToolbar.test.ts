@@ -7,7 +7,7 @@ import { useSelectionStore } from '@/stores/selection'
 import type { PageState } from '@/stores/document'
 import type { EditObject } from '@margin/pdf-core'
 
-const page: PageState = { id: 'p1', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
+const page: PageState = { id: 'p1', sourceId: 'src-0', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
 
 function obj(id: string, z = 1): EditObject {
   return {

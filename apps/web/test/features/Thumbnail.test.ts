@@ -14,7 +14,7 @@ beforeEach(() => {
 
 const GEOM = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
 const ROTATED_GEOM = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 90 as const }
-const page = { id: 'p1', sourceIndex: 4, geometry: GEOM }
+const page = { id: 'p1', sourceId: 'src-0', sourceIndex: 4, geometry: GEOM }
 
 describe('Thumbnail', () => {
   it('labels itself with the display position, not the source index', () => {

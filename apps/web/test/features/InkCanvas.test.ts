@@ -7,7 +7,7 @@ import { useToolsStore } from '@/stores/tools'
 import type { PageState } from '@/stores/document'
 import type { InkObject } from '@margin/pdf-core'
 
-const page: PageState = { id: 'p1', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
+const page: PageState = { id: 'p1', sourceId: 'src-0', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
 
 /** jsdom canvases have no 2D context; the component must not depend on one. */
 const ctx2d = {

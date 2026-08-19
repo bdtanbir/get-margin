@@ -16,7 +16,7 @@ export type DocumentInfo = {
   sourceId: SourceId
 }
 
-export type RenderRequest = { id: number; page: number; scale: number }
+export type RenderRequest = { id: number; page: number; scale: number; sourceId?: SourceId }
 export type RenderResult = { width: number; height: number; rgba: Uint8Array; page: number; scale: number }
 
 /**
@@ -48,6 +48,10 @@ export class PdfService {
 
   /** The id of the file the user opened first, and the one `#doc` renders. */
   #primarySource: SourceId | undefined
+
+  /** One extra open handle, for rendering pages merged in from another file. */
+  #secondary: PdfDocument | undefined
+  #secondaryId: SourceId | undefined
 
   /**
    * Per-page text geometry, cached for the life of the open document.
@@ -121,6 +125,11 @@ export class PdfService {
   dropSource(id: SourceId): void {
     if (id === this.#primarySource) return
     this.#sources.delete(id)
+    if (this.#secondaryId === id) {
+      this.#secondary?.close()
+      this.#secondary = undefined
+      this.#secondaryId = undefined
+    }
   }
 
   sourceIds(): SourceId[] {
@@ -144,10 +153,34 @@ export class PdfService {
    * finest granularity available).
    */
   render(req: RenderRequest): RenderResult | null {
-    const doc = this.#doc
+    const doc = this.#docFor(req.sourceId)
     if (!doc) throw new Error('no document open')
     const { width, height, rgba } = renderPage(doc, req.page, req.scale)
     return { width, height, rgba, page: req.page, scale: req.scale }
+  }
+
+  /**
+   * The open handle for a source, opening it if this is the first page from
+   * that file to be rendered.
+   *
+   * A HANDLE is the expensive resource here, not the bytes: parsing keeps a
+   * page tree and object cache alive. Only the primary document and the
+   * most recently used secondary are kept open, so scrolling through a
+   * merge of two files costs two handles rather than one per source. A grid
+   * spanning many files will reopen as it scrolls; that is a measured
+   * trade-off to revisit if merges get wide, not an oversight.
+   */
+  #docFor(sourceId: SourceId | undefined): PdfDocument | undefined {
+    if (!sourceId || sourceId === this.#primarySource) return this.#doc
+    if (this.#secondaryId === sourceId && this.#secondary) return this.#secondary
+
+    const bytes = this.#sources.get(sourceId)
+    if (!bytes) return this.#doc
+
+    this.#secondary?.close()
+    this.#secondary = PdfDocument.open(bytes)
+    this.#secondaryId = sourceId
+    return this.#secondary
   }
 
   /**
@@ -210,6 +243,9 @@ export class PdfService {
   close(): void {
     this.#doc?.close()
     this.#doc = undefined
+    this.#secondary?.close()
+    this.#secondary = undefined
+    this.#secondaryId = undefined
     // Every source, not just the first: a merged-away document still costs
     // its full byte payload until it is dropped.
     this.#sources.clear()

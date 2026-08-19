@@ -7,7 +7,7 @@ const GEOM = { cropBox: [0, 0, 612, 792] as [number, number, number, number], ro
 function doc(n: number) {
   const pageOrder = Array.from({ length: n }, (_, i) => `p${i}`)
   const pages = Object.fromEntries(
-    pageOrder.map((id, i) => [id, { id, sourceIndex: i, geometry: GEOM }]),
+    pageOrder.map((id, i) => [id, { id, sourceId: 'src-0', sourceIndex: i, geometry: GEOM }]),
   )
   return { pageOrder, pages }
 }

@@ -8,12 +8,14 @@ import type { EditObject } from '@margin/pdf-core'
 
 const page: PageState = {
   id: 'p1',
+  sourceId: 'src-0',
   sourceIndex: 0,
   geometry: { cropBox: [0, 0, 612, 792], rotate: 0 },
 }
 
 const turned: PageState = {
   id: 'p2',
+  sourceId: 'src-0',
   sourceIndex: 1,
   geometry: { cropBox: [0, 0, 612, 792], rotate: 90 },
 }

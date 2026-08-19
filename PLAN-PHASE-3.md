@@ -10,6 +10,28 @@
 
 **Spec:** `PHASE-3-DESIGN.md`. Measurements it argues from: `docs/findings/07-phase-3-preflight.md`.
 
+> ## Status: BUILT, with two things outstanding
+>
+> Tasks 41–51 are implemented and tested. The step checkboxes below are the historical plan text;
+> the authoritative status is here and in `PLAN.md` §7.
+>
+> **Outstanding:**
+> - **Cross-viewer verification** (Acrobat / Preview / Chrome). No GUI here, as in Phase 2. Files
+>   and matrix: `docs/findings/08-phase-3-verification.md`.
+> - **Page selection is desktop-only.** The phone's pages panel closes when a thumbnail is tapped —
+>   deliberate Phase 1 navigation behaviour — which makes tap-to-select unreachable. Merge, split
+>   and crop do work on phone. Needs the touch affordance `PHASE-3-DESIGN.md` §6 called for.
+>
+> **Where the build departed from the plan text**, each commented at the site:
+> - Source registration folded INTO the `insertPages` op rather than a second store method, so
+>   `applyOp` stays the only writer and undoing a merge removes the source with its pages.
+> - `isUntouched` takes the source's page count: without it a 3-page extract of a 12-page document
+>   looks untouched, because pages 0,1,2 do sit at positions 0,1,2.
+> - One `PDFGraftMap` **per source** — a map is bound to the document it first grafted from.
+> - Page selection is a Pinia store, not the module-scope composable the plan sketched.
+> - `render()` gained a `sourceId`: it previously always used the primary document, so a merged-in
+>   page rendered the wrong file's page silently.
+
 ## Global Constraints
 
 Every task's requirements implicitly include this section.

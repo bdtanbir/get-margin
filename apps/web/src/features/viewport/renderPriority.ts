@@ -16,6 +16,12 @@ export function effectiveScale(zoom: number, dpr: number): number {
 
 export type RenderTask = {
   pageId: PageId
+  /**
+   * Which opened file the page belongs to. Without this the worker renders
+   * the index out of the PRIMARY document, so a merged-in page silently
+   * shows a page from the wrong file.
+   */
+  sourceId: string
   sourceIndex: number
   scale: number
   tier: 'placeholder' | 'full'
@@ -45,7 +51,9 @@ export function planRenders(args: {
       const page = pageId ? pages[pageId] : undefined
       if (!pageId || !page) continue
       if (cache.has(cacheKey(pageId, scale))) continue
-      full.push({ pageId, sourceIndex: page.sourceIndex, scale, tier: 'full' })
+      full.push({
+        pageId, sourceId: page.sourceId, sourceIndex: page.sourceIndex, scale, tier: 'full',
+      })
     }
   }
 
@@ -55,7 +63,11 @@ export function planRenders(args: {
     if (!page) continue
     if (cache.has(cacheKey(pageId, PLACEHOLDER_SCALE))) continue
     placeholders.push({
-      pageId, sourceIndex: page.sourceIndex, scale: PLACEHOLDER_SCALE, tier: 'placeholder',
+      pageId,
+      sourceId: page.sourceId,
+      sourceIndex: page.sourceIndex,
+      scale: PLACEHOLDER_SCALE,
+      tier: 'placeholder',
     })
   }
 

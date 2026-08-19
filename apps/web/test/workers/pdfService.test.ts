@@ -291,3 +291,56 @@ describe('PdfService multi-source', () => {
     expect(info.sourceId).toBe(svc.sourceIds()[0])
   })
 })
+
+// The bug this guards: render() used to always use the PRIMARY document, so
+// a merged-in page rendered whatever the primary happened to have at that
+// index -- silently the wrong page, not an error.
+describe('PdfService.render across sources', () => {
+  it('renders a page from the source it belongs to', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+
+    const primary = svc.render({ id: 1, page: 0, scale: 1 })!
+    const secondary = svc.render({ id: 2, page: 3, scale: 1, sourceId: added.sourceId })!
+
+    // Different documents, so the rendered pixels must differ.
+    expect(Array.from(primary.rgba)).not.toEqual(Array.from(secondary.rgba))
+  })
+
+  it('renders the same page identically whichever way the source is named', () => {
+    const svc = new PdfService()
+    const primary = svc.open(bytes('simple-text')).sourceId
+    const implicit = svc.render({ id: 1, page: 0, scale: 1 })!
+    const explicit = svc.render({ id: 2, page: 0, scale: 1, sourceId: primary })!
+    expect(Array.from(implicit.rgba)).toEqual(Array.from(explicit.rgba))
+  })
+
+  it('falls back to the primary for an unknown source rather than throwing', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    expect(() => svc.render({ id: 1, page: 0, scale: 1, sourceId: 'gone' })).not.toThrow()
+  })
+
+  it('renders a merged page after the primary was rendered, and back again', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+    const first = svc.render({ id: 1, page: 0, scale: 1 })!
+    svc.render({ id: 2, page: 5, scale: 1, sourceId: added.sourceId })
+    // Swapping the secondary handle out and back must not corrupt the primary.
+    const again = svc.render({ id: 3, page: 0, scale: 1 })!
+    expect(Array.from(again.rgba)).toEqual(Array.from(first.rgba))
+  })
+
+  it('closes the secondary handle when its source is dropped', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const added = svc.addSource(bytes('multi-page'))
+    svc.render({ id: 1, page: 5, scale: 1, sourceId: added.sourceId })
+    svc.dropSource(added.sourceId)
+    // The source is gone, so it falls back to the primary rather than
+    // rendering through a handle whose bytes were dropped.
+    expect(() => svc.render({ id: 2, page: 0, scale: 1, sourceId: added.sourceId })).not.toThrow()
+  })
+})

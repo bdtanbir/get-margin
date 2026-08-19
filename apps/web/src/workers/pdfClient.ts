@@ -35,7 +35,7 @@ export type PdfClient = {
    * so "between renders" is the finest granularity cancellation can ever
    * have here — there is no finer mechanism to build.
    */
-  render(page: number, scale: number): Promise<RenderResult | null>
+  render(page: number, scale: number, sourceId?: SourceId): Promise<RenderResult | null>
   /**
    * The exported document's bytes. See PdfService.save.
    *
@@ -192,10 +192,10 @@ export function createPdfClient(): PdfClient {
       return remote.authenticate(password)
     },
 
-    async render(page, scale) {
+    async render(page, scale, sourceId) {
       await ready
       const id = nextId++
-      return await remote.render({ id, page, scale })
+      return await remote.render({ id, page, scale, ...(sourceId ? { sourceId } : {}) })
     },
 
     async save(editDoc, fonts, onProgress) {
