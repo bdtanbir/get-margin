@@ -2,10 +2,13 @@
 import { computed } from 'vue'
 import { svgViewBox, svgRootTransform } from '@margin/transform'
 import type { PageState } from '@/stores/document'
+import type { EditObject } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
+import { useToolsStore } from '@/stores/tools'
 import ObjectLayer from './ObjectLayer.vue'
 import SelectionChrome from './SelectionChrome.vue'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
+import { useDrawTool, isDrawable, SHAPE_DEFAULTS } from './useDrawTool'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -27,6 +30,39 @@ const objects = computed(() =>
     .filter((o) => o.pageId === props.page.id)
     .sort((a, b) => a.z - b.z),
 )
+
+const tools = useToolsStore()
+const draw = useDrawTool(() => props.page, () => props.zoom)
+
+/**
+ * The capture surface exists only while a drawing tool is active. A
+ * permanently-mounted pointer-events-auto layer over the page would swallow
+ * every click meant for an object beneath it, which is exactly the bug the
+ * pointer-events-none default on the <svg> avoids.
+ */
+const drawing = computed(() => isDrawable(tools.active))
+
+/**
+ * The in-flight shape, rendered from the SAME components the committed
+ * objects use so the preview cannot drift from the result. Synthesised
+ * rather than stored: a draft is not an EditObject and must never reach
+ * edit history.
+ */
+const draft = computed(() => {
+  const d = tools.draft
+  if (!d || d.pageId !== props.page.id || !isDrawable(tools.active)) return undefined
+  return {
+    ...SHAPE_DEFAULTS,
+    id: '__draft__',
+    pageId: d.pageId,
+    kind: tools.active,
+    rect: d.rect,
+    rotation: 0,
+    z: 0,
+    locked: false,
+    opacity: 1,
+  } as EditObject
+})
 </script>
 
 <template>
@@ -61,8 +97,20 @@ const objects = computed(() =>
           :object="o"
           @pointerdown="edits.select([o.id])"
         />
+        <ObjectLayer v-if="draft" :object="draft" />
       </g>
     </svg>
+    <!--
+      Mounted only while a drawing tool is active, and AFTER the <svg> so it
+      sits above the objects: while drawing, a pointerdown belongs to the new
+      shape, not to whatever happens to be underneath.
+    -->
+    <div
+      v-if="drawing"
+      data-draw-surface
+      class="pointer-events-auto absolute inset-0 cursor-crosshair"
+      @pointerdown="draw.onPointerDown"
+    />
     <!--
       Layer 3 sits OUTSIDE the <svg> (spec 1.3) and positions against this
       same box, so its DOM handles get ordinary Tailwind, focus, and mobile

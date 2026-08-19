@@ -130,6 +130,13 @@ describe('PdfService.save', () => {
   // The other side of that branch: once there IS an object, save() must go
   // through replay -- and replay refuses a kind it has no writer for rather
   // than silently exporting a document missing the user's edit.
+  //
+  // The kind here must be one with NO writer registered. It was 'rect' until
+  // Task 29 gave rect a writer, at which point this test started exercising
+  // the shape writer against a stub object instead of the branch it names.
+  // 'signature' is the last kind to gain a writer (Task 35); when it does,
+  // move this to whichever kind is still unregistered, or drop it in favour
+  // of a WRITERS-map assertion.
   it('routes through replay once the edit document has objects', () => {
     const svc = new PdfService()
     svc.open(bytes('simple-text'))
@@ -137,9 +144,35 @@ describe('PdfService.save', () => {
       version: 1, sourceHash: '', pageOrder: ['p0'],
       pages: { p0: { sourceIndex: 0 } },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      objects: { a1: { id: 'a1', pageId: 'p0', kind: 'rect', z: 1 } as any },
+      objects: { a1: { id: 'a1', pageId: 'p0', kind: 'signature', z: 1 } as any },
       nextZ: 2,
     }
     expect(() => svc.save(edits)).toThrow(/no writer registered/)
+  })
+
+  // The registered path, end to end through the worker service: a real rect
+  // exports without throwing and produces a document that is no longer the
+  // input bytes.
+  it('exports a drawn shape through the worker save path', () => {
+    const svc = new PdfService()
+    const src = bytes('simple-text')
+    svc.open(src.slice())
+    const edits = {
+      version: 1, sourceHash: '', pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0 } },
+      objects: {
+        a1: {
+          id: 'a1', pageId: 'p0', kind: 'rect',
+          rect: { x: 100, y: 300, w: 120, h: 80 },
+          rotation: 0, z: 1, locked: false, opacity: 1,
+          stroke: null, strokeWidth: 2, fill: [1, 0, 0],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+      },
+      nextZ: 2,
+    }
+    const out = svc.save(edits)
+    expect(out.byteLength).toBeGreaterThan(0)
+    expect(Array.from(out)).not.toEqual(Array.from(src))
   })
 })

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
 import {
   pageSizePt, pageViewSize, pdfToView, viewToPdf, pdfRectToView, viewRectToPdf,
-  svgViewBox, svgRootTransform, normalizeRotation, type PageGeometry, type Rotation,
+  svgViewBox, svgRootTransform, normalizeRotation, rectFromPoints, directedRect,
+  type PageGeometry, type Rotation,
 } from '../src/index.js'
 
 const LETTER: PageGeometry = { cropBox: [0, 0, 612, 792], rotate: 0 }
@@ -345,4 +346,34 @@ describe('cross-check: svgRootTransform composes to the same mapping as pdfToVie
       }
     })
   }
+})
+
+describe('rectFromPoints', () => {
+  it('normalises a drag started from any corner', () => {
+    const expected = { x: 10, y: 20, w: 30, h: 40 }
+    expect(rectFromPoints({ x: 10, y: 20 }, { x: 40, y: 60 })).toEqual(expected)
+    expect(rectFromPoints({ x: 40, y: 60 }, { x: 10, y: 20 })).toEqual(expected)
+    expect(rectFromPoints({ x: 40, y: 20 }, { x: 10, y: 60 })).toEqual(expected)
+    expect(rectFromPoints({ x: 10, y: 60 }, { x: 40, y: 20 })).toEqual(expected)
+  })
+
+  it('produces a zero-size rect for a click without a drag', () => {
+    expect(rectFromPoints({ x: 5, y: 5 }, { x: 5, y: 5 })).toEqual({ x: 5, y: 5, w: 0, h: 0 })
+  })
+})
+
+describe('directedRect', () => {
+  // A right-to-left arrow must keep its head on the left end; normalising
+  // would move it to the right and silently reverse what the user drew.
+  it('keeps the drag direction in the sign of w and h', () => {
+    expect(directedRect({ x: 40, y: 60 }, { x: 10, y: 20 })).toEqual({ x: 40, y: 60, w: -30, h: -40 })
+  })
+
+  it('agrees with rectFromPoints once normalised', () => {
+    const a = { x: 40, y: 60 }
+    const b = { x: 10, y: 20 }
+    const d = directedRect(a, b)
+    expect({ x: Math.min(d.x, d.x + d.w), y: Math.min(d.y, d.y + d.h), w: Math.abs(d.w), h: Math.abs(d.h) })
+      .toEqual(rectFromPoints(a, b))
+  })
 })

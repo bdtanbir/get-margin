@@ -2,6 +2,9 @@
 import { computed, type Component } from 'vue'
 import type { EditObject, ObjectKind } from '@margin/pdf-core'
 import RectObject from './objects/RectObject.vue'
+import EllipseObject from './objects/EllipseObject.vue'
+import LineObject from './objects/LineObject.vue'
+import ArrowObject from './objects/ArrowObject.vue'
 
 const props = defineProps<{ object: EditObject }>()
 
@@ -20,7 +23,12 @@ const props = defineProps<{ object: EditObject }>()
  * table is responsible for is the mapping, and `Partial<Record<ObjectKind,
  * ...>>` is what keeps a typo'd or retired kind key from compiling.
  */
-const COMPONENTS: Partial<Record<ObjectKind, Component>> = { rect: RectObject }
+const COMPONENTS: Partial<Record<ObjectKind, Component>> = {
+  rect: RectObject,
+  ellipse: EllipseObject,
+  line: LineObject,
+  arrow: ArrowObject,
+}
 
 const component = computed(() => COMPONENTS[props.object.kind])
 

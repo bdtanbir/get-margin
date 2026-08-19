@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ShapeObject } from '@margin/pdf-core'
+import { svgFill, svgStroke } from './svgPaint'
 
 const props = defineProps<{ object: ShapeObject }>()
 
-/** `[0.2,0.4,1]` (MuPDF's 0..1 range) -> `rgb(51,102,255)` for CSS/SVG. */
-const rgb = (c: [number, number, number] | null): string =>
-  c ? `rgb(${c.map((n) => Math.round(n * 255)).join(',')})` : 'none'
-
-const fill = computed(() => rgb(props.object.fill))
-const stroke = computed(() => rgb(props.object.stroke))
+const fill = computed(() => svgFill(props.object.fill))
+const stroke = computed(() => svgStroke(props.object.stroke))
 </script>
 
 <template>

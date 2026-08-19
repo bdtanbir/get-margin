@@ -124,6 +124,32 @@ export function viewRectToPdf(r: ViewRect, g: PageGeometry, zoom: number): Rect 
 }
 
 /**
+ * Two dragged points -> a rect with non-negative w/h, matching the Rect
+ * invariant above. Which corner the drag started from is not information the
+ * stored rect carries, so it is normalised away here rather than leaving
+ * every drawing tool to reinvent the same Math.min/Math.abs pair.
+ */
+export function rectFromPoints(a: Point, b: Point): Rect {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    w: Math.abs(b.x - a.x),
+    h: Math.abs(b.y - a.y),
+  }
+}
+
+/**
+ * Two dragged points -> a rect that KEEPS the drag's direction as the sign
+ * of w/h. Deliberately violates the Rect invariant, and only lines and
+ * arrows may use it: an arrow drawn right-to-left must export an arrowhead
+ * on the left end, and a normalised rect has thrown that away. Anything with
+ * an interior (rect, ellipse, whiteout, text) wants `rectFromPoints`.
+ */
+export function directedRect(a: Point, b: Point): Rect {
+  return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y }
+}
+
+/**
  * SVG overlay viewBox — the DISPLAYED extent (post-rotation) in points, with
  * a zero origin. This must agree with svgRootTransform(), which maps content
  * into that same rotated extent: on a quarter-turned page the viewBox is

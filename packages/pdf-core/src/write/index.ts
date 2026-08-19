@@ -2,6 +2,7 @@ import * as mupdf from 'mupdf'
 import { withDocument, withPage, SAVE_OPTIONS } from './session.js'
 import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectKind } from './types.js'
 import type { PageGeometry } from '@margin/transform'
+import { writeShape } from './objects/shape.js'
 
 export type WriteContext = {
   raw: mupdf.PDFDocument
@@ -18,6 +19,14 @@ export type ObjectWriter = (ctx: WriteContext, object: EditObject) => void
  * silently-dropped object in someone's exported document.
  */
 export const WRITERS: Partial<Record<ObjectKind, ObjectWriter>> = {}
+
+// Task 29. All four shapes share one writer -- they differ only in the path
+// they emit, not in how colour, opacity, or the painting operator are
+// resolved.
+WRITERS.rect = writeShape
+WRITERS.ellipse = writeShape
+WRITERS.line = writeShape
+WRITERS.arrow = writeShape
 
 /**
  * Build the exported document.
@@ -81,3 +90,4 @@ export function replay(sourceBytes: Uint8Array, editDoc: EditDocument): Uint8Arr
 export { withDocument, withPage, SAVE_OPTIONS } from './session.js'
 export { toAnnotSpace, toContentSpace, num } from './coords.js'
 export { appendContent, addResource, fillColor, strokeColor, alphaState } from './content.js'
+export { writeShape } from './objects/shape.js'
