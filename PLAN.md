@@ -595,7 +595,24 @@ Phase 2, and a run on real phone hardware. Both are gating — see below.
 
 ### Phase 5 — Forms · weeks 9–12
 
+**Built.** Design: `PHASE-5-DESIGN.md`. Plan: `PLAN-PHASE-5.md` (Tasks 66–78). Pre-flight:
+`docs/findings/12-phase-5-preflight.md`. Verification: `docs/findings/13-phase-5-verification.md`.
+
 Fill existing fields (interactive DOM widgets) · create fields (text, multiline, dropdown, checkbox, radio, signature box) · properties panel · tab-order editor · AcroForm setup · flatten-form-on-export option.
+
+The phase is organised by one decision: filling a field someone else authored and creating a new one
+are different features. Filling is a value keyed by field name; creating is an object. Modelling
+fills as objects would make a form sent to you draggable, and would materialise one object per field
+on open — defeating the byte-identical pass-through before the user had typed anything.
+
+The mandated radio-group spike paid for itself immediately: the spec's inference was wrong, and the
+same misunderstanding was waiting in three separate places (writer, reader, fill path), each
+producing a document where every button in a group is on at once and nothing throws.
+
+**Outstanding**: the spec's own condition — human verification that created fields are actually
+interactive in Acrobat and Chrome — plus the cross-viewer and real-phone checks carried since
+Phase 2. Field appearance is minimal and `/DA` names Helvetica only, so a created field cannot use
+the bundled body faces.
 
 > **Confirmed at 3 weeks by the Phase 0 spike** (`docs/findings/04-raw-objects.md`) — field creation measured at ~9 lines/field plus ~20 lines of one-time AcroForm/DR wiring, with mupdf auto-generating `/AP` appearance streams (including two-state checkboxes) for free, so the estimate holds rather than needing the +1 week hedge the plan originally carried. Two things still gate calling this phase *done*, not just week 12: a half-day radio-group mini-spike at the start of the phase (untested parent/kid `/T`+`/AS` semantics), and human verification that the created fields are actually interactive in Acrobat and Chrome.
 
