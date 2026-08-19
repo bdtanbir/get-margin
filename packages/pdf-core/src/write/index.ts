@@ -15,6 +15,7 @@ import { writeInk } from './objects/ink.js'
 import { writeLink } from './objects/link.js'
 import { writeMarkup } from './objects/markup.js'
 import { writeField } from './objects/field.js'
+import { writeStamp } from './objects/stamp.js'
 export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
 export { listFields, fieldKey, applyFieldValues, hasAcroForm } from './fields.js'
 export type { SourceField, SourceFieldType } from './fields.js'
@@ -91,6 +92,12 @@ WRITERS.signature = writeImage
 // Task 67. Form fields the USER created -- filling a field that already
 // exists in the source is not an object and does not come through here.
 WRITERS.field = writeField
+
+// Task 79. Watermarks, page numbers, headers, footers, and Bates numbers
+// are CONTENT, not annotations -- the deliberate opposite of the ink and
+// markup writers above. A watermark a reader can select and delete is not a
+// watermark.
+WRITERS.stamp = writeStamp
 
 WRITERS.highlight = writeMarkup
 WRITERS.underline = writeMarkup
@@ -290,7 +297,9 @@ export {
   stripActiveContent, anythingStripped, nothingStripped, type StrippedContent,
 } from './sanitize.js'
 export { toAnnotSpace, toContentSpace, num } from './coords.js'
-export { appendContent, addResource, fillColor, strokeColor, alphaState } from './content.js'
+export {
+  appendContent, prependContent, addResource, fillColor, strokeColor, alphaState,
+} from './content.js'
 export { writeShape } from './objects/shape.js'
 export { writeWhiteout } from './objects/whiteout.js'
 export { writeText, ASCENT_RATIO, LINE_HEIGHT } from './objects/text.js'
@@ -300,6 +309,7 @@ export { createXObjectCache, type XObjectCache } from './xobject.js'
 export { writeInk } from './objects/ink.js'
 export { writeLink } from './objects/link.js'
 export { writeMarkup } from './objects/markup.js'
+export { writeStamp, resolveTokens, batesNumber, type StampContext } from './objects/stamp.js'
 export {
   writeField, ensureAcroForm, pageAnnots, commonFlags, newWidget,
   FIELD_READ_ONLY, FIELD_REQUIRED, TX_MULTILINE, BTN_NO_TOGGLE_OFF, BTN_RADIO, CH_COMBO,

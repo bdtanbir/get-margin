@@ -44,6 +44,36 @@ export function appendContent(
 }
 
 /**
+ * The same, but UNDER everything already on the page.
+ *
+ * A watermark drawn over a photograph is unreadable and one drawn under it
+ * is invisible, so both are wanted and neither is the obvious default --
+ * this is the half the ordinary append cannot express.
+ *
+ * The existing content is not modified: a new array is built with this
+ * stream first. PDF concatenates a /Contents array into one stream, so
+ * position in the array IS paint order.
+ */
+export function prependContent(
+  raw: mupdf.PDFDocument,
+  page: mupdf.PDFPage,
+  ops: string,
+): void {
+  const stream = raw.addStream(`q\n${ops}\nQ\n`, {})
+  const pageObj = page.getObject()
+  const contents = pageObj.get('Contents')
+
+  const array = raw.newArray()
+  array.push(stream)
+  if (contents.isArray()) {
+    contents.forEach((entry) => array.push(entry))
+  } else if (!contents.isNull()) {
+    array.push(contents)
+  }
+  pageObj.put('Contents', array)
+}
+
+/**
  * Register a resource under /Resources/<category>/<name>, creating the
  * intermediate dictionaries when the page has none. Returns the name the
  * content stream should reference.

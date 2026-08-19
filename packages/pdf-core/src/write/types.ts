@@ -8,6 +8,7 @@ export type ObjectKind =
   | 'ink' | 'highlight' | 'underline' | 'strikeout'
   | 'whiteout' | 'link' | 'signature'
   | 'field'
+  | 'stamp'
 
 /** sRGB, each channel 0..1 — the range MuPDF's colour setters take. */
 export type Color = [number, number, number]
@@ -122,6 +123,35 @@ export type FieldObject = BaseObject & {
   fontSize: number
 }
 
+/**
+ * A watermark, page number, header, footer, or Bates number.
+ *
+ * ONE kind for all five, because they differ in position, template, and
+ * rotation -- not in how they are drawn. Five kinds would be five places to
+ * fix the same bug, and the stamp dialog already distinguishes them.
+ *
+ * `text` is the RESOLVED string for this page, not the template: tokens are
+ * substituted when the objects are generated, so replay is a pure function
+ * of the edit document and does not need to know the page count.
+ */
+export type StampObject = BaseObject & {
+  kind: 'stamp'
+  /** Which preset produced this, for the inspector and for editing it later. */
+  stampKind: 'watermark' | 'pageNumber' | 'header' | 'footer' | 'bates'
+  /** The resolved text for THIS page. See resolveTokens for the template. */
+  text: string
+  fontFamily: string
+  fontSize: number
+  color: Color
+  align: 'left' | 'center' | 'right'
+  /**
+   * Draw UNDER the page's existing content rather than over it. A watermark
+   * over a photograph is unreadable; under it is invisible. Both are
+   * wanted, so neither is a default the writer can pick.
+   */
+  behind: boolean
+}
+
 export type SignatureObject = BaseObject & {
   kind: 'signature'
   data: Uint8Array
@@ -131,6 +161,7 @@ export type SignatureObject = BaseObject & {
 export type EditObject =
   | TextObject | ImageObject | ShapeObject | WhiteoutObject
   | InkObject | MarkupObject | LinkObject | SignatureObject | FieldObject
+  | StampObject
 
 export type SourceId = string
 

@@ -8,7 +8,7 @@ export type {
   ObjectKind, Color, EditObject, EditDocument, Op,
   TextObject, ImageObject, ShapeObject, WhiteoutObject,
   InkObject, MarkupObject, LinkObject, SignatureObject,
-  FieldObject, FieldType, FieldValue,
+  FieldObject, FieldType, FieldValue, StampObject,
 } from './write/types.js'
 export { EDIT_DOCUMENT_VERSION, emptyEditDocument } from './write/types.js'
 export { listFields, fieldKey, hasAcroForm } from './write/fields.js'
