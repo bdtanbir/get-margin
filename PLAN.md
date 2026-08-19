@@ -532,9 +532,21 @@ Monorepo scaffold · design tokens + `ui/` primitives · both shells · upload/v
 
 ### Phase 2 — Edit core · weeks 2.5–6
 
+**Built.** Implementation plan: `PLAN-PHASE-2.md` (Tasks 22–40). Verification record:
+`docs/findings/06-phase-2-verification.md`. Export performance:
+`docs/findings/05-export-performance.md`.
+
 Edit store + `applyOp` + Immer undo/redo · SVG overlay + selection/transform handles + snapping · text · image · shapes · whiteout · links · freehand · text-quad index and selection · highlight/underline/strikeout · signature (draw/type/upload + background removal) · inspector panels · floating selection toolbar · **export pipeline v1** + golden tests.
 
 > **Milestone: annotate and sign a document, download it, and open it correctly in Acrobat, Preview, and Chrome.** Verify in all three — they disagree, and Preview is the most forgiving, so it will lie to you.
+
+**The milestone is NOT met yet.** Everything above the last clause is done and covered by goldens
+on unrotated, offset-CropBox, and quarter-turned pages; the Acrobat/Preview/Chrome half is
+**outstanding**, for the same reason Phase 0 left it outstanding — no GUI in the build
+environment. Sample files to open are in `docs/findings/evidence/phase-2-*.pdf` and the matrix to
+fill in is in the verification record. Two smaller items are deferred and recorded there:
+**snapping** (moved to Phase 4 by `PHASE-2-DESIGN.md` §0) and **adopting a document's existing
+links** into the edit store (Task 34 Step 5).
 
 ### Phase 3 — Page operations · weeks 6–7
 

@@ -5,10 +5,16 @@ import TopBar from '../TopBar.vue'
 import PageList from '@/features/viewport/PageList.vue'
 import ZoomPill from '@/features/viewport/ZoomPill.vue'
 import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
+import ToolStrip from '@/features/tools/ToolStrip.vue'
+import InspectorSheet from '@/features/tools/InspectorSheet.vue'
+import ImagePicker from '@/features/tools/ImagePicker.vue'
+import SignatureModal from '@/features/signature/SignatureModal.vue'
+import { useToolsStore } from '@/stores/tools'
 import IconButton from '@/ui/IconButton.vue'
 import { useDocumentStore } from '@/stores/document'
 
 const doc = useDocumentStore()
+const tools = useToolsStore()
 const pagesOpen = ref(false)
 
 // Amendment A2: no ResizeObserver/applyFit wiring here — see the identical
@@ -18,6 +24,10 @@ const pagesOpen = ref(false)
 
 <template>
   <div class="flex h-dvh flex-col">
+    <!-- Hidden file input for the Image tool; see ImagePicker.vue. -->
+    <ImagePicker v-if="doc.isReady" />
+    <!-- The Signature tool is a modal, not a page gesture. -->
+    <SignatureModal v-if="doc.isReady && tools.active === 'signature'" />
     <TopBar compact />
     <!--
       Amendment A3 (Task 21, supersedes the Task 20 version of this
@@ -47,13 +57,21 @@ const pagesOpen = ref(false)
     </main>
 
     <!--
-      Phase 2 replaces this with the scrollable tool strip + bottom sheet.
-      ZoomPill moved in here (Amendment A3) specifically because this is
-      the shell's one region that already reduces PageList's box via
-      ordinary layout (`shrink-0` sibling of a `flex-1` main) rather than
-      floating over it — exactly the "reserved space in the layout flow"
-      the amendment calls for.
+      The strip sits ABOVE the actions nav, not in place of it: both are
+      `shrink-0` siblings of the `flex-1` main, so each reduces PageList's
+      box through ordinary layout rather than floating over it — the
+      "reserved space in the layout flow" Amendment A3 calls for, which is
+      also why ZoomPill lives in the nav below.
     -->
+    <ToolStrip v-if="doc.isReady" />
+
+    <!--
+      Fixed-position sheet, so it overlays rather than reflowing the strip
+      and nav beneath it. It appears only with a selection, which is also
+      the only time its contents mean anything.
+    -->
+    <InspectorSheet v-if="doc.isReady" />
+
     <nav
       v-if="doc.isReady"
       class="flex h-14 shrink-0 items-center justify-between gap-2 border-t border-border

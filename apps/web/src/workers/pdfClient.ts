@@ -1,5 +1,6 @@
 import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
+import type { EditDocument, PageQuadIndex } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
 // comment in transferHandlers.ts for why both ends need it.
@@ -35,8 +36,53 @@ export type PdfClient = {
    * have here — there is no finer mechanism to build.
    */
   render(page: number, scale: number): Promise<RenderResult | null>
+  /**
+   * The exported document's bytes. See PdfService.save.
+   *
+   * `editDoc` is structure-cloned across the boundary, not transferred: the
+   * store keeps owning it, and any Uint8Array inside it (image/signature
+   * payloads) must survive on the main thread for the next export.
+   */
+  save(
+    editDoc?: EditDocument,
+    fonts?: Map<string, Uint8Array>,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<Uint8Array>
+  /**
+   * Character-level text geometry for one page, cached in the worker. See
+   * PdfService.quadIndex.
+   */
+  quadIndex(page: number): Promise<PageQuadIndex>
   close(): Promise<void>
   terminate(): void
+}
+
+/**
+ * How long an export may run before the client gives up.
+ *
+ * The readiness handshake covers worker BOOT only; nothing else bounded
+ * `save`, so a pathological document could leave the Download button
+ * spinning forever with no way back. Generous enough that a 300-page
+ * document with heavy edits finishes comfortably (measured in
+ * docs/findings/05-export-performance.md).
+ */
+export const EXPORT_TIMEOUT_MS = 120_000
+
+/**
+ * Rejects with `message` if `promise` has not settled in time.
+ *
+ * The worker keeps running after a timeout -- there is no way to interrupt
+ * synchronous WASM -- so this bounds the UI's wait, not the work. That is
+ * the point: the user gets a retryable error instead of a dead button.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms)
+    }),
+  ]).finally(() => clearTimeout(timer)) as Promise<T>
 }
 
 /**
@@ -142,6 +188,23 @@ export function createPdfClient(): PdfClient {
       await ready
       const id = nextId++
       return await remote.render({ id, page, scale })
+    },
+
+    async save(editDoc, fonts, onProgress) {
+      await ready
+      // Comlink.proxy so the worker can CALL this function rather than
+      // receiving a structured clone of it (functions do not clone).
+      const progress = onProgress ? Comlink.proxy(onProgress) : undefined
+      return withTimeout(
+        remote.save(editDoc, fonts, progress),
+        EXPORT_TIMEOUT_MS,
+        'The export took too long and was stopped. Try again, or remove some edits.',
+      )
+    },
+
+    async quadIndex(page) {
+      await ready
+      return remote.quadIndex(page)
     },
 
     async close() {

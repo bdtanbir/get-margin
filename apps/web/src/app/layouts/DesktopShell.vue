@@ -4,10 +4,17 @@ import TopBar from '../TopBar.vue'
 import PageList from '@/features/viewport/PageList.vue'
 import ZoomPill from '@/features/viewport/ZoomPill.vue'
 import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
+import ToolRail from '@/features/tools/ToolRail.vue'
+import Inspector from '@/features/tools/Inspector.vue'
+import ImagePicker from '@/features/tools/ImagePicker.vue'
+import SignatureModal from '@/features/signature/SignatureModal.vue'
+import { useToolsStore } from '@/stores/tools'
 import { useDocumentStore } from '@/stores/document'
 import { useViewportShortcuts } from '@/features/viewport/useViewportShortcuts'
+import { useEditShortcuts } from '@/features/tools/useEditShortcuts'
 
 const doc = useDocumentStore()
+const tools = useToolsStore()
 const panelOpen = ref(true)
 
 // Task 21: keyboard shortcuts are desktop-only (no physical keyboard
@@ -16,6 +23,10 @@ const panelOpen = ref(true)
 // this alone is sufficient scoping — no extra "is this active" guard
 // needed here.
 useViewportShortcuts()
+
+// Phase 2: undo/redo/delete. Until this, the history stack the edit store
+// maintains had no way to be reached from the UI at all.
+useEditShortcuts()
 
 // Amendment A2: PageList (features/viewport/PageList.vue) already owns a
 // ResizeObserver on its own scroller element and re-runs `vp.applyFit` on
@@ -30,9 +41,19 @@ useViewportShortcuts()
 
 <template>
   <div class="flex h-dvh flex-col">
+    <!-- Hidden file input for the Image tool; see ImagePicker.vue. -->
+    <ImagePicker v-if="doc.isReady" />
+    <!-- The Signature tool is a modal, not a page gesture. -->
+    <SignatureModal v-if="doc.isReady && tools.active === 'signature'" />
     <TopBar :panel-open="panelOpen" @toggle-panel="panelOpen = !panelOpen" />
     <div class="flex min-h-0 flex-1">
-      <!-- Phase 2 inserts the 64px tool rail here. -->
+      <!--
+        The rail is gated on a ready document for the same reason
+        ThumbnailPanel is: with no PDF open there is nothing for a tool to
+        act on, and an enabled-looking rail over the drop zone invites
+        clicks that cannot do anything.
+      -->
+      <ToolRail v-if="doc.isReady" />
       <ThumbnailPanel v-if="panelOpen && doc.isReady" />
       <!--
         Amendment A3: ZoomPill is floating chrome (`absolute`, positioned
@@ -60,7 +81,7 @@ useViewportShortcuts()
           <ZoomPill />
         </div>
       </main>
-      <!-- Phase 2 inserts the 320px inspector here. -->
+      <Inspector v-if="doc.isReady" />
     </div>
   </div>
 </template>

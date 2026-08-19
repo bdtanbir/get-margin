@@ -1,4 +1,7 @@
-import { PdfDocument, renderPage } from '@margin/pdf-core'
+import {
+  PdfDocument, renderPage, replay, buildQuadIndex,
+  type EditDocument, type PageQuadIndex,
+} from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
 export type DocumentInfo = {
@@ -20,6 +23,32 @@ export type RenderResult = { width: number; height: number; rgba: Uint8Array; pa
  */
 export class PdfService {
   #doc: PdfDocument | undefined
+  /**
+   * A pristine copy of the file the user opened, retained for the whole
+   * lifetime of the open document.
+   *
+   * This is what makes export a pure function of (sourceBytes, EditDocument):
+   * `replay()` (Task 24) builds a SECOND document from these bytes and never
+   * touches `#doc`, which is what keeps spec §1.5's deferred-bake invariant
+   * true — an edit never invalidates a page bitmap, because the document
+   * being rendered is never modified.
+   *
+   * Costs one extra resident copy of the file. `bytes` was transferred into
+   * this worker by pdfClient, so retaining the reference is free; it is not
+   * a second copy of anything the main thread still holds.
+   */
+  #sourceBytes: Uint8Array | undefined
+
+  /**
+   * Per-page text geometry, cached for the life of the open document.
+   *
+   * Extraction walks every glyph on the page, so re-running it as the user
+   * scrolls back and forth would be the dominant cost of text selection.
+   * The source document is never mutated (see #sourceBytes), so a page's
+   * quads cannot go stale while it is open; close() drops the cache with
+   * everything else.
+   */
+  #quadCache = new Map<number, PageQuadIndex>()
 
   #info(): DocumentInfo {
     const doc = this.#doc
@@ -42,6 +71,7 @@ export class PdfService {
    */
   open(bytes: Uint8Array): DocumentInfo {
     this.close()
+    this.#sourceBytes = bytes
     this.#doc = PdfDocument.open(bytes)
     return this.#info()
   }
@@ -69,8 +99,64 @@ export class PdfService {
     return { width, height, rgba, page: req.page, scale: req.scale }
   }
 
+  /**
+   * The exported document.
+   *
+   * With no edits, returns the user's original bytes untouched rather than a
+   * MuPDF re-serialisation — an unedited download should hand back exactly
+   * what was opened, not a normalised file with a different size. An e2e
+   * test (e2e/download.spec.ts) asserts that byte-for-byte identity.
+   *
+   * With edits, `replay` opens a SECOND document from `#sourceBytes` and
+   * never touches `#doc`, so exporting cannot invalidate a rendered page —
+   * spec §1.5's deferred-bake invariant.
+   *
+   * Returned by structured clone, not transfer: the `renderResult` handler in
+   * transferHandlers.ts only matches objects carrying an `rgba` field, so a
+   * bare Uint8Array is copied across the boundary and `#sourceBytes` survives.
+   * The "can be called twice" test pins that.
+   */
+  save(
+    editDoc?: EditDocument,
+    fonts?: Map<string, Uint8Array>,
+    onProgress?: (done: number, total: number) => void,
+  ): Uint8Array {
+    const src = this.#sourceBytes
+    if (!src) throw new Error('no document open')
+    if (!editDoc || Object.keys(editDoc.objects).length === 0) return src
+    // `fonts` is only consulted for text objects; a document without any
+    // never touches it, which is why it stays optional (Task 31). Under
+    // exactOptionalPropertyTypes, `{ fonts: undefined }` is NOT the same as
+    // omitting the key, so each property is only set when there is one.
+    //
+    // onProgress is a Comlink proxy: calling it posts a message and returns
+    // a promise this deliberately does not await. Awaiting would make the
+    // export wait on a main-thread round trip per page, and nothing here
+    // needs the acknowledgement.
+    return replay(src, editDoc, {
+      ...(fonts ? { fonts } : {}),
+      ...(onProgress ? { onProgress } : {}),
+    })
+  }
+
+  /**
+   * Character-level text geometry for one page, in MuPDF page space.
+   * See pdf-core/src/text/index.ts for why that space and not raw PDF space.
+   */
+  quadIndex(page: number): PageQuadIndex {
+    const doc = this.#doc
+    if (!doc) throw new Error('no document open')
+    const hit = this.#quadCache.get(page)
+    if (hit) return hit
+    const index = buildQuadIndex(doc, page)
+    this.#quadCache.set(page, index)
+    return index
+  }
+
   close(): void {
     this.#doc?.close()
     this.#doc = undefined
+    this.#sourceBytes = undefined
+    this.#quadCache.clear()
   }
 }

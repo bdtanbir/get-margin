@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useDocumentStore } from '../../src/stores/document.js'
+import { useEditsStore } from '../../src/stores/edits.js'
 
 const GEOM = { cropBox: [0, 0, 612, 792] as [number, number, number, number], rotate: 0 as const }
 
@@ -151,5 +152,13 @@ describe('useDocumentStore.openFile', () => {
     expect(s.status).toBe('error')
     expect(s.pageCount).toBe(0)
     expect(s.pageOrder).toHaveLength(0)
+  })
+
+  it('seeds the edit store with the same page ids it minted', async () => {
+    const doc = useDocumentStore()
+    const edits = useEditsStore()
+    await doc.openFile(fakeFile('contract.pdf', PDF_BYTES))
+    expect(edits.doc.pageOrder).toEqual(doc.pageOrder)
+    expect(edits.doc.sourceHash).toBe(doc.sourceHash)
   })
 })

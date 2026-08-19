@@ -1,0 +1,240 @@
+<script setup lang="ts">
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { svgViewBox, svgRootTransform } from '@margin/transform'
+import type { PageState } from '@/stores/document'
+import type { EditObject } from '@margin/pdf-core'
+import { useEditsStore } from '@/stores/edits'
+import { useToolsStore } from '@/stores/tools'
+import ObjectLayer from './ObjectLayer.vue'
+import SelectionChrome from './SelectionChrome.vue'
+import TextEditor from './TextEditor.vue'
+import InkCanvas from './InkCanvas.vue'
+import TextSelectionLayer from './TextSelectionLayer.vue'
+import MarkupObject from './objects/MarkupObject.vue'
+import { useTextSelection } from './useTextSelection'
+import { useSelectionStore } from '@/stores/selection'
+import { getPdfClient } from '@/workers/pdfClient'
+import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
+import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
+
+const props = defineProps<{ page: PageState; zoom: number }>()
+const edits = useEditsStore()
+
+/**
+ * Spec 1.3, Layer 2. The viewBox is the page's DISPLAYED extent in points
+ * and the root <g> carries all three of MuPDF's baked-in page-space
+ * transforms (CropBox origin to (0,0), y-flip, /Rotate). Both strings come
+ * from @margin/transform, which is property-tested against MuPDF's own
+ * getTransform() matrices -- this component must never compute either
+ * itself. Consequence: objects below render at raw stored PDF coordinates
+ * with no per-object maths, and zoom never touches this markup.
+ */
+const viewBox = computed(() => svgViewBox(props.page.geometry))
+const rootTransform = computed(() => svgRootTransform(props.page.geometry))
+
+const MARKUP_KINDS = ['highlight', 'underline', 'strikeout'] as const
+const isMarkup = (kind: string): boolean =>
+  (MARKUP_KINDS as readonly string[]).includes(kind)
+
+const onPage = computed(() =>
+  Object.values(edits.doc.objects)
+    .filter((o) => o.pageId === props.page.id)
+    .sort((a, b) => a.z - b.z),
+)
+
+const objects = computed(() => onPage.value.filter((o) => !isMarkup(o.kind)))
+
+/**
+ * Markup objects render OUTSIDE the y-flipped root <g>: their quads are in
+ * MuPDF PAGE space (top-down), unlike every other object's raw bottom-up
+ * rect. Putting them inside would flip them onto the mirror image of the
+ * text they mark -- which is precisely the bug the export path's
+ * markup.test.ts pins on the other side.
+ */
+const markup = computed(() => onPage.value.filter((o) => isMarkup(o.kind)))
+
+const tools = useToolsStore()
+const draw = useDrawTool(() => props.page, () => props.zoom)
+
+const selection = useSelectionStore()
+const svgEl = ref<SVGSVGElement | null>(null)
+
+/**
+ * Text selection is available under the select tool and under the three
+ * markup tools, which is exactly when the user is pointing at TEXT rather
+ * than drawing over it.
+ */
+const selecting = computed(() =>
+  (['select', 'highlight', 'underline', 'strikeout'] as const).includes(
+    tools.active as 'select' | 'highlight' | 'underline' | 'strikeout',
+  ),
+)
+
+/**
+ * The quad index is fetched lazily, once per page, and only when the user
+ * is actually in a text-selecting mode -- extracting every glyph on a page
+ * the user is merely scrolling past would be pure waste.
+ */
+const quadIndex = ref<Awaited<ReturnType<ReturnType<typeof getPdfClient>['quadIndex']>> | undefined>(undefined)
+let requested = false
+
+async function ensureIndex(): Promise<void> {
+  if (requested || !selecting.value) return
+  requested = true
+  try {
+    const index = await getPdfClient().quadIndex(props.page.sourceIndex)
+    quadIndex.value = index
+    selection.setIndex(props.page.id, index)
+  } catch {
+    // Text extraction failing is not a reason to break the overlay: the
+    // page still renders and every drawing tool still works.
+    requested = false
+  }
+}
+
+watch(selecting, (on) => { if (on) void ensureIndex() }, { immediate: true })
+
+const text = useTextSelection(() => quadIndex.value, {
+  /**
+   * getScreenCTM().inverse() -- the browser owns this conversion (spec 1.4).
+   * The <svg>'s own user space IS page space, because the viewBox is the
+   * page's displayed extent in points; the y-flip lives on the inner <g>,
+   * which these quads deliberately sit outside of.
+   */
+  toPageSpace(clientX, clientY) {
+    const svg = svgEl.value
+    const ctm = svg?.getScreenCTM?.()
+    if (!svg || !ctm) return undefined
+    const point = svg.createSVGPoint()
+    point.x = clientX
+    point.y = clientY
+    const local = point.matrixTransform(ctm.inverse())
+    return { x: local.x, y: local.y }
+  },
+})
+
+onBeforeUnmount(() => {
+  if (selection.pageId === props.page.id) selection.clear()
+})
+
+/**
+ * The capture surface exists only while a drawing tool is active. A
+ * permanently-mounted pointer-events-auto layer over the page would swallow
+ * every click meant for an object beneath it, which is exactly the bug the
+ * pointer-events-none default on the <svg> avoids.
+ */
+const drawing = computed(() => isDrawable(tools.active))
+
+/**
+ * The in-flight shape, rendered from the SAME components the committed
+ * objects use so the preview cannot drift from the result. Synthesised
+ * rather than stored: a draft is not an EditObject and must never reach
+ * edit history.
+ */
+const draft = computed(() => {
+  const d = tools.draft
+  if (!d || d.pageId !== props.page.id || !isDrawable(tools.active)) return undefined
+  return {
+    ...draftDefaults(tools.active),
+    id: '__draft__',
+    pageId: d.pageId,
+    kind: tools.active,
+    rect: d.rect,
+    rotation: 0,
+    z: 0,
+    locked: false,
+    opacity: 1,
+  } as EditObject
+})
+</script>
+
+<template>
+  <!--
+    pointer-events-none on the <svg> with pointer-events-auto per object
+    (see ObjectLayer): the overlay covers the whole page, so a
+    pointer-transparent default is what keeps text selection, scrolling, and
+    the page canvas beneath it reachable. Individual objects opt back in.
+
+    No width/height attributes: the element is stretched by `inset-0
+    size-full` to exactly the canvas box PageCanvas established from the
+    same geometry, so the two can never disagree about size.
+  -->
+  <div class="pointer-events-none absolute inset-0">
+    <!--
+      BELOW the <svg> in the stack, deliberately. Objects inside the svg are
+      pointer-events-auto over a pointer-events-none svg, so a click on an
+      object reaches the object and a click on bare page falls through to
+      this. Placing it above would make every object unselectable under the
+      select tool. Mounted only in text-selecting modes, so a drawing tool's
+      drag is never intercepted by it either.
+    -->
+    <div
+      v-if="selecting"
+      data-text-surface
+      class="pointer-events-auto absolute inset-0 cursor-text"
+      @pointerdown="text.onPointerDown"
+    />
+    <svg
+      ref="svgEl"
+      class="pointer-events-none absolute inset-0 size-full"
+      :viewBox="viewBox"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <g :transform="rootTransform">
+        <!--
+          Hit-testing lives here rather than on the <svg>: ObjectLayer's <g>
+          is pointer-events-auto inside a pointer-events-none <svg>, so a
+          pointerdown that reaches this handler landed on an object's own
+          painted geometry. Everywhere else stays transparent to the canvas,
+          text selection, and scrolling beneath.
+        -->
+        <ObjectLayer
+          v-for="o in objects"
+          :key="o.id"
+          :object="o"
+          @pointerdown="edits.select([o.id])"
+          @dblclick="o.kind === 'text' && tools.startEditing(o.id)"
+        />
+        <ObjectLayer v-if="draft" :object="draft" />
+      </g>
+      <!--
+        OUTSIDE the root <g>: these quads are already in MuPDF page space,
+        which is what the viewBox describes. Inside, the page transform would
+        be applied to them a second time.
+      -->
+      <g
+        v-for="o in markup"
+        :key="o.id"
+        :data-object-id="o.id"
+        :opacity="o.opacity"
+        class="pointer-events-auto"
+        @pointerdown="edits.select([o.id])"
+      >
+        <MarkupObject :object="(o as never)" />
+      </g>
+      <TextSelectionLayer :page="props.page" />
+    </svg>
+
+    <!--
+      Mounted only while a drawing tool is active, and AFTER the <svg> so it
+      sits above the objects: while drawing, a pointerdown belongs to the new
+      shape, not to whatever happens to be underneath.
+    -->
+    <div
+      v-if="drawing"
+      data-draw-surface
+      class="pointer-events-auto absolute inset-0 cursor-crosshair"
+      @pointerdown="draw.onPointerDown"
+    />
+    <!--
+      Layer 3 sits OUTSIDE the <svg> (spec 1.3) and positions against this
+      same box, so its DOM handles get ordinary Tailwind, focus, and mobile
+      keyboard behaviour.
+    -->
+    <SelectionChrome :page="props.page" :zoom="props.zoom" />
+    <SelectionToolbar :page="props.page" :zoom="props.zoom" />
+    <TextEditor :page="props.page" :zoom="props.zoom" />
+    <InkCanvas :page="props.page" :zoom="props.zoom" />
+  </div>
+</template>
