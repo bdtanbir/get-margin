@@ -6,10 +6,21 @@ import DesktopShell from './layouts/DesktopShell.vue'
 import MobileShell from './layouts/MobileShell.vue'
 import DropZone from '@/features/document/DropZone.vue'
 import PasswordPrompt from '@/features/document/PasswordPrompt.vue'
+import ErrorBoundary from './ErrorBoundary.vue'
 
 useTheme()
 const { isDesktop } = useShell()
 const doc = useDocumentStore()
+
+/**
+ * Record a boundary's catch on the document store, which is where every
+ * other user-facing failure already lands. A caught error that is only
+ * rendered inside the boundary is invisible to anything else -- including
+ * whatever eventually reports problems.
+ */
+function record(err: Error): void {
+  doc.error = err.message
+}
 </script>
 
 <template>
@@ -36,7 +47,18 @@ const doc = useDocumentStore()
     renders `doc.error` inline for the 'error' status and a second
     full-screen error treatment would be pure duplication).
   -->
+  <!--
+    One boundary around the editing shell, so a render or overlay failure
+    costs the user that region rather than the whole app: the document
+    stays open and the edits stay in the store behind it.
+
+    DropZone and PasswordPrompt are deliberately outside it. They ARE the
+    recovery surfaces -- wrapping them would mean a failure in the fallback
+    had nowhere left to fall back to.
+  -->
   <PasswordPrompt v-if="doc.status === 'needs-password'" />
   <DropZone v-else-if="doc.status !== 'ready'" />
-  <component :is="isDesktop ? DesktopShell : MobileShell" v-else />
+  <ErrorBoundary v-else label="The editor" @captured="record">
+    <component :is="isDesktop ? DesktopShell : MobileShell" />
+  </ErrorBoundary>
 </template>
