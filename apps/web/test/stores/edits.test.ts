@@ -170,6 +170,31 @@ describe('useEditsStore', () => {
     expect(s.historySize).toBe(1)
   })
 
+  // A slider drag opens its transaction on the first `input` and closes it
+  // on `change`. Ctrl+Z pressed with the slider still held would otherwise
+  // undo the entry BEFORE the drag while the drag's own patches sat
+  // uncommitted -- state and history diverging, and the drag unundoable.
+  it('seals an open transaction before undoing', () => {
+    const s = useEditsStore()
+    s.applyOp({ type: 'addObject', object: rectObject('o1') }, 'Add rectangle')
+    s.beginTransaction('Opacity')
+    s.applyOp({ type: 'updateObject', id: 'o1', patch: { opacity: 0.5 } }, 'Opacity')
+    s.undo()
+    expect(s.doc.objects.o1?.opacity).toBe(1)
+    // The object itself survives -- undo took the drag, not the add.
+    expect(s.doc.objects.o1).toBeDefined()
+    expect(s.canRedo).toBe(true)
+  })
+
+  it('seals an open transaction before redoing', () => {
+    const s = useEditsStore()
+    s.applyOp({ type: 'addObject', object: rectObject('o1') }, 'Add rectangle')
+    s.undo()
+    s.beginTransaction('Noise')
+    s.redo()
+    expect(s.doc.objects.o1).toBeDefined()
+  })
+
   it('caps history at exactly 200 entries and evicts the oldest first', () => {
     const s = useEditsStore()
     s.applyOp({ type: 'addObject', object: rectObject('o1') }, 'Add rectangle')

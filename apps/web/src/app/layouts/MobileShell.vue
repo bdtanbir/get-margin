@@ -6,6 +6,7 @@ import PageList from '@/features/viewport/PageList.vue'
 import ZoomPill from '@/features/viewport/ZoomPill.vue'
 import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
 import ToolStrip from '@/features/tools/ToolStrip.vue'
+import InspectorSheet from '@/features/tools/InspectorSheet.vue'
 import IconButton from '@/ui/IconButton.vue'
 import { useDocumentStore } from '@/stores/document'
 
@@ -55,6 +56,13 @@ const pagesOpen = ref(false)
       also why ZoomPill lives in the nav below.
     -->
     <ToolStrip v-if="doc.isReady" />
+
+    <!--
+      Fixed-position sheet, so it overlays rather than reflowing the strip
+      and nav beneath it. It appears only with a selection, which is also
+      the only time its contents mean anything.
+    -->
+    <InspectorSheet v-if="doc.isReady" />
 
     <nav
       v-if="doc.isReady"

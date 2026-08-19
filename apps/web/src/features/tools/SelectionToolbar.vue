@@ -1,0 +1,119 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { nanoid } from 'nanoid'
+import { Copy, Trash2, BringToFront, SendToBack, Lock, LockOpen } from 'lucide-vue-next'
+import { pdfRectToView } from '@margin/transform'
+import IconButton from '@/ui/IconButton.vue'
+import type { PageState } from '@/stores/document'
+import { useEditsStore } from '@/stores/edits'
+
+const props = defineProps<{ page: PageState; zoom: number }>()
+const edits = useEditsStore()
+
+/** How far above the selection box the toolbar floats, in CSS pixels. */
+const GAP_PX = 44
+
+/** Offset applied to a duplicate so it does not hide under the original. */
+const DUPLICATE_OFFSET_PT = 12
+
+const selected = computed(() => {
+  const id = edits.selection[0]
+  const o = id ? edits.doc.objects[id] : undefined
+  return o && o.pageId === props.page.id ? o : undefined
+})
+
+const style = computed(() => {
+  const o = selected.value
+  if (!o) return {}
+  const b = pdfRectToView(o.rect, props.page.geometry, props.zoom)
+  return { left: `${b.x}px`, top: `${b.y - GAP_PX}px` }
+})
+
+/** Objects sharing this page, which is what front/back are relative to. */
+const siblings = computed(() =>
+  Object.values(edits.doc.objects).filter((o) => o.pageId === props.page.id),
+)
+
+function duplicate(): void {
+  const o = selected.value
+  if (!o) return
+  const copy = {
+    ...o,
+    id: nanoid(10),
+    rect: { ...o.rect, x: o.rect.x + DUPLICATE_OFFSET_PT, y: o.rect.y - DUPLICATE_OFFSET_PT },
+    z: edits.nextZ(),
+  }
+  edits.applyOp({ type: 'addObject', object: copy }, 'Duplicate')
+  edits.select([copy.id])
+}
+
+function remove(): void {
+  const o = selected.value
+  if (!o) return
+  edits.applyOp({ type: 'deleteObject', id: o.id }, 'Delete')
+  edits.clearSelection()
+}
+
+function bringToFront(): void {
+  const o = selected.value
+  if (!o) return
+  const top = Math.max(...siblings.value.map((s) => s.z))
+  edits.applyOp({ type: 'reorder', id: o.id, z: top + 1 }, 'Bring to front')
+}
+
+function sendToBack(): void {
+  const o = selected.value
+  if (!o) return
+  const bottom = Math.min(...siblings.value.map((s) => s.z))
+  // reorder() also advances nextZ when z is high, which a negative z never
+  // triggers -- back is genuinely below everything, not a wrapped-around top.
+  edits.applyOp({ type: 'reorder', id: o.id, z: bottom - 1 }, 'Send to back')
+}
+
+function toggleLock(): void {
+  const o = selected.value
+  if (!o) return
+  edits.applyOp(
+    { type: 'updateObject', id: o.id, patch: { locked: !o.locked } },
+    o.locked ? 'Unlock' : 'Lock',
+  )
+}
+</script>
+
+<template>
+  <!--
+    Deliberately NOT disabled on a locked object: lock guards dragging and
+    resizing, not the controls that unlock, delete, or reorder it. A toolbar
+    that locks itself out is a trap with no exit.
+  -->
+  <div
+    v-if="selected"
+    data-selection-toolbar
+    class="pointer-events-auto absolute z-30 flex items-center gap-0.5 rounded-control
+           border border-border bg-surface-raised px-1 py-0.5 shadow-high"
+    :style="style"
+    @pointerdown.stop
+  >
+    <IconButton size="sm" label="Duplicate" @click="duplicate">
+      <Copy :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <IconButton size="sm" label="Bring to front" @click="bringToFront">
+      <BringToFront :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <IconButton size="sm" label="Send to back" @click="sendToBack">
+      <SendToBack :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <IconButton
+      size="sm"
+      :label="selected.locked ? 'Unlock' : 'Lock'"
+      :active="selected.locked"
+      @click="toggleLock"
+    >
+      <LockOpen v-if="selected.locked" :size="16" :stroke-width="1.5" />
+      <Lock v-else :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <IconButton size="sm" label="Delete" @click="remove">
+      <Trash2 :size="16" :stroke-width="1.5" />
+    </IconButton>
+  </div>
+</template>

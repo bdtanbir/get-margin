@@ -5,6 +5,7 @@ import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import ObjectLayer from './ObjectLayer.vue'
 import SelectionChrome from './SelectionChrome.vue'
+import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -68,5 +69,6 @@ const objects = computed(() =>
       keyboard behaviour.
     -->
     <SelectionChrome :page="props.page" :zoom="props.zoom" />
+    <SelectionToolbar :page="props.page" :zoom="props.zoom" />
   </div>
 </template>

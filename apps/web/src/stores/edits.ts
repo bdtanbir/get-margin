@@ -206,7 +206,20 @@ export const useEditsStore = defineStore('edits', () => {
     }
   }
 
+  /**
+   * Seal any transaction still open. Undo/redo call this first: a gesture
+   * in flight (a held slider, a drag mid-stroke) has already mutated state,
+   * so undoing "the last entry" while its patches sit uncommitted rewinds
+   * the wrong step and leaves the gesture permanently unundoable. Sealing
+   * makes the in-flight gesture the entry that undo then takes, which is
+   * what pressing undo mid-gesture visibly means.
+   */
+  function sealOpenTransaction(): void {
+    while (depth > 0) endTransaction()
+  }
+
   function undo(): void {
+    sealOpenTransaction()
     const entry = past.value[past.value.length - 1]
     if (!entry) return
     past.value = past.value.slice(0, -1)
@@ -215,6 +228,7 @@ export const useEditsStore = defineStore('edits', () => {
   }
 
   function redo(): void {
+    sealOpenTransaction()
     const entry = future.value[future.value.length - 1]
     if (!entry) return
     future.value = future.value.slice(0, -1)

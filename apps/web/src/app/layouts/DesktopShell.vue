@@ -5,6 +5,7 @@ import PageList from '@/features/viewport/PageList.vue'
 import ZoomPill from '@/features/viewport/ZoomPill.vue'
 import ThumbnailPanel from '@/features/document/ThumbnailPanel.vue'
 import ToolRail from '@/features/tools/ToolRail.vue'
+import Inspector from '@/features/tools/Inspector.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useViewportShortcuts } from '@/features/viewport/useViewportShortcuts'
 
@@ -67,7 +68,7 @@ useViewportShortcuts()
           <ZoomPill />
         </div>
       </main>
-      <!-- Phase 2 inserts the 320px inspector here. -->
+      <Inspector v-if="doc.isReady" />
     </div>
   </div>
 </template>
