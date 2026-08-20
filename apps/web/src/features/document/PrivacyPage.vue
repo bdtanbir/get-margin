@@ -7,10 +7,21 @@ import IconButton from '@/ui/IconButton.vue'
 import { clearEdits } from '@/lib/autosaveDb'
 import { clearSignatures } from '@/features/signature/signatureStore'
 import { MAX_BYTES, MAX_PAGES } from '@/lib/limits'
+import { conversionAvailable } from '@/features/convert/useJob'
 
 const emit = defineEmits<{ close: [] }>()
 const surface = ref<HTMLElement | null>(null)
 const cleared = ref(false)
+
+/**
+ * Whether this build has a conversion service behind it.
+ *
+ * The claim below has to change when it does. A privacy page that says
+ * "there is no server to upload it to" in a build that has one is the
+ * exact failure the previous phase already fixed once, and it is worse
+ * here because the sentence is the whole point of the page.
+ */
+const canConvert = conversionAvailable()
 
 useFocusTrap(surface, { onEscape: () => emit('close') })
 
@@ -50,12 +61,38 @@ const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`
       </div>
 
       <section class="flex flex-col gap-2">
-        <h3 class="text-[14px] font-medium">Your files never leave this device</h3>
-        <p class="text-[13px] text-text-muted">
+        <h3 v-if="!canConvert" class="text-[14px] font-medium">
+          Your files never leave this device
+        </h3>
+        <h3 v-else class="text-[14px] font-medium">
+          Your files stay on this device, with one exception you choose
+        </h3>
+
+        <p class="text-[13px] text-text-muted" data-privacy-local>
           Every PDF you open is read, edited, and exported inside this browser tab.
-          Nothing is uploaded, and there is no server to upload it to — this app is
-          a static site with no backend, no accounts, and no analytics on your
-          documents.
+          <template v-if="!canConvert">
+            Nothing is uploaded, and there is no server to upload it to — this app is
+            a static site with no backend, no accounts, and no analytics on your
+            documents.
+          </template>
+          <template v-else>
+            There are no accounts and no analytics on your documents, and nothing is
+            uploaded as you work.
+          </template>
+        </p>
+
+        <!--
+          Only shown when a conversion service is actually configured. The
+          app ships without one, and in that build the paragraph above is
+          literally true rather than nearly true.
+        -->
+        <p v-if="canConvert" class="text-[13px] text-text-muted" data-privacy-convert>
+          <strong>The one exception is file conversion.</strong> Converting a file
+          needs software that cannot run in a browser, so that one file is sent to a
+          server — but only after you are shown exactly what is being sent and agree
+          to it, every single time. It is deleted as soon as you download the result,
+          and within an hour regardless. Its name is never stored or logged, and you
+          can delete it yourself without waiting.
         </p>
       </section>
 
