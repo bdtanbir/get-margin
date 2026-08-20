@@ -7,7 +7,7 @@ import { useEditsStore } from '@/stores/edits'
 import { getPdfClient } from '@/workers/pdfClient'
 import { parseRanges, partName } from '@/lib/pageRanges'
 import { zipFiles } from '@/lib/zip'
-import { downloadBytes } from '@/lib/exportFile'
+import { downloadBytes, MIME } from '@/lib/exportFile'
 import { fontsForExport, familiesUsed } from '@/lib/fonts'
 
 const doc = useDocumentStore()
@@ -91,7 +91,15 @@ async function run(): Promise<void> {
       // A single part is a plain PDF, not a zip of one thing.
       downloadBytes(parts[0]!.data, parts[0]!.name)
     } else {
-      downloadBytes(await zipFiles(parts), `${doc.fileName.replace(/\.pdf$/i, '')}-split.zip`)
+      // The MIME matters, not just the name. Firefox renames a download to
+      // match the blob's Content-Type, so a zip sent as `application/pdf`
+      // arrives as `<name>.pdf` and will not open -- found by running this
+      // suite against Firefox for the first time.
+      downloadBytes(
+        await zipFiles(parts),
+        `${doc.fileName.replace(/\.pdf$/i, '')}-split.zip`,
+        MIME.zip,
+      )
     }
     emit('close')
   } catch (e) {
