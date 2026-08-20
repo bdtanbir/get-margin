@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url'
 const FIXTURE = fileURLToPath(
   new URL('../../../packages/pdf-core/test/fixtures/simple-text.pdf', import.meta.url),
 )
+const SIMPLE = FIXTURE
+/** Different text from SIMPLE, so reading the wrong page is unmistakable. */
+const MIXED = fileURLToPath(
+  new URL('../../../packages/pdf-core/test/fixtures/mixed-fonts.pdf', import.meta.url),
+)
 
 async function open(page: Page): Promise<void> {
   await page.goto('/')
@@ -175,6 +180,47 @@ test('compression measures before offering a download', async ({ page }) => {
   await expect(page.locator('[data-compress-result]'))
     .toContainText(/No photographs were found|already as small/i)
   await expect(page.locator('[data-compress-download]')).toBeVisible()
+})
+
+/**
+ * Each page's text tool must read THAT page's text.
+ *
+ * On a merged document it read the wrong file entirely: `quadIndex` looked
+ * the page up in the primary document however it was asked, and the overlay
+ * passed only `sourceIndex` -- which is 0 for the first page of every file.
+ * So clicking a line on page two opened an editor containing a line from
+ * page one, and committing would have covered the wrong text.
+ * See `docs/findings/24-merged-text-index.md`.
+ */
+test('the text tool reads each page of a merged document', async ({ page }, testInfo) => {
+  // The add-source control lives inside the pages modal on phone, and this
+  // defect is worker lookup logic rather than anything engine-specific.
+  test.skip(testInfo.project.name === 'phone', 'add-source is behind the pages modal on phone')
+
+  await page.goto('/')
+  await page.setInputFiles('input[type=file]', SIMPLE)
+  await expect(page.getByRole('img', { name: 'Page 1', exact: true })).toBeVisible({
+    timeout: 30_000,
+  })
+  await page.locator('input[type=file]').nth(1).setInputFiles(MIXED)
+  await expect(page.locator('[data-source-header]')).toHaveCount(2)
+
+  await page.getByRole('button', { name: 'Edit text' }).first().click()
+  await page.getByRole('option', { name: /^Page 2/ }).click()
+  await page.waitForTimeout(1200)
+
+  // The two pages carry different text, so a page reading the other one's
+  // index is unmistakable rather than merely suspicious.
+  const layers = page.locator('[data-patch-layer]')
+  await expect(layers).toHaveCount(2)
+
+  const secondPage = layers.nth(1).locator('[data-patch-target]')
+  await expect(secondPage.first()).toBeVisible()
+  await secondPage.first().click()
+
+  const opened = await page.locator('[data-patch-input]').inputValue()
+  expect(opened, 'page 2 opened with page 1 text').toContain('Helvetica')
+  expect(opened).not.toContain('Hello margin')
 })
 
 /**

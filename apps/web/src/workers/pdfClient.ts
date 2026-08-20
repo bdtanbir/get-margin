@@ -56,10 +56,14 @@ export type PdfClient = {
     removeProtection?: boolean,
   ): Promise<Uint8Array>
   /**
-   * Character-level text geometry for one page, cached in the worker. See
-   * PdfService.quadIndex.
+   * Character-level text geometry for one page of one source, cached in the
+   * worker. See PdfService.quadIndex.
+   *
+   * `sourceId` is required rather than optional: omitting it silently meant
+   * "the primary document", which is the wrong answer for every page of a
+   * merged-in file and produced no error to notice.
    */
-  quadIndex(page: number): Promise<PageQuadIndex>
+  quadIndex(sourceId: SourceId | undefined, page: number): Promise<PageQuadIndex>
   /**
    * The form fields on one page. See PdfService.listFields.
    *
@@ -301,9 +305,9 @@ export function createPdfClient(): PdfClient {
       )
     },
 
-    async quadIndex(page) {
+    async quadIndex(sourceId, page) {
       await ready
-      return remote.quadIndex(page)
+      return remote.quadIndex(sourceId, page)
     },
 
     async addSource(bytes) {

@@ -102,7 +102,10 @@ async function ensureIndex(): Promise<void> {
   if (requested || !selecting.value) return
   requested = true
   try {
-    const index = await getPdfClient().quadIndex(props.page.sourceIndex)
+    // BOTH halves of the identity: which file, and which page of it.
+    // Passing only `sourceIndex` meant page two of a merge asked for "page
+    // 0" and was handed page one of the first file.
+    const index = await getPdfClient().quadIndex(props.page.sourceId, props.page.sourceIndex)
     quadIndex.value = index
     selection.setIndex(props.page.id, index)
   } catch {

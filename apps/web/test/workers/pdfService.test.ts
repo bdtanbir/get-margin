@@ -182,13 +182,13 @@ describe('PdfService.save', () => {
 
 describe('PdfService.quadIndex', () => {
   it('refuses when no document is open', () => {
-    expect(() => new PdfService().quadIndex(0)).toThrow('no document open')
+    expect(() => new PdfService().quadIndex(undefined, 0)).toThrow('no document open')
   })
 
   it('returns character geometry for a page', () => {
     const svc = new PdfService()
     svc.open(bytes('simple-text'))
-    const index = svc.quadIndex(0)
+    const index = svc.quadIndex(undefined, 0)
     expect(index.lines.length).toBeGreaterThan(0)
     expect(index.lines[0]!.chars[0]!.quad).toHaveLength(8)
   })
@@ -199,16 +199,16 @@ describe('PdfService.quadIndex', () => {
   it('caches per page, returning the identical object', () => {
     const svc = new PdfService()
     svc.open(bytes('simple-text'))
-    expect(svc.quadIndex(0)).toBe(svc.quadIndex(0))
+    expect(svc.quadIndex(undefined, 0)).toBe(svc.quadIndex(undefined, 0))
   })
 
   it('drops the cache on close, so the next document is not served stale quads', () => {
     const svc = new PdfService()
     svc.open(bytes('simple-text'))
-    const first = svc.quadIndex(0)
+    const first = svc.quadIndex(undefined, 0)
     svc.close()
     svc.open(bytes('multi-page'))
-    expect(svc.quadIndex(0)).not.toBe(first)
+    expect(svc.quadIndex(undefined, 0)).not.toBe(first)
   })
 })
 

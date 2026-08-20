@@ -67,7 +67,9 @@ export class PdfService {
    * quads cannot go stale while it is open; close() drops the cache with
    * everything else.
    */
-  #quadCache = new Map<number, PageQuadIndex>()
+  // Keyed `sourceId:page`, not by page alone: two merged files both have a
+  // page 0, and sharing one entry served the wrong file's text.
+  #quadCache = new Map<string, PageQuadIndex>()
 
   #info(): DocumentInfo {
     const doc = this.#doc
@@ -283,13 +285,29 @@ export class PdfService {
    * Character-level text geometry for one page, in MuPDF page space.
    * See pdf-core/src/text/index.ts for why that space and not raw PDF space.
    */
-  quadIndex(page: number): PageQuadIndex {
-    const doc = this.#doc
+  /**
+   * Character-level text geometry for one page OF ONE SOURCE.
+   *
+   * `sourceId` is not optional decoration. This used to read `#doc` -- the
+   * primary document -- whatever page it was asked for, while `render()`
+   * and `listFields()` both went through `#docFor`. In a merged document
+   * every page carries its own file's index, and two files' first pages are
+   * both `sourceIndex` 0, so page two of a merge asked for "page 0" and got
+   * page one of the FIRST file: its text, its line boxes, its content in
+   * the editor.
+   *
+   * The cache is keyed by source as well as page for the same reason. Keyed
+   * by page alone, two sources' page 0 were the same cache entry, so even a
+   * corrected lookup would have been served the wrong file's answer.
+   */
+  quadIndex(sourceId: SourceId | undefined, page: number): PageQuadIndex {
+    const doc = this.#docFor(sourceId)
     if (!doc) throw new Error('no document open')
-    const hit = this.#quadCache.get(page)
+    const key = `${sourceId ?? this.#primarySource ?? 'primary'}:${page}`
+    const hit = this.#quadCache.get(key)
     if (hit) return hit
     const index = buildQuadIndex(doc, page)
-    this.#quadCache.set(page, index)
+    this.#quadCache.set(key, index)
     return index
   }
 
@@ -395,7 +413,7 @@ export class PdfService {
 
     const matches: Array<{ page: number } & Match> = []
     for (let page = 0; page < doc.pageCount; page++) {
-      for (const match of findInPage(this.quadIndex(page), query, options)) {
+      for (const match of findInPage(this.quadIndex(undefined, page), query, options)) {
         if (matches.length >= limit) return { matches, capped: true }
         matches.push({ page, ...match })
       }
