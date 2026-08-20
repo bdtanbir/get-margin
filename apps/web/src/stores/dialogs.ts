@@ -13,7 +13,7 @@ import { ref, computed } from 'vue'
  * NOT in edit history. Which dialog is on screen is not a document edit,
  * and undoing a stamp should not reopen the dialog that made it.
  */
-export type DialogId = 'stamp' | 'protect' | 'metadata' | 'compress' | 'find'
+export type DialogId = 'stamp' | 'protect' | 'metadata' | 'compress' | 'find' | 'images'
 
 export const useDialogsStore = defineStore('dialogs', () => {
   const open = ref<DialogId | null>(null)

@@ -3,6 +3,7 @@ import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
 import type {
   EditDocument, PageQuadIndex, SourceId, StrippedContent, SourceField, Protection,
   DocumentMetadata, CompressionPreset, CompressionResult, FindOptions, Match,
+  RasterFormat, RasterisedPage,
 } from '@margin/pdf-core'
 // Side-effect import: registers the `rgba` transfer handler on this end of
 // the boundary. Must also be imported by pdf.worker.ts — see that file's
@@ -77,6 +78,20 @@ export type PdfClient = {
   ): Promise<{ matches: Array<{ page: number } & Match>; capped: boolean }>
   /** Characters the font cannot draw. See PdfService.missingGlyphs. */
   missingGlyphs(fontBytes: Uint8Array, family: string, text: string): Promise<string[]>
+  /**
+   * One page as a JPEG or PNG. See PdfService.rasterise.
+   *
+   * Nothing leaves the device: this is the one conversion in the product
+   * with no API behind it.
+   */
+  rasterise(
+    page: number,
+    dpi: number,
+    format?: RasterFormat,
+    quality?: number,
+  ): Promise<RasterisedPage>
+  /** The pixel dimensions a rasterise would produce, without doing one. */
+  rasterSize(page: number, dpi: number): Promise<{ width: number; height: number }>
   /** Compress the export. See PdfService.compress. */
   compress(
     preset: CompressionPreset,
@@ -248,6 +263,20 @@ export function createPdfClient(): PdfClient {
     async missingGlyphs(fontBytes, family, text) {
       await ready
       return remote.missingGlyphs(fontBytes, family, text)
+    },
+
+    async rasterise(page, dpi, format, quality) {
+      await ready
+      return withTimeout(
+        remote.rasterise(page, dpi, format, quality),
+        EXPORT_TIMEOUT_MS,
+        'Exporting that page as an image took too long and was stopped.',
+      )
+    },
+
+    async rasterSize(page, dpi) {
+      await ready
+      return remote.rasterSize(page, dpi)
     },
 
     async compress(preset, editDoc, fonts) {
