@@ -115,14 +115,15 @@ describe('LocalStorage', () => {
   it('measures age from a clock the caller supplies', async () => {
     const id = newJobId()
     await storage.put(id, 'input', bytes('x'))
-    const now = Date.now()
-    const young = await storage.age(id, now)
-    const older = await storage.age(id, now + 5_000)
-    expect(young).toBeLessThan(1_000)
-    // Exactly the clock's advance. Asserting `older >= 5000` would be
-    // flaky: mtime carries sub-millisecond precision that Date.now()
-    // truncates away, so a fresh file can read a fraction under.
-    expect((older ?? 0) - (young ?? 0)).toBeCloseTo(5_000, 6)
+    // Offset past the clamp at zero: mtime carries sub-millisecond
+    // precision that Date.now() truncates away, so a file written moments
+    // ago can read a fraction in the future and clamp to 0. Measuring the
+    // delta from a base already past that reads the arithmetic itself.
+    const base = Date.now() + 60_000
+    const young = await storage.age(id, base)
+    const older = await storage.age(id, base + 5_000)
+    expect(young).toBeGreaterThan(59_000)
+    expect((older ?? 0) - (young ?? 0)).toBe(5_000)
   })
 
   /**
