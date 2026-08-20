@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useShell } from '@/lib/breakpoint'
 import { useTheme } from '@/lib/theme'
 import { useDocumentStore } from '@/stores/document'
@@ -12,7 +13,9 @@ import ProtectDialog from '@/features/protect/ProtectDialog.vue'
 import MetadataDialog from '@/features/metadata/MetadataDialog.vue'
 import CompressDialog from '@/features/compress/CompressDialog.vue'
 import ImageExport from '@/features/export/ImageExport.vue'
+import TelemetryConsent from '@/features/settings/TelemetryConsent.vue'
 import FindPanel from '@/features/find/FindPanel.vue'
+import { shouldAskForTelemetry } from '@/lib/telemetry/analytics'
 import { useDialogsStore } from '@/stores/dialogs'
 import RestorePrompt from '@/features/document/RestorePrompt.vue'
 import CommandPalette from '@/features/command/CommandPalette.vue'
@@ -21,6 +24,16 @@ useTheme()
 const { isDesktop } = useShell()
 const doc = useDocumentStore()
 const dialogs = useDialogsStore()
+
+/**
+ * Asked at most once, and only when there is something to consent to.
+ *
+ * Read once at startup rather than as a computed: the answer changes the
+ * moment the dialog is answered, and a computed would close it and reopen
+ * nothing -- but it would also re-evaluate on every render for a question
+ * that can only be asked once per session.
+ */
+const askTelemetry = ref(shouldAskForTelemetry())
 
 /**
  * Record a boundary's catch on the document store, which is where every
@@ -91,6 +104,13 @@ function record(err: Error): void {
     <MetadataDialog v-if="dialogs.isOpen('metadata')" @close="dialogs.close()" />
     <CompressDialog v-if="dialogs.isOpen('compress')" @close="dialogs.close()" />
     <ImageExport v-if="dialogs.isOpen('images')" @close="dialogs.close()" />
+    <!--
+      Shown only when an endpoint is configured AND nothing has been chosen
+      yet. In the default build `shouldAskForTelemetry()` is false, because
+      asking about collection that cannot happen would imply the app
+      collects something.
+    -->
+    <TelemetryConsent v-if="askTelemetry" @close="askTelemetry = false" />
     <!--
       A panel, not a dialog: searching is something you do WHILE reading,
       and a modal would cover the document being searched.

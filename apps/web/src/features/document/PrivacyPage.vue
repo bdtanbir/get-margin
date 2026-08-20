@@ -8,6 +8,7 @@ import { clearEdits } from '@/lib/autosaveDb'
 import { clearSignatures } from '@/features/signature/signatureStore'
 import { MAX_BYTES, MAX_PAGES } from '@/lib/limits'
 import { conversionAvailable } from '@/features/convert/useJob'
+import { telemetryState } from '@/lib/telemetry/analytics'
 
 const emit = defineEmits<{ close: [] }>()
 const surface = ref<HTMLElement | null>(null)
@@ -22,6 +23,15 @@ const cleared = ref(false)
  * here because the sentence is the whole point of the page.
  */
 const canConvert = conversionAvailable()
+
+/**
+ * Whether this build can send usage counts at all, and whether it is.
+ *
+ * Same reasoning as `canConvert`: the claims below have to change when the
+ * capability does. "No analytics" is true of the shipped build and would
+ * be false in one with an endpoint configured and consent given.
+ */
+const telemetry = telemetryState
 
 useFocusTrap(surface, { onEscape: () => emit('close') })
 
@@ -136,8 +146,22 @@ const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`
         <p class="text-[13px] text-text-muted">
           The PDF files themselves — their pages, their text, and their images. Files up
           to {{ mb(MAX_BYTES) }} and {{ MAX_PAGES }} pages are held in memory while open
-          and discarded when you close the tab. There are no accounts, no analytics, and
-          no identifiers of any kind.
+          and discarded when you close the tab. There are no accounts and no identifiers
+          of any kind.
+          <template v-if="!telemetry.configured"> There are no analytics.</template>
+        </p>
+
+        <!--
+          Only in a build that can actually send something. The default
+          build cannot, and in that build the sentence above is unqualified
+          because it is unqualifiedly true.
+        -->
+        <p v-if="telemetry.configured" data-privacy-telemetry class="text-[13px] text-text-muted">
+          <strong>Usage counts are {{ telemetry.sending ? 'on' : 'off' }}.</strong>
+          This build can count how many times a feature is used — how many exports, how
+          many redactions — and nothing else: never a document, never a file name, never
+          anything you typed, and never an identifier that would link those counts to you
+          or to each other. It is off until you say yes, and you are asked only once.
         </p>
         <!--
           Deliberately NOT a claim that nothing identifying is stored. It

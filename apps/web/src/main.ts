@@ -1,6 +1,8 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './app/App.vue'
+import { initTelemetry } from './lib/telemetry/analytics'
+import { reporter } from './lib/telemetry/reporter'
 import './app/styles/tokens.css'
 
 const app = createApp(App)
@@ -19,7 +21,18 @@ app.config.errorHandler = (err, _instance, info) => {
   const error = err instanceof Error ? err : new Error(String(err))
   // eslint-disable-next-line no-console
   console.error(`[get-margin] unhandled error (${info})`, error)
+  reporter().reportError({ name: 'unhandled', component: 'App', error })
   if (import.meta.env.DEV) throw error
 }
+
+/**
+ * Point the reporter somewhere, or -- in the default build -- at nothing.
+ *
+ * Called before mount so the very first error has somewhere to go. With no
+ * `VITE_TELEMETRY_ENDPOINT` configured this constructs no transport at
+ * all, so the absence of network traffic is structural rather than a flag
+ * someone could flip by accident.
+ */
+initTelemetry()
 
 app.use(createPinia()).mount('#app')
