@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useMagicKeys, whenever } from '@vueuse/core'
+import { combosFor } from '@/features/help/shortcuts'
 import { useFocusTrap } from '@/lib/useFocusTrap'
 import { useCommands, filterCommands, type Command } from './commands'
 
@@ -35,7 +36,9 @@ const keys = useMagicKeys({
 })
 
 whenever(keys['Meta+k']!, () => toggle())
-whenever(keys['Ctrl+k']!, () => toggle())
+// From the shortcut list, so the help page and this binding cannot
+// describe different keys.
+for (const combo of combosFor('palette')) whenever(keys[combo]!, () => toggle())
 
 function toggle(): void {
   open.value = !open.value

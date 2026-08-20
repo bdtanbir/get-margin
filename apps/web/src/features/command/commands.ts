@@ -116,6 +116,15 @@ export function useCommands(): ComputedRef<Command[]> {
         run: () => dialogs.show('compress'),
       },
       {
+        id: 'app:help',
+        label: 'Help and keyboard shortcuts…',
+        group: 'App',
+        // Available with no document open: someone who has just arrived is
+        // exactly who needs it.
+        available: () => true,
+        run: () => dialogs.show('help'),
+      },
+      {
         id: 'doc:images',
         label: 'Export as images…',
         group: 'Document',

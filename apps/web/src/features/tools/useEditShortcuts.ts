@@ -1,4 +1,5 @@
 import { useMagicKeys, whenever } from '@vueuse/core'
+import { combosFor } from '@/features/help/shortcuts'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { useSelectionStore } from '@/stores/selection'
@@ -33,7 +34,7 @@ function isTypingTarget(el: Element | null): boolean {
   return Boolean(el.closest?.('[contenteditable]:not([contenteditable="false"])'))
 }
 
-export function useEditShortcuts(): void {
+export function useEditShortcuts(): string[] {
   const edits = useEditsStore()
   const tools = useToolsStore()
   const dialogs = useDialogsStore()
@@ -61,16 +62,31 @@ export function useEditShortcuts(): void {
 
   const guard = (fn: () => void) => () => { if (!typingSomewhere()) fn() }
 
-  whenever(keys['Meta+Shift+z']!, guard(() => edits.redo()))
-  whenever(keys['Ctrl+Shift+z']!, guard(() => edits.redo()))
-  // Ctrl+Y is the Windows convention for redo and costs nothing to accept.
-  whenever(keys['Ctrl+y']!, guard(() => edits.redo()))
+  /**
+   * Every combination bound here, collected as it is registered.
+   *
+   * Returned so a test can compare it against the declared shortcut list
+   * and catch the case this whole indirection exists to prevent: a
+   * shortcut documented on the help page that nothing actually binds.
+   */
+  const bound: string[] = []
+  const bind = (combo: string, handler: () => void): void => {
+    bound.push(combo)
+    whenever(keys[combo]!, handler)
+  }
+
+  // Combinations come from the shortcut list rather than string literals,
+  // so the help page and the binding cannot describe different keys.
+  for (const combo of combosFor('redo')) bind(combo, guard(() => edits.redo()))
 
   // Registered AFTER the shifted forms: useMagicKeys reports `Meta+z` as
   // true during `Meta+Shift+z` too, so an unguarded plain-undo binding
-  // would fire alongside redo and cancel it out.
-  whenever(keys['Meta+z']!, guard(() => { if (!keys.shift!.value) edits.undo() }))
-  whenever(keys['Ctrl+z']!, guard(() => { if (!keys.shift!.value) edits.undo() }))
+  // would fire alongside redo and cancel it out. The list's declaration
+  // order is what preserves this -- redo is declared before undo's combos
+  // are read.
+  for (const combo of combosFor('undo')) {
+    bind(combo, guard(() => { if (!keys.shift!.value) edits.undo() }))
+  }
 
   /**
    * Find. NOT guarded by `typingSomewhere`, unlike the others: Cmd+F is the
@@ -80,13 +96,11 @@ export function useEditShortcuts(): void {
   const openFind = (): void => {
     dialogs.show('find')
   }
-  whenever(keys['Meta+f']!, openFind)
-  whenever(keys['Ctrl+f']!, openFind)
+  for (const combo of combosFor('find')) bind(combo, openFind)
 
-  whenever(keys['Delete']!, guard(deleteSelection))
-  whenever(keys['Backspace']!, guard(deleteSelection))
+  for (const combo of combosFor('delete')) bind(combo, guard(deleteSelection))
 
-  whenever(keys['Escape']!, () => {
+  for (const combo of combosFor('escape')) bind(combo, () => {
     // A dialog owns Escape while it is open -- each traps focus and
     // handles its own -- so this only reaches the canvas.
     if (dialogs.open) return
@@ -94,6 +108,9 @@ export function useEditShortcuts(): void {
     edits.clearSelection()
     tools.setTool('select')
   })
+
+  // What was actually bound, for the drift check in the help suite.
+  return bound
 
   function deleteSelection(): void {
     const id = edits.selection[0]
