@@ -58,6 +58,14 @@ export interface JobQueue {
    * "cancel" means "the answer is thrown away", not "the CPU is freed".
    */
   cancel(id: JobId): boolean
+  /**
+   * Drops the record entirely, so the id reads as one that never existed.
+   *
+   * Purge uses it. A purged job that still answered `expired` would be
+   * telling the caller that an id they asked us to forget was once real --
+   * which is exactly the thing they asked us to forget.
+   */
+  forget(id: JobId): void
   /** Resolves when nothing is queued or running. Tests only. */
   drain(): Promise<void>
 }

@@ -55,11 +55,12 @@ export class LocalStorage implements StorageAdapter {
     }
   }
 
-  async delete(id: JobId): Promise<void> {
+  async delete(id: JobId, slot?: Slot): Promise<void> {
     // `force` makes this idempotent, `recursive` takes both slots and the
     // directory. Deletion runs on four independent paths that race each
     // other; a second deletion must be a no-op, not an error.
-    await rm(this.dir(id), { recursive: true, force: true })
+    const target = slot ? join(this.dir(id), slot) : this.dir(id)
+    await rm(target, { recursive: true, force: true })
   }
 
   async size(id: JobId, slot: Slot): Promise<number | null> {

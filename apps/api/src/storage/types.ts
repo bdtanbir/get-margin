@@ -51,12 +51,19 @@ export interface StorageAdapter {
   /** The bytes, or `null` when the job or slot does not exist. */
   get(id: JobId, slot: Slot): Promise<Uint8Array | null>
   /**
-   * Removes the WHOLE job, both slots, and the directory.
+   * Removes the job. With no `slot`, the whole directory and both slots;
+   * with one, just that slot.
    *
-   * Idempotent: deleting what is not there is a success, because every
-   * deletion path races every other one and none of them may throw.
+   * The per-slot form exists for exactly one caller: the moment a
+   * conversion finishes and the INPUT must go while the result stays. The
+   * uploaded file is the thing that matters, so it does not wait for a
+   * download or for the TTL.
+   *
+   * Idempotent in both forms: deleting what is not there is a success,
+   * because every deletion path races every other one and none of them may
+   * throw.
    */
-  delete(id: JobId): Promise<void>
+  delete(id: JobId, slot?: Slot): Promise<void>
   /** Byte length of a slot, or `null` when absent. */
   size(id: JobId, slot: Slot): Promise<number | null>
   /** Milliseconds since the job directory was created, or `null` when absent. */

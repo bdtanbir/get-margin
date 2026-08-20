@@ -1,4 +1,4 @@
-import { JOB_TTL_MS } from '@margin/shared'
+import { JOB_TTL_MS, type JobId } from '@margin/shared'
 import type { StorageAdapter } from './types.js'
 
 /** Injected so tests can move time without sleeping. */
@@ -10,6 +10,16 @@ export type SweeperOptions = {
   clock?: Clock
   /** Called after each pass. Reports a count only -- never an id, never a name. */
   onSwept?: (removed: number) => void
+  /**
+   * Called for each job the sweep removed, before the next one.
+   *
+   * The API uses it to forget the job's in-memory record. Without it the
+   * record outlives the file forever: the bytes go at the TTL and a map
+   * entry naming the job id stays for the life of the process. That is a
+   * slow leak and, more to the point, retained metadata about an upload we
+   * promised to forget.
+   */
+  onExpire?: (id: JobId) => void | Promise<void>
 }
 
 /**
@@ -30,6 +40,7 @@ export class Sweeper {
   private readonly intervalMs: number
   private readonly clock: Clock
   private readonly onSwept: ((removed: number) => void) | undefined
+  private readonly onExpire: ((id: JobId) => void | Promise<void>) | undefined
   private timer: NodeJS.Timeout | null = null
 
   constructor(
@@ -40,6 +51,7 @@ export class Sweeper {
     this.intervalMs = options.intervalMs ?? 60_000
     this.clock = options.clock ?? Date.now
     this.onSwept = options.onSwept
+    this.onExpire = options.onExpire
   }
 
   /** One pass. Returns how many jobs it removed. */
@@ -55,6 +67,7 @@ export class Sweeper {
       const age = await this.storage.age(id, now)
       if (age === null || age < this.ttlMs) continue
       await this.storage.delete(id)
+      await this.onExpire?.(id)
       removed++
     }
     this.onSwept?.(removed)

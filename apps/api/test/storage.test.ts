@@ -250,3 +250,82 @@ describe('Sweeper', () => {
     expect(() => new Sweeper(storage).stop()).not.toThrow()
   })
 })
+
+describe('per-slot deletion', () => {
+  /**
+   * The moment a conversion succeeds, the uploaded file has no further
+   * use. It goes then -- not at the TTL, not when someone downloads the
+   * result. The result has to survive that deletion, which is the whole
+   * point of the slot argument.
+   */
+  it('removes the input and leaves the result', async () => {
+    const id = newJobId()
+    await storage.put(id, 'input', bytes('the upload'))
+    await storage.put(id, 'result', bytes('the conversion'))
+
+    await storage.delete(id, 'input')
+
+    expect(await storage.get(id, 'input')).toBeNull()
+    expect(await storage.get(id, 'result')).not.toBeNull()
+  })
+
+  it('is idempotent, like every other deletion path', async () => {
+    const id = newJobId()
+    await storage.put(id, 'input', bytes('x'))
+    await storage.delete(id, 'input')
+    await expect(storage.delete(id, 'input')).resolves.toBeUndefined()
+    await expect(storage.delete(newJobId(), 'result')).resolves.toBeUndefined()
+  })
+
+  it('still removes everything when no slot is named', async () => {
+    const id = newJobId()
+    await storage.put(id, 'input', bytes('a'))
+    await storage.put(id, 'result', bytes('b'))
+    await storage.delete(id)
+    expect(await readdir(root)).toEqual([])
+  })
+})
+
+describe('Sweeper onExpire', () => {
+  /**
+   * The bytes going is only half of it. Whoever holds the job's in-memory
+   * record has to be told, or a record naming a job we promised to forget
+   * outlives the file for the life of the process.
+   */
+  it('names each job it removed', async () => {
+    const a = newJobId()
+    const b = newJobId()
+    await storage.put(a, 'input', bytes('x'))
+    await storage.put(b, 'input', bytes('y'))
+
+    const expired: string[] = []
+    const sweeper = new Sweeper(storage, {
+      clock: () => Date.now() + JOB_TTL_MS + 1,
+      onExpire: (id) => void expired.push(id),
+    })
+    await sweeper.sweep()
+
+    expect(expired.sort()).toEqual([a, b].sort())
+  })
+
+  /** A job that was kept must not be reported as forgotten. */
+  it('says nothing about a job still inside its TTL', async () => {
+    const id = newJobId()
+    await storage.put(id, 'input', bytes('x'))
+    const expired: string[] = []
+    const sweeper = new Sweeper(storage, {
+      clock: () => Date.now() + 1_000,
+      onExpire: (jobId) => void expired.push(jobId),
+    })
+    expect(await sweeper.sweep()).toBe(0)
+    expect(expired).toEqual([])
+  })
+
+  it('is optional -- a sweep with no hook still deletes', async () => {
+    const id = newJobId()
+    await storage.put(id, 'input', bytes('x'))
+    const sweeper = new Sweeper(storage, { clock: () => Date.now() + JOB_TTL_MS + 1 })
+    expect(await sweeper.sweep()).toBe(1)
+    expect(await storage.get(id, 'input')).toBeNull()
+  })
+})
