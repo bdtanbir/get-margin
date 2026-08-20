@@ -639,11 +639,17 @@ safety — that a redacted file shows no trace in Acrobat, and that a protected 
 for its password. Text patching covers rather than removes, and uses a bundled face rather than the
 document's own.
 
-### Phase 7 — Conversion backend · weeks 15–19
+### Phase 7 — Conversion backend · weeks 15–19 — **shipped, with a recorded scope reduction**
 
-Fastify service · BullMQ + Redis · storage adapter + TTL sweeper · separate sandboxed worker container · `unoserver` · `ocrmypdf` · Playwright HTML→PDF · PDF→JPG (client-side, MuPDF) · job UI with progress · rate limiting · consent flows · Docker images · CI.
+Fastify service · storage adapter + TTL sweeper · Playwright HTML→PDF · PDF→JPG (client-side, MuPDF) · job UI with progress · rate limiting · consent flows · log redaction · Docker images and sandbox config, written and marked unverified.
+
+**Not built:** BullMQ + Redis (the queue is an interface with an in-process implementation) · `unoserver` · `ocrmypdf` · S3 storage.
 
 > First phase with real infrastructure cost and real attack surface. Do the sandboxing in this phase, not after.
+
+The sandboxing could not be *verified* here — no Docker daemon, no Redis, no LibreOffice, Tesseract, or Ghostscript (`docs/findings/16-phase-7-preflight.md`). §4 of this plan makes the converters the real security surface, and unverified sandbox configuration for parsers with a documented RCE history is worse than none, because it reads as a control. So the phase was scoped by verifiability: everything above is built and tested, the container and sandbox configuration is written with a never-executed marker in every file, and `unoserver`/`ocrmypdf` were not written blind. Verification checklist: `docs/findings/17-deploy-verification.md`. Phase results: `docs/findings/18-phase-7-verification.md`.
+
+**The MVP's no-backend property still holds.** The API is optional and off by default; with no `VITE_CONVERT_API` configured the app works entirely without it, offers no conversion, and uploads nothing.
 
 ### Phase 8 — Polish & launch · weeks 19–21.5
 
