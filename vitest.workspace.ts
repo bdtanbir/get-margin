@@ -19,6 +19,14 @@ export default defineWorkspace([
   },
   {
     test: {
+      name: 'api',
+      root: './apps/api',
+      environment: 'node',
+      testTimeout: 30_000,
+    },
+  },
+  {
+    test: {
       name: 'transform',
       root: './packages/transform',
       environment: 'node',
