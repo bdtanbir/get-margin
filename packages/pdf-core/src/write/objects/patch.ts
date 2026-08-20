@@ -86,12 +86,32 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
 
   // Re-extract the line as it is NOW, in the assembled export.
   const structured = ctx.page.toStructuredText('')
-  const lines: Array<{ text: string; bbox: [number, number, number, number] }> = []
+  const lines: Array<{
+    text: string
+    bbox: [number, number, number, number]
+    /** The size the line was actually set in, from its first glyph. */
+    size: number
+    /** Where the pen sat, in page space. See `LineRun.baseline`. */
+    baseline: number
+  }> = []
   structured.walk({
-    beginLine: () => { lines.push({ text: '', bbox: [Infinity, Infinity, -Infinity, -Infinity] }) },
-    onChar: (c: string, _origin: unknown, _font: unknown, _size: number, quad: number[]) => {
+    beginLine: () => {
+      lines.push({
+        text: '',
+        bbox: [Infinity, Infinity, -Infinity, -Infinity],
+        size: 0,
+        baseline: 0,
+      })
+    },
+    onChar: (c: string, origin: number[], _font: unknown, size: number, quad: number[]) => {
       const line = lines[lines.length - 1]
       if (!line) return
+      // First glyph decides: a line is a homogeneous style run in MuPDF's
+      // model, and the pen position at its start is the line's baseline.
+      if (line.text === '') {
+        line.size = size
+        line.baseline = origin[1] ?? 0
+      }
       line.text += c
       for (let i = 0; i < 8; i += 2) {
         line.bbox[0] = Math.min(line.bbox[0], quad[i]!)
@@ -143,7 +163,15 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
   ]
 
   if (o.text !== '') {
-    let size = o.fontSize > 0 ? o.fontSize : h * 0.8
+    /**
+     * The size the line was actually set in, not a fraction of its box.
+     *
+     * `h * 0.8` was a guess at the relationship between a glyph box and a
+     * font size, and it is wrong by however much the font's ascent and
+     * descent differ from that ratio -- so a replacement came out a
+     * different size from the text around it.
+     */
+    let size = o.fontSize > 0 ? o.fontSize : line.size > 0 ? line.size : h * 0.8
     let text = o.text
     const advance = () => ctx.measure(text, o.fontFamily, size)
 
@@ -157,11 +185,30 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
     // 'overflow' does nothing on purpose: the user chose to let it run
     // past, and surrounding content is never pushed around (§2.4).
 
+    /**
+     * Sit on the line's OWN baseline.
+     *
+     * This used to place the text at `y + h - size * ASCENT_RATIO`, which
+     * derives a baseline from the glyph box and a constant. How far a
+     * baseline sits above the bottom of its glyph box depends on the
+     * font's descender, so the derived position missed the real one --
+     * measured by diffing an export against its original, the replacement
+     * sat visibly higher than the text it replaced while the surrounding
+     * lines stayed put.
+     *
+     * The extraction knows where the pen actually was. `line.baseline` is
+     * in page space (top-down); the content stream is raw user space
+     * (bottom-up), so it flips against the page height the same way the
+     * cover above does.
+     */
+    const baseline =
+      line.baseline > 0 ? pageHeight - line.baseline + cy0 : y + h - size * ASCENT_RATIO
+
     ops.push(
       fillColor(o.color),
       'BT',
       `/${font.name} ${num(size)} Tf`,
-      `1 0 0 1 ${num(x)} ${num(y + h - size * ASCENT_RATIO)} Tm`,
+      `1 0 0 1 ${num(x)} ${num(baseline)} Tm`,
       `${pdfString(text)} Tj`,
       'ET',
     )

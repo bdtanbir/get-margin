@@ -11,6 +11,16 @@ export type LineRun = {
   text: string
   font: string
   size: number
+  /**
+   * The line's baseline in page space -- where the glyphs actually sit.
+   *
+   * Not derivable from `bbox`. The box is the glyph extent, and how far the
+   * baseline sits above its bottom depends on the font's descender, which
+   * varies. Anything redrawing over this line has to be told, or it guesses
+   * -- and a guess puts replacement text at a different height from the
+   * text it replaced, which is visible the moment they sit side by side.
+   */
+  baseline: number
   chars: CharQuad[]
 }
 
@@ -48,6 +58,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
     let bbox: [number, number, number, number] | undefined
     let font = ''
     let size = 0
+    let baseline = 0
 
     text.walk({
       beginLine(lineBox) {
@@ -55,8 +66,9 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         chars = []
         font = ''
         size = 0
+        baseline = 0
       },
-      onChar(c, _origin, charFont, charSize, quad) {
+      onChar(c, origin, charFont, charSize, quad) {
         // The run's font and size come from its first character. A line is
         // already a homogeneous style run in MuPDF's model, so later
         // characters agree; taking the first avoids an empty string on a
@@ -64,6 +76,9 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         if (!font) {
           font = charFont.getName()
           size = charSize
+          // The pen position, which IS the baseline. Taken from the first
+          // character for the same reason as the font and size.
+          baseline = origin[1] ?? 0
         }
         chars.push({ char: c, quad: [...quad] as Quad })
       },
@@ -71,7 +86,14 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         // A line with no characters (an image-only block's stray line) is
         // not selectable text and would only add an empty hit target.
         if (bbox && chars.length > 0) {
-          lines.push({ bbox, text: chars.map((c) => c.char).join(''), font, size, chars })
+          lines.push({
+            bbox,
+            text: chars.map((c) => c.char).join(''),
+            font,
+            size,
+            baseline,
+            chars,
+          })
         }
         bbox = undefined
         chars = []

@@ -18,6 +18,7 @@ function stubIndex(): PageQuadIndex {
       text,
       font: 'Helvetica',
       size: 10,
+      baseline: 116,
       chars: [...text].map((char, i) => ({
         char,
         quad: [i * 10, top, i * 10 + 10, top, i * 10, bottom, i * 10 + 10, bottom] as Quad,

@@ -206,10 +206,39 @@ describe('fitting', () => {
     expect(drawn('overflow').length).toBeGreaterThan(drawn('truncate').length)
   })
 
+  /**
+   * Measured as rendered ink, not as byte length.
+   *
+   * This used to compare the two outputs' sizes in bytes, which passed only
+   * because the derived baseline changed with the font size and produced
+   * differently-long decimals. Sitting the text on the line's real baseline
+   * made that number identical for both, and the test failed while the
+   * feature worked -- it had been asserting a coincidence.
+   */
   it('uses an explicit size over the derived one', () => {
-    const small = write([patch({ text: 'Sized', fontSize: 6 })])
-    const large = write([patch({ text: 'Sized', fontSize: 24 })])
-    expect(large.length).not.toBe(small.length)
+    const inkHeight = (fontSize: number): number => {
+      const out = write([patch({ text: 'Sized', fontSize, fit: 'overflow' })])
+      const doc = mupdf.Document.openDocument(Buffer.from(out), 'application/pdf')
+      const pm = doc
+        .loadPage(0)
+        .toPixmap(mupdf.Matrix.scale(4, 4), mupdf.ColorSpace.DeviceRGB, false, true)
+      const w = pm.getWidth()
+      const h = pm.getHeight()
+      const px = Uint8Array.from(pm.getPixels())
+      let top = Infinity
+      let bottom = -Infinity
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (px[(y * w + x) * 3]! < 128) {
+            top = Math.min(top, y)
+            bottom = Math.max(bottom, y)
+          }
+        }
+      }
+      return bottom - top
+    }
+
+    expect(inkHeight(24)).toBeGreaterThan(inkHeight(6))
   })
 })
 

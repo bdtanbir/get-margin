@@ -30,6 +30,8 @@ function indexOf(text: string): PageQuadIndex {
       text,
       font: 'Test',
       size: 12,
+      // Baseline sits above the box bottom by the font's descender.
+      baseline: 114,
       chars: [...text].map((char, i) => ({
         char,
         quad: [40 + i * 10, 100, 50 + i * 10, 100, 40 + i * 10, 118, 50 + i * 10, 118] as Quad,
