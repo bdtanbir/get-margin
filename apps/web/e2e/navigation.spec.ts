@@ -4,6 +4,12 @@ import { fileURLToPath } from 'node:url'
 const FIXTURE = fileURLToPath(
   new URL('../../../packages/pdf-core/test/fixtures/multi-page.pdf', import.meta.url),
 )
+const ONE_PAGE = fileURLToPath(
+  new URL('../../../packages/pdf-core/test/fixtures/simple-text.pdf', import.meta.url),
+)
+const SECOND = fileURLToPath(
+  new URL('../../../packages/pdf-core/test/fixtures/mixed-fonts.pdf', import.meta.url),
+)
 
 /**
  * Clicking a page in the sidebar must take you to that page.
@@ -127,5 +133,114 @@ test.describe('page navigation from the sidebar', () => {
     expect(shown).toBeGreaterThan(1)
     // The current-page marker follows the scroll rather than snapping back.
     expect(await currentPage(page)).toBe(shown)
+  })
+})
+
+/**
+ * Pages have to actually be PAINTED, not merely laid out.
+ *
+ * The navigation suite above passed while every page rendered blank,
+ * because it asserted where pages were and never that anything had been
+ * drawn into them. That gap hid a real regression: adding a second
+ * document left the whole viewer empty. See
+ * `docs/findings/23-blank-pages-after-merge.md`.
+ *
+ * These use ONE-page documents on purpose. With a long document open an
+ * appended page lands off-screen and the pages already rendered stay
+ * painted, so the suite goes green while the bug is fully present -- which
+ * is exactly what the first version of these tests did. The reported case
+ * is a short document where the added page is immediately in view.
+ */
+test.describe('pages render', () => {
+  // The viewer must be visible to measure what was painted into it; on
+  // phone the pages panel is a full-screen modal covering it, and the
+  // defects here are store logic rather than anything engine-specific.
+  // Applied per test: the describe-level callback form does not receive
+  // testInfo, and silently throws instead of skipping.
+  const DESKTOP_ONLY = 'the viewer is covered by the pages modal on phone'
+
+  /** Ink fraction per rendered page, in DOM order. */
+  async function ink(page: Page): Promise<number[]> {
+    return page.evaluate(() => {
+      const out: number[] = []
+      document.querySelectorAll('[role="img"][aria-label^="Page "]').forEach((el) => {
+        const c = el.querySelector('canvas') as HTMLCanvasElement | null
+        if (!c || !c.width) {
+          out.push(-1)
+          return
+        }
+        const { data } = c.getContext('2d')!.getImageData(0, 0, c.width, c.height)
+        let marked = 0
+        for (let i = 0; i < data.length; i += 4) if (data[i]! < 245) marked++
+        out.push(marked / (data.length / 4))
+      })
+      return out
+    })
+  }
+
+  async function openOnePager(page: Page): Promise<void> {
+    await page.goto('/')
+    await page.setInputFiles('input[type=file]', ONE_PAGE)
+    await expect(page.getByRole('img', { name: 'Page 1', exact: true })).toBeVisible({
+      timeout: 30_000,
+    })
+    await page.waitForTimeout(1200)
+  }
+
+  test('a freshly opened document paints', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'phone', DESKTOP_ONLY)
+
+    await openOnePager(page)
+
+    const painted = await ink(page)
+    expect(painted.length).toBeGreaterThan(0)
+    // -1 means the canvas was never created; 0 means created and left blank.
+    for (const value of painted) expect(value).toBeGreaterThan(0)
+  })
+
+  /**
+   * The reported regression: merge a second file and the viewer goes blank.
+   *
+   * The page set is an input to the render plan, and changing it did not
+   * mark the plan dirty -- so nothing was re-planned and the new page never
+   * rendered. It took the first page down with it.
+   */
+  test('adding a second document paints both documents', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'phone', DESKTOP_ONLY)
+
+    await openOnePager(page)
+
+    await page.locator('input[type=file]').nth(1).setInputFiles(SECOND)
+    await expect(page.locator('[data-source-header]')).toHaveCount(2)
+    await page.waitForTimeout(2500)
+
+    const painted = await ink(page)
+    expect(painted, 'both pages should be rendered').toHaveLength(2)
+    for (const value of painted) expect(value).toBeGreaterThan(0)
+  })
+
+  /**
+   * Page numbers come from display position, not from the page's index
+   * inside the file it came from.
+   *
+   * Those diverge the moment two documents are merged, and the viewer used
+   * to label from `sourceIndex` -- so every source's first page announced
+   * itself as "Page 1": the same number twice, disagreeing with the
+   * thumbnail beside it.
+   */
+  test('page labels follow display position across a merge', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'phone', DESKTOP_ONLY)
+
+    await openOnePager(page)
+    await page.locator('input[type=file]').nth(1).setInputFiles(SECOND)
+    await expect(page.locator('[data-source-header]')).toHaveCount(2)
+    await page.waitForTimeout(1500)
+
+    const labels = await page.evaluate(() =>
+      [...document.querySelectorAll('[role="img"][aria-label^="Page "]')].map((el) =>
+        el.getAttribute('aria-label'),
+      ),
+    )
+    expect(labels).toEqual(['Page 1', 'Page 2'])
   })
 })

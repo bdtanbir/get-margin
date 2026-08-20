@@ -208,6 +208,7 @@ onBeforeUnmount(() => {
           <PageCanvas
             v-if="doc.pages[doc.pageOrder[item.index]!]"
             :page="doc.pages[doc.pageOrder[item.index]!]!"
+            :index="item.index"
             :zoom="vp.zoom"
             :bitmap="vp.bitmapFor(doc.pageOrder[item.index]!)"
           />

@@ -6,6 +6,20 @@ import type { RenderResult } from '@/workers/pdfService'
 
 const props = defineProps<{
   page: PageState
+  /**
+   * Position in `pageOrder` -- the page number the READER sees.
+   *
+   * Not `page.sourceIndex`, which is the page's position inside the file it
+   * came from. The two diverge the moment pages are reordered or a second
+   * document is merged in, and this label used to be built from
+   * `sourceIndex`: in a merged document every source's first page announced
+   * itself as "Page 1", so a screen reader read the same page number twice
+   * and the viewer disagreed with the thumbnail beside it.
+   *
+   * `Thumbnail.vue` carries the same warning and got it right; this
+   * component did not.
+   */
+  index: number
   zoom: number
   bitmap?: RenderResult | undefined
 }>()
@@ -17,7 +31,7 @@ const view = computed(() => pageViewSize(props.page.geometry, props.zoom))
 const cssWidth = computed(() => `${Math.round(view.value.width)}px`)
 const cssHeight = computed(() => `${Math.round(view.value.height)}px`)
 
-const label = computed(() => `Page ${props.page.sourceIndex + 1}`)
+const label = computed(() => `Page ${props.index + 1}`)
 
 function paint(): void {
   const el = canvas.value

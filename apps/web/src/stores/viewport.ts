@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, shallowRef, readonly } from 'vue'
+import { ref, computed, shallowRef, readonly, watch } from 'vue'
 import { BitmapCache, cacheKey } from '@/lib/bitmapCache'
 import { getPdfClient } from '@/workers/pdfClient'
 import { planRenders, effectiveScale, PLACEHOLDER_SCALE } from '@/features/viewport/renderPriority'
@@ -156,6 +156,35 @@ export const useViewportStore = defineStore('viewport', () => {
     dpr.value = d
     dirty = true
   }
+
+  /**
+   * The set of pages is an input to the render plan, so changing it must
+   * mark the plan dirty.
+   *
+   * `planRenders` reads `doc.pageOrder` and `doc.pages`. The invariant
+   * above says every input to the plan marks it dirty when it changes, and
+   * this one did not -- adding, deleting or reordering pages left `dirty`
+   * false, so `pump()`'s `while (dirty)` loop had nothing to do and the new
+   * pages never rendered.
+   *
+   * It went unnoticed because the scroller used to recompute the anchor
+   * from the virtualiser's item ARRAY, whose midpoint moved whenever the
+   * page count changed -- so `setAnchor` happened to mark the plan dirty as
+   * a side effect. Fixing that anchor calculation removed the accident and
+   * left merged pages blank, which is how this surfaced.
+   *
+   * Keyed on the joined ids rather than array identity: the getter behind
+   * `pageOrder` recomputes on unrelated edit-store changes, and re-planning
+   * on every brush stroke would be waste. Rotation and crop do not change
+   * this key -- they go through `invalidate`.
+   */
+  watch(
+    () => doc.pageOrder.join('\u0000'),
+    () => {
+      dirty = true
+      void pump()
+    },
+  )
 
   function invalidate(pageId: PageId): void {
     cache.value.invalidatePage(pageId)
