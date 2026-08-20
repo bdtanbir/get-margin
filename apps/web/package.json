@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@margin/pdf-core": "workspace:*",
+    "@margin/shared": "workspace:*",
     "@margin/transform": "workspace:*",
     "@tanstack/vue-virtual": "^3.11.0",
     "@vueuse/core": "^12.0.0",

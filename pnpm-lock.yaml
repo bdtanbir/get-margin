@@ -51,6 +51,9 @@ importers:
       '@margin/pdf-core':
         specifier: workspace:*
         version: link:../../packages/pdf-core
+      '@margin/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@margin/transform':
         specifier: workspace:*
         version: link:../../packages/transform
