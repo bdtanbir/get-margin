@@ -3,6 +3,20 @@ import { num } from './coords.js'
 import type { Color } from './types.js'
 
 /**
+ * Marks the bracket this module adds, so a page is wrapped once however
+ * many fragments are appended to it. Without it, every writer on a page
+ * would add another layer of nesting.
+ */
+const GUARD = 'MarginContentGuard'
+
+/** Whether this page's content has already been bracketed by us. */
+function isGuarded(contents: mupdf.PDFObject): boolean {
+  if (!contents.isArray() || contents.length === 0) return false
+  const first = contents.get(0)
+  return first.isStream() && !first.get(GUARD).isNull()
+}
+
+/**
  * Append a content-stream fragment to a page, without disturbing what is
  * already drawn there.
  *
@@ -15,13 +29,29 @@ import type { Color } from './types.js'
  * Every fragment is wrapped in q/Q so a writer that leaves the graphics
  * state dirty cannot corrupt whatever is appended after it.
  *
- * NOTE ON THE PRECEDING STREAM: the concatenation of the /Contents array is
- * a single stream as far as the viewer is concerned, so a page whose own
- * content ends mid-path or with an unbalanced `q` would poison this
- * fragment. The leading `q` protects the fragment's graphics state but not
- * its current transformation matrix if the page left one pushed; MuPDF's
- * own writers make the same assumption, and every producer of well-formed
- * PDF balances its operators.
+ * THE PAGE'S OWN CONTENT IS WRAPPED TOO, and that is not defensive
+ * tidiness -- it is load-bearing. The /Contents array is one stream as far
+ * as a viewer is concerned, so anything the page leaves applied at the end
+ * of its own content applies to whatever is appended next. A leading `q`
+ * saves OUR state; it cannot undo a transform the page pushed and never
+ * popped.
+ *
+ * This file used to assume that could not happen, on the grounds that
+ * "every producer of well-formed PDF balances its operators". Chromium does
+ * not, and Chromium prints a large share of the PDFs in existence. Its
+ * pages open with
+ *
+ *     .23999999 0 0 -.23999999 0 842.88 cm
+ *
+ * at the top level, outside any q/Q, so the CTM at the end of the page is a
+ * quarter-scale Y-flip. Everything appended after it -- a text patch, a
+ * stamp, a whiteout, a shape -- was drawn through that transform and landed
+ * scaled down, mirrored, and far from where it was asked to go.
+ *
+ * Bracketing the original content with q/Q gives every appended fragment
+ * the page's initial CTM, which is what all of the geometry in this
+ * directory is computed against. The original bytes are untouched: the
+ * brackets are separate streams around them.
  */
 export function appendContent(
   raw: mupdf.PDFDocument,
@@ -32,13 +62,24 @@ export function appendContent(
   const pageObj = page.getObject()
   const contents = pageObj.get('Contents')
 
-  if (contents.isArray()) {
+  // Already bracketed: everything after the closing Q starts from the
+  // page's initial CTM, so this can simply join the queue.
+  if (isGuarded(contents)) {
     contents.push(stream)
     return
   }
 
+  const open = raw.addStream('q\n', { [GUARD]: 'open' })
+  const close = raw.addStream('\nQ\n', {})
+
   const array = raw.newArray()
-  if (!contents.isNull()) array.push(contents)
+  array.push(open)
+  if (contents.isArray()) {
+    for (let i = 0; i < contents.length; i++) array.push(contents.get(i))
+  } else if (!contents.isNull()) {
+    array.push(contents)
+  }
+  array.push(close)
   array.push(stream)
   pageObj.put('Contents', array)
 }
