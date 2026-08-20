@@ -42,7 +42,10 @@ function onClick(id: PageId, index: number, e: MouseEvent): void {
   else {
     selection.selectOnly(id)
     // A plain click is still a navigation, as it was in Phase 1.
-    vp.setAnchor(index)
+    // `goToPage`, not `setAnchor`: the latter only records where the user
+    // already is, and using it here meant a click selected the page
+    // without ever moving the viewport to it.
+    vp.goToPage(index)
     emit('select', index)
   }
 }
@@ -115,7 +118,7 @@ function onKeydown(id: PageId, index: number, e: KeyboardEvent): void {
     case 'Enter':
       e.preventDefault()
       selection.selectOnly(id)
-      vp.setAnchor(index)
+      vp.goToPage(index)
       emit('select', index)
       return
     default:

@@ -13,22 +13,20 @@ const emit = defineEmits<{ select: [index: number] }>()
 // so a `document.querySelector('[data-page-index=...]')?.scrollIntoView()`
 // approach silently no-ops for any page outside the currently rendered
 // window — clicking thumbnail 8 while looking at page 1 would move nothing.
-// `vp.setAnchor` alone is the correct single source of truth here: PageList
-// watches `vp.anchorIndex` and calls the virtualizer's own `scrollToIndex`
-// (which works regardless of what is currently mounted) whenever it
-// changes, so ThumbnailPanel never needs to touch the scroller's DOM
-// itself.
+// `vp.goToPage` is what moves the viewport: PageList watches the store's
+// scroll request and calls the virtualizer's own `scrollToIndex`, which
+// works regardless of what is currently mounted, so this panel never needs
+// to touch the scroller's DOM itself.
 //
-// Also emits `select` after moving the anchor. On desktop ThumbnailPanel is
-// a permanent sidebar, so nothing needs to react to the emit — but on phone
-// (MobileShell) it is rendered inside a full-screen `fixed inset-0` modal,
-// and without this the user taps a thumbnail, the viewport jumps behind the
-// still-open opaque overlay, and nothing visibly happens. Emitting the event
-// keeps the decision of what it MEANS in the shell, not here: MobileShell
-// closes its modal on it, DesktopShell ignores it — no feature component
-// branches on which shell it's mounted under.
+// PageGrid already calls `goToPage` when a tile is clicked, so this only
+// RELAYS the event. On desktop ThumbnailPanel is a permanent sidebar and
+// nothing needs to react — but on phone (MobileShell) it is rendered inside
+// a full-screen `fixed inset-0` modal, and without this the user taps a
+// thumbnail, the viewport jumps behind the still-open opaque overlay, and
+// nothing visibly happens. Emitting keeps the decision of what it MEANS in
+// the shell: MobileShell closes its modal on it, DesktopShell ignores it —
+// no feature component branches on which shell it is mounted under.
 function select(index: number): void {
-  vp.setAnchor(index)
   emit('select', index)
 }
 </script>

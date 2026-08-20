@@ -33,28 +33,52 @@ const virtualizer = useVirtualizer(
 const items = computed(() => virtualizer.value.getVirtualItems())
 const totalHeight = computed(() => virtualizer.value.getTotalSize())
 
-// Keep the render anchor pointing at whatever is centred in the viewport.
+/**
+ * Keep the anchor pointing at whatever is actually centred in the viewport.
+ *
+ * This used to take `list[Math.floor(list.length / 2)]` -- the middle of
+ * the virtual items ARRAY, which is the visible range plus overscan and is
+ * not centred on anything. At the top of a document the array is
+ * [0,1,2,3,4], so the "centre" resolved to index 2, and because that number
+ * was fed back into a scroll, opening a document scrolled it to page 3 on
+ * its own and clicking page 1 landed on page 3.
+ *
+ * The real answer is the item whose extent contains the middle of the
+ * scrolled viewport, which is what this computes.
+ */
 watch(items, (list) => {
   const first = list[0]
   if (!first) return
-  const mid = list[Math.floor(list.length / 2)] ?? first
-  vp.setAnchor(mid.index)
+  const el = scroller.value
+  // `scrollOffset` is null until the scroller has been measured; treat that
+  // as the top rather than as NaN, which would make every comparison below
+  // false and silently pin the anchor to the first item.
+  const offset = virtualizer.value.scrollOffset ?? 0
+  const middle = offset + (el ? el.clientHeight / 2 : 0)
+  const centred = list.find((item) => item.start <= middle && item.end > middle)
+  // Past the end (short document, or bounced scroll) the nearest item is
+  // the last one that starts before the middle.
+  const fallback = [...list].reverse().find((item) => item.start <= middle) ?? first
+  vp.setAnchor((centred ?? fallback).index)
   void vp.pump()
 })
 
-// Task 19: ThumbnailPanel jumps the viewport by calling `vp.setAnchor`
-// directly (it has no reference to this component or its scroller). For an
-// already-visible page that is a no-op — the watcher above already keeps
-// the anchor in sync with scroll position — but for a thumbnail far outside
-// the current viewport, `setAnchor` alone changes only the store's number;
-// nothing scrolls the container. `align: 'auto'` is what makes this safe to
-// run on every anchor change without fighting the user's own scrolling: per
-// tanstack-virtual, 'auto' is a no-op when the target index is already
-// fully in view (which it will be for scroll-driven anchor updates, since
-// those originate from `items` above), and only actually scrolls when the
-// index is genuinely off-screen (a thumbnail-driven jump).
-watch(() => vp.anchorIndex, (i) => {
-  virtualizer.value.scrollToIndex(i, { align: 'auto' })
+/**
+ * Scroll only when something explicitly asked to navigate.
+ *
+ * Watches `scrollRequest`, never `anchorIndex`. Watching the anchor meant
+ * every scroll-driven update was read back as an instruction to scroll, so
+ * the scroller fought itself; `align: 'auto'` was the workaround, and it
+ * silently swallowed any real navigation to a page that was already partly
+ * on screen -- clicking the next page down did nothing at all.
+ *
+ * `align: 'start'` because "go to page 8" means put page 8 at the top, the
+ * way every other PDF reader behaves. The nonce in the request is what
+ * makes asking for the same page twice scroll twice.
+ */
+watch(() => vp.scrollRequest, (request) => {
+  if (!request) return
+  virtualizer.value.scrollToIndex(request.index, { align: 'start' })
 })
 
 watch(() => vp.zoom, () => {

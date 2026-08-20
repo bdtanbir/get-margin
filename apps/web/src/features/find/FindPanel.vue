@@ -66,7 +66,9 @@ watch(
 watch(() => find.active, (match) => {
   if (!match) return
   const index = displayIndexOf(match.page)
-  if (index >= 0) vp.setAnchor(index)
+  // Navigation, not a position report: the whole point of next/previous is
+  // that the viewport follows.
+  if (index >= 0) vp.goToPage(index)
 })
 
 /** The edit-document page id for a source page, or undefined if it is gone. */

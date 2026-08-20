@@ -189,14 +189,19 @@ describe('FindPanel', () => {
     // source page 0 is displayed last.
     edits.applyOp({ type: 'reorderPages', pageOrder: ['p2', 'p1', 'p0'] }, 'Reorder')
     /**
-     * Asserted on the CALL rather than on anchorIndex, because setAnchor
+     * Asserted on the CALL rather than on anchorIndex, because the store
      * clamps against the document store's page count -- which is zero here,
      * since these tests seed the edit store only. An earlier version
      * checked anchorIndex and passed while the lookup returned "not found"
      * every time and nothing was ever called: 0 was both the expected
      * answer and the untouched default.
+     *
+     * `goToPage`, not `setAnchor`: following a match has to MOVE the
+     * viewport. `setAnchor` only records where the user already is, and a
+     * find that merely recorded a position would highlight a match on a
+     * page nobody was shown.
      */
-    const setAnchor = vi.spyOn(useViewportStore(), 'setAnchor')
+    const goToPage = vi.spyOn(useViewportStore(), 'goToPage')
 
     mount(FindPanel)
     const store = useFindStore()
@@ -206,7 +211,7 @@ describe('FindPanel', () => {
     await flushPromises()
 
     // Source page 0 is display index 2 after the reversal.
-    expect(setAnchor).toHaveBeenCalledWith(2)
+    expect(goToPage).toHaveBeenCalledWith(2)
   })
 
   it('clears the search when closed', async () => {

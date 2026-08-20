@@ -31,6 +31,27 @@ export const useViewportStore = defineStore('viewport', () => {
 
   const zoom = ref(1)
   const anchorIndex = ref(0)
+  /**
+   * An explicit "take me to this page", distinct from `anchorIndex`.
+   *
+   * These are two different facts and conflating them was a bug. The anchor
+   * answers "which page is the user looking at", and is written by the
+   * scroller as the user scrolls. A navigation request answers "which page
+   * does the user want to be looking at", and is written by the thumbnail
+   * grid and the find panel.
+   *
+   * When one ref carried both, every scroll-driven anchor update looked
+   * like a navigation request to the viewer, which scrolled in response --
+   * so the scroller fought itself. The workaround was to scroll only when
+   * the target was off-screen, which then silently swallowed real
+   * navigation to a page that happened to be partly visible.
+   *
+   * `nonce` is what makes a repeat request work: asking for page 3 twice
+   * must scroll twice, and comparing indices alone would treat the second
+   * ask as no change at all.
+   */
+  const scrollRequest = ref<{ index: number; nonce: number } | null>(null)
+  let requestNonce = 0
   const dpr = ref(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1)
   // shallowRef: the cache holds large typed arrays that must never be made reactive.
   const cache = shallowRef(new BitmapCache())
@@ -94,11 +115,31 @@ export const useViewportStore = defineStore('viewport', () => {
     dirty = true
   }
 
+  /**
+   * Records which page is now in view. Does NOT scroll.
+   *
+   * Called by the scroller as the user scrolls. Anything that wants the
+   * viewport to MOVE calls `goToPage`.
+   */
   function setAnchor(i: number): void {
     const clamped = Math.max(0, Math.min(doc.pageOrder.length - 1, i))
     if (clamped === anchorIndex.value) return
     anchorIndex.value = clamped
     dirty = true
+  }
+
+  /**
+   * Asks the viewer to scroll to a page, and records it as current.
+   *
+   * The only way to move the viewport. Separate from `setAnchor` so the
+   * scroller can report where it is without that report being read back as
+   * an instruction to go somewhere.
+   */
+  function goToPage(i: number): void {
+    const clamped = Math.max(0, Math.min(doc.pageOrder.length - 1, i))
+    setAnchor(clamped)
+    requestNonce += 1
+    scrollRequest.value = { index: clamped, nonce: requestNonce }
   }
 
   /**
@@ -198,6 +239,7 @@ export const useViewportStore = defineStore('viewport', () => {
   return {
     zoom: readonly(zoom),
     anchorIndex: readonly(anchorIndex),
+    scrollRequest: readonly(scrollRequest),
     dpr: readonly(dpr),
     zoomPercent,
     lastError: readonly(lastError),
@@ -205,6 +247,7 @@ export const useViewportStore = defineStore('viewport', () => {
     bitmapFor,
     setZoom,
     setAnchor,
+    goToPage,
     setDpr,
     invalidate,
     pump,
