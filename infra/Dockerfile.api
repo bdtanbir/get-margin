@@ -1,0 +1,72 @@
+# =============================================================================
+#  NEVER EXECUTED. This file has not been built, run, or tested.
+#
+#  No Docker daemon was available when it was written:
+#      $ docker info
+#      ERROR: Cannot connect to the Docker daemon at unix:///var/run/docker.sock
+#
+#  So every claim below is an intention, not a verified property. Before any
+#  of it is deployed or described as a control, run the checklist in
+#  docs/findings/17-deploy-verification.md and record the result there.
+# =============================================================================
+
+# Pinned to a digest, not a tag. `node:22-slim` is a moving target, and a
+# base image that changes underneath a security review invalidates it.
+# Replace with the digest current at deploy time; the tag here is a
+# placeholder that WILL need updating.
+FROM node:22-slim AS build
+
+WORKDIR /repo
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+
+# Manifests first, so a source change does not invalidate the dependency
+# layer.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/api/package.json apps/api/
+RUN pnpm install --frozen-lockfile --filter @margin/api...
+
+COPY tsconfig.base.json tsconfig.json ./
+COPY packages/shared packages/shared
+COPY apps/api apps/api
+
+# -----------------------------------------------------------------------------
+
+FROM node:22-slim AS runtime
+
+# The API is the small public surface. It parses multipart headers and
+# talks to the queue; it does NOT parse documents. That work belongs to
+# the worker image, in its own container, for the reason in
+# PHASE-7-DESIGN.md §8: coupling them puts a public HTTP listener inside
+# the blast radius of the parsers.
+
+ENV NODE_ENV=production
+WORKDIR /app
+
+COPY --from=build /repo/node_modules ./node_modules
+COPY --from=build /repo/packages/shared ./packages/shared
+COPY --from=build /repo/apps/api ./apps/api
+COPY --from=build /repo/tsconfig.base.json ./tsconfig.base.json
+
+# node:* images ship a `node` user (uid 1000). Running as root inside a
+# container is one namespace escape away from running as root outside it.
+USER node
+
+# Storage lives on a mount, not in the image layer. A job file written into
+# the container filesystem would survive in the layer cache of anything
+# that committed the container.
+ENV STORAGE_ROOT=/var/lib/margin/jobs
+ENV HOST=0.0.0.0
+ENV PORT=3000
+EXPOSE 3000
+
+# `exec` form: PID 1 is node itself, so SIGTERM reaches the process and the
+# server closes its listener and stops the sweeper. Wrapped in a shell, the
+# shell would eat the signal and every deploy would be a hard kill.
+CMD ["node", "--experimental-strip-types", "apps/api/src/main.ts"]
+
+# UNVERIFIED: `--experimental-strip-types` needs Node >= 22.6. The repo runs
+# TypeScript through tsx in development and has never run this entrypoint
+# under Node's own stripping. Checklist item 2.

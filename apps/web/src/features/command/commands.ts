@@ -116,6 +116,13 @@ export function useCommands(): ComputedRef<Command[]> {
         run: () => dialogs.show('compress'),
       },
       {
+        id: 'doc:images',
+        label: 'Export as images…',
+        group: 'Document',
+        available: hasDocument,
+        run: () => dialogs.show('images'),
+      },
+      {
         id: 'doc:find',
         label: 'Find in document…',
         group: 'Document',

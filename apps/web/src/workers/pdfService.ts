@@ -1,9 +1,11 @@
 import {
-  PdfDocument, renderPage, replay, buildQuadIndex, listFields, readMetadata, recompressImages,
+  PdfDocument, renderPage, rasterisePage, rasterSize, replay, buildQuadIndex, listFields,
+  readMetadata, recompressImages,
   findInPage, missingGlyphsFor,
   type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
   type SourceField, type Protection, type DocumentMetadata,
   type CompressionPreset, type CompressionResult, type FindOptions, type Match,
+  type RasterFormat, type RasterisedPage,
 } from '@margin/pdf-core'
 import type { PageGeometry } from '@margin/transform'
 
@@ -337,6 +339,36 @@ export class PdfService {
   ): CompressionResult {
     const exported = this.save(editDoc, fonts)
     return recompressImages(exported, preset)
+  }
+
+  /**
+   * One page as a JPEG or PNG.
+   *
+   * Renders the SOURCE page, not the export. Image export is a snapshot of
+   * the document as it is read, and routing it through `save` would make a
+   * page export cost a whole-document write -- for a 300-page file, per
+   * page.
+   *
+   * Nothing here touches the network. This is the one conversion in the
+   * product that needs no backend at all, which is why it lives in the
+   * worker beside the renderer rather than behind the job API.
+   */
+  rasterise(
+    page: number,
+    dpi: number,
+    format: RasterFormat = 'jpeg',
+    quality?: number,
+  ): RasterisedPage {
+    const doc = this.#doc
+    if (!doc) throw new Error('no document open')
+    return rasterisePage(doc, page, dpi, format, quality === undefined ? {} : { quality })
+  }
+
+  /** The pixel dimensions a rasterise would produce, without doing one. */
+  rasterSize(page: number, dpi: number): { width: number; height: number } {
+    const doc = this.#doc
+    if (!doc) throw new Error('no document open')
+    return rasterSize(doc, page, dpi)
   }
 
   /**

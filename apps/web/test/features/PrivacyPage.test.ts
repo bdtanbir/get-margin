@@ -164,3 +164,45 @@ describe('the privacy page covers everything actually stored', () => {
     }
   })
 })
+/**
+ * The one claim on this page that a build flag can falsify.
+ *
+ * Phase 6 already had to fix this page for understating what is stored;
+ * this is the same failure in the other direction, and it is worse, because
+ * "nothing is uploaded, and there is no server to upload it to" is the
+ * sentence the whole page rests on.
+ */
+describe('the upload claim tracks whether a conversion service exists', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.resetModules()
+  })
+
+  async function pageWith(baseUrl: string) {
+    vi.doMock('@/features/convert/useJob', () => ({
+      conversionAvailable: () => baseUrl.length > 0,
+    }))
+    const Page = (await import('@/features/document/PrivacyPage.vue')).default
+    return mount(Page)
+  }
+
+  it('claims outright that there is no server, in the build that has none', async () => {
+    const w = await pageWith('')
+    expect(w.get('[data-privacy-local]').text()).toMatch(/no server to upload it to/i)
+    expect(w.text()).toMatch(/never leave this device/i)
+    expect(w.find('[data-privacy-convert]').exists()).toBe(false)
+  })
+
+  it('names the exception, and its deletion policy, in a build that has one', async () => {
+    const w = await pageWith('https://convert.example')
+    // The absolute claim is gone, because it would no longer be true.
+    expect(w.get('[data-privacy-local]').text()).not.toMatch(/no server to upload it to/i)
+
+    const exception = w.get('[data-privacy-convert]').text()
+    expect(exception).toMatch(/file conversion/i)
+    expect(exception).toMatch(/only after you are shown/i)
+    expect(exception).toMatch(/deleted as soon as you download/i)
+    expect(exception).toMatch(/within an hour/i)
+    expect(exception).toMatch(/never stored or logged/i)
+  })
+})

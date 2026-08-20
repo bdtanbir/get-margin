@@ -1,0 +1,157 @@
+# =============================================================================
+#  NEVER EXECUTED. This topology has not been brought up, and no property
+#  asserted here has been observed.
+#
+#  No Docker daemon was available when it was written:
+#      $ docker info
+#      ERROR: Cannot connect to the Docker daemon at unix:///var/run/docker.sock
+#
+#  The hardening below is a PROPOSAL. Run docs/findings/17-deploy-verification.md
+#  before treating any of it as a control — especially the egress block,
+#  which is the one people assume rather than test.
+# =============================================================================
+
+name: margin
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    # The only thing in this file that is meant to be reachable.
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      STORAGE_ROOT: /var/lib/margin/jobs
+      # UNVERIFIED: nothing reads this yet. The API composes a MemoryQueue
+      # in-process; a BullMQ adapter is what would consume it.
+      REDIS_URL: redis://redis:6379
+    volumes:
+      # Shared with the worker, because the worker reads the input and
+      # writes the result. With BullMQ and S3 this volume disappears and
+      # the two containers stop sharing a filesystem at all — which is
+      # strictly better, and is why StorageAdapter is an interface.
+      - jobs:/var/lib/margin/jobs
+    networks:
+      - edge
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.worker
+
+    # ---------------------------------------------------------------------
+    # The sandbox. Every line here exists because this process feeds
+    # attacker-controlled bytes to a browser engine, and PLAN.md §4 names
+    # that as the real security surface.
+    # ---------------------------------------------------------------------
+
+    # NO EGRESS. `internal: true` on the network below means Docker creates
+    # no gateway, so there is no route off the host at all — not to the
+    # internet, not to the cloud metadata service at 169.254.169.254.
+    #
+    # The converter ALSO blocks every request at the browser context
+    # (apps/worker/src/converters/html.ts), and that block is tested against
+    # a real HTTP server. This is the second layer, for the requests that a
+    # future converter makes without going through Playwright's router.
+    #
+    # UNVERIFIED HERE. Checklist item 5 is what turns this comment into a
+    # fact, and it is the item most likely to fail.
+    networks:
+      - internal
+
+    # A compromised render must not be able to write anything that survives
+    # it. The tmpdir is the single exception, and it is tmpfs, so a restart
+    # is a clean slate.
+    read_only: true
+    tmpfs:
+      - /tmp/margin:size=512m,mode=1777
+
+    user: "1000:1000"
+
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      # DELIBERATELY NOT SET: `seccomp:./seccomp.json`.
+      #
+      # `security_opt: seccomp:<file>` REPLACES Docker's built-in profile
+      # rather than merging with it, and the built-in is deny-by-default
+      # over an allowlist of ~300 syscalls. seccomp.json here is a DENY
+      # LIST to merge into a copy of that default; applied on its own it
+      # would swap deny-by-default for allow-by-default and leave this
+      # container weaker than if the line were absent.
+      #
+      # So the default profile is inherited until someone runs checklist
+      # item 6 and produces a merged profile that is demonstrably stricter.
+      # Shipping the unverified one would be a control in name only, which
+      # is the thing PHASE-7-DESIGN.md §0 refuses to do.
+
+    # Chromium needs a large /dev/shm or it crashes rendering big pages;
+    # the usual alternative, --disable-dev-shm-usage, trades crashes for
+    # disk thrash.
+    shm_size: 256m
+
+    # Hard bounds, because a malformed document that makes a parser
+    # allocate forever is the ordinary case, not the exotic one. Without
+    # these, one bad file takes down the host rather than one container.
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "2.0"
+
+    # A hung parser holds a worker forever while using no CPU, so nothing
+    # else notices. The converter enforces its own wall clock and kills the
+    # browser (converters/html.ts); this restarts the container if the
+    # process itself wedges.
+    restart: unless-stopped
+
+    environment:
+      REDIS_URL: redis://redis:6379
+      TMPDIR: /tmp/margin
+    volumes:
+      - jobs:/var/lib/margin/jobs
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    # No published port: only the internal network can reach it.
+    networks:
+      - internal
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # No persistence, deliberately. The queue holds job ids and types. Job
+    # ids are credentials, and a Redis dump file is a copy of them that
+    # outlives every deletion path the API has.
+    read_only: true
+    tmpfs:
+      - /data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+networks:
+  # Where the API is reachable from.
+  edge:
+    driver: bridge
+  # No gateway. This is the egress block.
+  internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  jobs:
