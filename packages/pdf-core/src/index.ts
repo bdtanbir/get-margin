@@ -15,7 +15,7 @@ export type {
   InkObject, MarkupObject, LinkObject, SignatureObject,
   FieldObject, FieldType, FieldValue, StampObject, RedactionObject, TextPatchObject,
 } from './write/types.js'
-export { EDIT_DOCUMENT_VERSION, emptyEditDocument } from './write/types.js'
+export { EDIT_DOCUMENT_VERSION, emptyEditDocument, OBJECT_KINDS } from './write/types.js'
 export { listFields, fieldKey, hasAcroForm } from './write/fields.js'
 export { resolveTokens, batesNumber } from './write/objects/stamp.js'
 export {

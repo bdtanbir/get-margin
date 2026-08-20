@@ -14,6 +14,7 @@ import TextSelectionLayer from './TextSelectionLayer.vue'
 import MarkupObject from './objects/MarkupObject.vue'
 import RedactionObject from './objects/RedactionObject.vue'
 import TextPatchObject from './objects/TextPatchObject.vue'
+import { isMarkupKind } from './objects/registry'
 import { useTextSelection } from './useTextSelection'
 import { useSelectionStore } from '@/stores/selection'
 import { useViewportStore } from '@/stores/viewport'
@@ -44,10 +45,9 @@ const rootTransform = computed(() => svgRootTransform(props.page.geometry))
 // they render OUTSIDE the y-flipped root <g>. Redaction joins the markup
 // three because its quads come from the same buildQuadIndex, and textPatch
 // joins them because its rect is derived from that index's character quads
-// (see PatchEditor's `box`).
-const MARKUP_KINDS = ['highlight', 'underline', 'strikeout', 'redaction', 'textPatch'] as const
-const isMarkup = (kind: string): boolean =>
-  (MARKUP_KINDS as readonly string[]).includes(kind)
+// (see PatchEditor's `box`). The list lives beside the renderer table so
+// the two can be checked against the format's own list of kinds.
+const isMarkup = isMarkupKind
 
 const onPage = computed(() =>
   Object.values(edits.doc.objects)

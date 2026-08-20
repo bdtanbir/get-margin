@@ -111,6 +111,26 @@ if (typeof HTMLCanvasElement !== 'undefined') {
 }
 
 /**
+ * jsdom implements neither `URL.createObjectURL` nor `revokeObjectURL`.
+ *
+ * Any component that displays binary data it holds in memory — an image, a
+ * signature — builds an object URL rather than a base64 data URL, because a
+ * data URL is a third larger than the payload and gets re-encoded on every
+ * re-render, which a drag does sixty times a second. Under test that throws
+ * "URL.createObjectURL is not a function" the moment such a component
+ * mounts.
+ *
+ * The counter makes each URL distinct, so a test asserting that a NEW url
+ * was made for new data can tell them apart; returning one constant string
+ * would make that assertion vacuous.
+ */
+if (typeof URL !== 'undefined' && typeof URL.createObjectURL !== 'function') {
+  let n = 0
+  URL.createObjectURL = () => `blob:margin-test/${++n}`
+  URL.revokeObjectURL = () => {}
+}
+
+/**
  * jsdom implements no `window.matchMedia`. `lib/theme.ts` calls it once, at
  * module scope, to follow the OS's `prefers-color-scheme` — so ANY component
  * test that mounts TopBar (and therefore useTheme) dies with the

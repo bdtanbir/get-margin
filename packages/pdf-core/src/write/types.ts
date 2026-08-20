@@ -3,14 +3,26 @@ import type { Rect } from '@margin/transform'
 export type ObjectId = string
 export type PageId = string
 
-export type ObjectKind =
-  | 'text' | 'image' | 'rect' | 'ellipse' | 'line' | 'arrow'
-  | 'ink' | 'highlight' | 'underline' | 'strikeout'
-  | 'whiteout' | 'link' | 'signature'
-  | 'field'
-  | 'stamp'
-  | 'redaction'
-  | 'textPatch'
+/**
+ * Every kind of object that can be placed on a page.
+ *
+ * A runtime list, with the type derived from it, so the set can be
+ * ENUMERATED rather than only checked. The viewer has one renderer per kind
+ * and had silently gained kinds with no renderer at all -- an object that
+ * exported correctly and drew nothing on screen. A list that exists only in
+ * the type system cannot be iterated by the test that catches that.
+ */
+export const OBJECT_KINDS = [
+  'text', 'image', 'rect', 'ellipse', 'line', 'arrow',
+  'ink', 'highlight', 'underline', 'strikeout',
+  'whiteout', 'link', 'signature',
+  'field',
+  'stamp',
+  'redaction',
+  'textPatch',
+] as const
+
+export type ObjectKind = (typeof OBJECT_KINDS)[number]
 
 /** sRGB, each channel 0..1 — the range MuPDF's colour setters take. */
 export type Color = [number, number, number]
