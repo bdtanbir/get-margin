@@ -3,7 +3,8 @@ export { geometryFromPageObject } from './geometry.js'
 export type { RawObj } from './geometry.js'
 export { renderPage, MUPDF_APPLIES_ROTATION } from './render.js'
 export {
-  rasterisePage, rasterSize, DPI_PRESETS, DEFAULT_JPEG_QUALITY, PDF_UNITS_PER_INCH,
+  rasterisePage, rasterSize, rasterPixels, DPI_PRESETS, DEFAULT_JPEG_QUALITY,
+  PDF_UNITS_PER_INCH, MUPDF_ROUND_EPSILON,
 } from './raster.js'
 export type { RasterFormat, RasterisedPage, RasteriseOptions } from './raster.js'
 export type { RenderedPage } from './render.js'

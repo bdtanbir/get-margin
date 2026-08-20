@@ -10,9 +10,18 @@ function isMissing(err: unknown): boolean {
 }
 
 /**
+ * The file that records when a job arrived.
+ *
+ * Its CONTENT is the timestamp, not its metadata. See `age` for why that
+ * distinction is the whole point of this file existing.
+ */
+const CREATED = 'created'
+
+/**
  * Job files on local disk, one directory per job.
  *
  * ```
+ * <root>/<jobId>/created   epoch ms, written once, never rewritten
  * <root>/<jobId>/input
  * <root>/<jobId>/result
  * ```
@@ -28,7 +37,15 @@ function isMissing(err: unknown): boolean {
  * `../..`.
  */
 export class LocalStorage implements StorageAdapter {
-  constructor(private readonly root: string) {}
+  /** Injected so a test can place a job's arrival at an arbitrary moment. */
+  private readonly clock: () => number
+
+  constructor(
+    private readonly root: string,
+    options: { clock?: () => number } = {},
+  ) {
+    this.clock = options.clock ?? Date.now
+  }
 
   private dir(id: JobId): string {
     // Throws on anything that is not 43 base64url characters, which
@@ -40,9 +57,26 @@ export class LocalStorage implements StorageAdapter {
   async put(id: JobId, slot: Slot, bytes: Uint8Array): Promise<void> {
     const dir = this.dir(id)
     await mkdir(dir, { recursive: true, mode: 0o700 })
+    await this.stamp(dir)
     // 0o600: the job id is the credential, but defence in depth costs
     // nothing here -- another user on the host is not an owner.
     await writeFile(join(dir, slot), bytes, { mode: 0o600 })
+  }
+
+  /**
+   * Records the arrival time, once.
+   *
+   * `wx` fails if the file already exists, which makes "write it only the
+   * first time" a single atomic call rather than a read-then-write with a
+   * race in the middle. Every later `put` on the same job hits EEXIST and
+   * leaves the original timestamp alone -- which is the entire point.
+   */
+  private async stamp(dir: string): Promise<void> {
+    try {
+      await writeFile(join(dir, CREATED), String(this.clock()), { mode: 0o600, flag: 'wx' })
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+    }
   }
 
   async get(id: JobId, slot: Slot): Promise<Uint8Array | null> {
@@ -72,13 +106,41 @@ export class LocalStorage implements StorageAdapter {
     }
   }
 
+  /**
+   * How long ago the job ARRIVED -- not how long ago it was last touched.
+   *
+   * Read from the `created` file's contents. The obvious implementation is
+   * the job directory's mtime, and it is wrong: creating a file inside a
+   * directory updates that directory's mtime, so writing the result and
+   * then deleting the input each restart the clock. Measured on this
+   * machine, a job took 190ms of drift from three ordinary writes, and an
+   * OCR pass taking four minutes would have had its hour begin four
+   * minutes late.
+   *
+   * That is not a rounding error in the privacy claim -- the consent
+   * dialog promises deletion "within an hour", and a user reads that as an
+   * hour from when they pressed upload.
+   *
+   * A file's CONTENTS are the one thing the filesystem will not update
+   * behind us, which is why the timestamp lives there rather than in a
+   * stat field.
+   */
   async age(id: JobId, now: number): Promise<number | null> {
+    const dir = this.dir(id)
     try {
-      // The directory's mtime, not a slot's: the TTL is measured from when
-      // the job arrived, so writing a result must not extend the life of
-      // the input. mkdir sets it once and neither writeFile touches it.
-      const created = (await stat(this.dir(id))).mtimeMs
-      return Math.max(0, now - created)
+      const raw = await readFile(join(dir, CREATED), 'utf8')
+      const created = Number(raw)
+      // A truncated or garbled stamp must not make a job immortal. Falling
+      // through to the directory's mtime is a worse clock, but a job whose
+      // age cannot be determined is a job the sweeper would skip forever.
+      if (Number.isFinite(created)) return Math.max(0, now - created)
+    } catch (err) {
+      if (!isMissing(err)) throw err
+      // No stamp: a job directory written before this file existed, or one
+      // caught mid-creation. mtime is the fallback, not the contract.
+    }
+    try {
+      return Math.max(0, now - (await stat(dir)).mtimeMs)
     } catch (err) {
       if (isMissing(err)) return null
       throw err

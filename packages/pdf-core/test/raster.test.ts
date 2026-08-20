@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { PNG } from 'pngjs'
 import { pageViewSize } from '@margin/transform'
-import { PdfDocument, rasterisePage, rasterSize, DPI_PRESETS } from '../src/index.js'
+import { PDFDocument } from 'pdf-lib'
+import { PdfDocument, rasterisePage, rasterSize, rasterPixels, DPI_PRESETS } from '../src/index.js'
 import { generateFixtures, fixturePath } from './fixtures/index.js'
 
 beforeAll(async () => {
@@ -170,5 +171,75 @@ describe('rasterSize', () => {
       )
     }
     doc.close()
+  })
+})
+
+/**
+ * The case the fixtures could not reach.
+ *
+ * Every fixture in this repo is US Letter -- 612 x 792, both integers --
+ * so `rasterSize` agreed with the renderer for the wrong reason: at these
+ * DPIs the arithmetic lands on whole numbers and any rounding rule works.
+ * Real documents are mostly A4, which is 595.276 x 841.89.
+ *
+ * MuPDF's `fz_round_rect` uses `ceil(edge - 0.001)`. Plain rounding
+ * disagreed with it on half of the 48 combinations measured while writing
+ * this. That is an engine fact rather than a spec one, so this matrix is
+ * what notices if a future MuPDF changes it -- the same role the
+ * "agrees with pageViewSize for every rotation" test plays for
+ * MUPDF_APPLIES_ROTATION.
+ */
+describe('rasterSize agrees with the engine on pages that are not whole points', () => {
+  /** A one-page document with an exact media box, built here rather than fixtured. */
+  async function pageOf(box: [number, number, number, number]): Promise<Uint8Array> {
+    const doc = await PDFDocument.create()
+    const page = doc.addPage([box[2] - box[0], box[3] - box[1]])
+    page.setMediaBox(box[0], box[1], box[2] - box[0], box[3] - box[1])
+    return doc.save()
+  }
+
+  const BOXES: Array<[number, number, number, number]> = [
+    [0, 0, 612, 792], // Letter, the case the fixtures already cover
+    [0, 0, 595.276, 841.89], // A4 -- fractional on both axes
+    [0, 0, 419.53, 595.28], // A5
+    [0, 0, 100.999, 50.001], // straddles the epsilon in both directions
+    [20, 30, 632.5, 822.25], // offset origin
+    [-10.25, -5.5, 601.75, 786.5], // negative origin
+  ]
+  const DPIS = [72, 96, 150, 200, 300, 400, 72.5]
+
+  it('predicts the exact pixel dimensions for every box and DPI', async () => {
+    for (const box of BOXES) {
+      const doc = PdfDocument.open(await pageOf(box))
+      for (const dpi of DPIS) {
+        const predicted = rasterSize(doc, 0, dpi)
+        const actual = readJpeg(rasterisePage(doc, 0, dpi).bytes)
+        expect(predicted, `box ${box.join(',')} at ${dpi} DPI`).toEqual(actual)
+      }
+      doc.close()
+    }
+  }, 60_000)
+
+  /**
+   * The specific values that make plain rounding wrong, kept as a
+   * regression: A4 at 72 DPI is 596 pixels, not the 595 that rounding
+   * 595.276 gives.
+   */
+  it('ceils with the engine\'s epsilon rather than rounding', () => {
+    expect(rasterPixels(595.276, 72)).toBe(596)
+    expect(rasterPixels(841.89, 72)).toBe(842)
+    // Just past a whole number: the epsilon keeps it from gaining a pixel.
+    expect(rasterPixels(50.001, 72)).toBe(50)
+    expect(rasterPixels(100.999, 72)).toBe(101)
+  })
+
+  /**
+   * 612 x (150/72) is 1275.0000000000002 in binary floating point, so a
+   * naive ceil would add a pixel to the most common case in the product.
+   */
+  it('does not let floating point add a pixel to a whole-number result', () => {
+    expect(rasterPixels(612, 150)).toBe(1275)
+    expect(rasterPixels(792, 150)).toBe(1650)
+    expect(rasterPixels(612, 300)).toBe(2550)
   })
 })

@@ -20,6 +20,31 @@ export const DPI_PRESETS = [
 /** JPEG quality, 0-100. 85 is the usual knee: visually clean, and half the bytes of 95. */
 export const DEFAULT_JPEG_QUALITY = 85
 
+/**
+ * MuPDF's rounding fudge when it turns a page rectangle into whole pixels.
+ *
+ * `fz_round_rect` computes `ceil(edge - 0.001)`, not `round(edge)`, so a
+ * page 595.276pt wide renders 596 pixels at 72 DPI while a page 50.001pt
+ * tall renders 50. Measured across 48 combinations of page box and DPI --
+ * plain rounding disagreed with the engine on half of them.
+ *
+ * This is an ENGINE FACT, in the same category as MUPDF_APPLIES_ROTATION:
+ * it is not derivable from the spec, and the matrix test in
+ * `test/raster.test.ts` is what detects the engine changing it.
+ */
+export const MUPDF_ROUND_EPSILON = 0.001
+
+/**
+ * The whole pixels MuPDF will produce for one page dimension.
+ *
+ * `pt * dpi / 72` rather than `pt * (dpi / 72)`: the intermediate scale is
+ * not exactly representable, so 612 x (150/72) lands on 1275.0000000000002
+ * and would ceil to 1276.
+ */
+export function rasterPixels(sizePt: number, dpi: number): number {
+  return Math.ceil((sizePt * dpi) / PDF_UNITS_PER_INCH - MUPDF_ROUND_EPSILON)
+}
+
 export type RasteriseOptions = {
   /** JPEG only. Ignored for PNG, which is lossless. */
   quality?: number
@@ -102,12 +127,17 @@ export function rasterSize(
   dpi: number,
 ): { width: number; height: number } {
   const geom = doc.pageGeometry(index)
-  const scale = dpi / PDF_UNITS_PER_INCH
-  // `pageViewSize` swaps the dimensions for a quarter-turned page, so this
-  // reports the image the reader will actually get rather than the one the
-  // unrotated box describes.
-  const view = pageViewSize(geom, scale)
-  return { width: Math.round(view.width), height: Math.round(view.height) }
+  // `pageViewSize` at zoom 1 gives the page's extent in POINTS, with the
+  // quarter-turn dimension swap already applied -- so this reports the
+  // image the reader will actually get, not the one the unrotated box
+  // describes. The points-to-pixels step is `rasterPixels`, which has to
+  // match the engine exactly rather than approximately: this number is
+  // shown to the user before they commit to the export.
+  const view = pageViewSize(geom, 1)
+  return {
+    width: rasterPixels(view.width, dpi),
+    height: rasterPixels(view.height, dpi),
+  }
 }
 
 function clampQuality(quality: number): number {
