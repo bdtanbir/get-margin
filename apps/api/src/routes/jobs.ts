@@ -209,8 +209,12 @@ export async function jobRoutes(app: FastifyInstance, options: JobRoutesOptions)
     const id = paramId(req)
     if (!id) return reply.code(204).send()
     queue.cancel(id)
-    await storage.delete(id)
+    // Forget BEFORE deleting, not after. A converter finishing in this
+    // window checks the record to decide whether anyone still wants its
+    // output; if the record is still there it writes the result back into
+    // the directory we are about to remove, and the purge silently loses.
     queue.forget(id)
+    await storage.delete(id)
     return reply.code(204).send()
   })
 }

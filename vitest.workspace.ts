@@ -27,6 +27,16 @@ export default defineWorkspace([
   },
   {
     test: {
+      name: 'worker',
+      root: './apps/worker',
+      environment: 'node',
+      // Every case launches a real Chromium. Nothing here is mocked, which
+      // is the point, and it costs seconds rather than milliseconds.
+      testTimeout: 60_000,
+    },
+  },
+  {
+    test: {
       name: 'transform',
       root: './packages/transform',
       environment: 'node',

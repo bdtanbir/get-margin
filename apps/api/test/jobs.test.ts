@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { createLogger } from '../src/plugins/logging.js'
-import { createApi } from '../src/server.js'
+import { createApi, createQueue } from '../src/server.js'
 import type { MemoryQueue } from '../src/jobs/memoryQueue.js'
 import type { StorageAdapter } from '../src/storage/types.js'
 import { newJobId } from '../src/storage/types.js'
@@ -357,6 +357,94 @@ describe('deletion', () => {
     const unknown = await app.inject({ method: 'DELETE', url: `/v1/jobs/${newJobId()}` })
     expect(unknown.statusCode).toBe(purge.statusCode)
     expect(unknown.body).toBe(purge.body)
+  })
+
+  /**
+   * The race, pinned. Purge arrives while the converter is still running.
+   *
+   * The failure this guards against is silent and specific: the route
+   * deletes the job directory, the converter then finishes and writes its
+   * result, recreating the directory -- and a file the user was told had
+   * been deleted survives until the sweeper an hour later.
+   *
+   * The handler blocks on a promise the test releases, so the ordering is
+   * exact rather than hopeful.
+   */
+  it('loses nothing when a purge lands while the conversion is still running', async () => {
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const gated = await createApi({
+      storageRoot: root,
+      sweep: false,
+      logger,
+      handlers: {
+        'html-to-pdf': async () => {
+          await gate
+          return PDF
+        },
+      },
+    })
+
+    const { payload, headers } = multipart({})
+    const { jobId } = (
+      await gated.app.inject({ method: 'POST', url: '/v1/jobs', payload, headers })
+    ).json()
+    // The converter is now blocked mid-job, with the input on disk.
+    expect(await readdir(root)).toEqual([jobId])
+
+    const purge = await gated.app.inject({ method: 'DELETE', url: `/v1/jobs/${jobId}` })
+    expect(purge.statusCode).toBe(204)
+
+    release?.()
+    await gated.queue.drain()
+
+    // The result must not have been written back into a purged job.
+    expect(await readdir(root)).toEqual([])
+    expect(
+      (await gated.app.inject({ method: 'GET', url: `/v1/jobs/${jobId}` })).statusCode,
+    ).toBe(404)
+    await gated.app.close()
+  })
+
+  /**
+   * The narrow window the route test above cannot reach.
+   *
+   * A purge on a RUNNING job is handled by cancellation -- the abort makes
+   * the queue discard the bytes. But a purge that lands in the sliver
+   * between the handler resolving and its result being written has no
+   * cancellation to catch it, and the write would recreate a directory the
+   * route had just removed.
+   *
+   * `forget` without `cancel` is exactly that state, so it is what this
+   * drives: the record is gone, the conversion succeeds anyway, and
+   * nothing may be written.
+   */
+  it('writes no result for a job whose record has already been forgotten', async () => {
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const gatedQueue = createQueue(storage, {
+      'html-to-pdf': async () => {
+        await gate
+        return PDF
+      },
+    })
+
+    const id = newJobId()
+    await storage.put(id, 'input', new TextEncoder().encode(HTML))
+    await gatedQueue.enqueue(id, 'html-to-pdf', new TextEncoder().encode(HTML))
+
+    // The purge: the record goes, the running handler is not aborted.
+    gatedQueue.forget(id)
+
+    release?.()
+    await gatedQueue.drain()
+
+    expect(await storage.get(id, 'result')).toBeNull()
+    expect(await readdir(root)).toEqual([])
   })
 
   /** A purged id must read as one that never existed, not as `expired`. */

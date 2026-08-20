@@ -32,9 +32,20 @@ export function createQueue(
   storage: StorageAdapter,
   handlers: Partial<Record<string, JobHandler>> = {},
 ): MemoryQueue {
-  const queue = new MemoryQueue({
+  const queue: MemoryQueue = new MemoryQueue({
     onComplete: async (id, result) => {
-      if (result) {
+      /**
+       * A purge that lands while the converter is still running must win.
+       *
+       * Without this check the sequence is: the user purges, the route
+       * deletes the directory, and then this callback recreates it to
+       * write a result nobody is waiting for. The file would then survive
+       * until the sweeper -- a deletion the user was told had happened,
+       * that had not. `forget` is what makes the record disappear, so a
+       * missing record is exactly the signal that the job was purged.
+       */
+      const purged = queue.status(id) === null
+      if (result && !purged) {
         await storage.put(id, 'result', result)
         // The input goes now, not at the TTL. There is nothing left to do
         // with it, and every minute it stays is a minute it can leak.

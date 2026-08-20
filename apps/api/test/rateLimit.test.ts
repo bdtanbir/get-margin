@@ -126,6 +126,7 @@ describe('the limit, through the API', () => {
 
   let root: string
   let app: FastifyInstance
+  let queue: { drain(): Promise<void> }
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'margin-ratelimit-'))
@@ -143,9 +144,15 @@ describe('the limit, through the API', () => {
       handlers: { 'html-to-pdf': async () => new TextEncoder().encode('%PDF-1.7\n') },
     })
     app = api.app
+    queue = api.queue
   })
 
   afterEach(async () => {
+    // These tests post jobs and then assert on status codes, so unlike the
+    // route suite they never wait for the conversions. Removing the
+    // storage root while a handler is still writing its result is a race
+    // the test would lose, and it would look like a product bug.
+    await queue.drain()
     await app.close()
     await rm(root, { recursive: true, force: true })
   })
