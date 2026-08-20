@@ -216,47 +216,69 @@ export const useViewportStore = defineStore('viewport', () => {
    */
   async function pump(): Promise<void> {
     if (pumping) return pumping
-    pumping = (async () => {
-      try {
-        while (dirty) {
-          dirty = false
-          const tasks = planRenders({
-            pageOrder: doc.pageOrder,
-            pages: doc.pages,
-            anchorIndex: anchorIndex.value,
-            visibleRadius: VISIBLE_RADIUS,
-            zoom: zoom.value,
-            dpr: dpr.value,
-            cache: cache.value,
-          })
-          for (const task of tasks) {
-            if (dirty) break // stale plan — abandon it, the outer loop re-plans
-            const key = cacheKey(task.pageId, task.scale)
-            if (cache.value.has(key)) continue
-            // A rejection here (worker died post-boot; a render racing
-            // `closeSharedDocument()` from `doc.reset()`) used to propagate
-            // out of this loop, clearing `pumping` and rejecting a promise
-            // every caller discards with `void` — leaving every page stuck
-            // as a pulsing placeholder with `dirty` already false, so
-            // nothing would ever re-plan. Catch it, record it, and move on
-            // to the next task instead of abandoning the whole drain.
-            let result
-            try {
-              result = await getPdfClient().render(task.sourceIndex, task.scale, task.sourceId)
-            } catch (e) {
-              lastError.value = e instanceof Error ? e.message : String(e)
-              continue
-            }
-            if (!result) continue // never started (should not happen in practice; render() has no cancellation path)
-            cache.value.set(key, result)
-            version.value++
-          }
-        }
-      } finally {
-        pumping = undefined
-      }
-    })()
+    /**
+     * `.finally` rather than a `finally` block inside the body, and that is
+     * not a style choice.
+     *
+     * `pumping = (async () => { try { ... } finally { pumping = undefined } })()`
+     * looks equivalent and is not. An async function body runs
+     * SYNCHRONOUSLY until its first await, so a drain with nothing to do --
+     * every page already cached at the current scale, which is exactly what
+     * happens when you zoom back to a scale you have already seen -- never
+     * awaits at all. Its `finally` then cleared `pumping` and the outer
+     * assignment immediately overwrote that with the settled promise.
+     *
+     * `pumping` was left permanently truthy, so every later call returned
+     * early and NOTHING EVER RENDERED AGAIN for the life of the session.
+     * The viewer fell back to the 0.2-scale placeholder tier and stayed
+     * there, which reads as the page going permanently blurry after a zoom
+     * click.
+     *
+     * A `.finally` callback is always queued as a microtask, so the
+     * assignment below has completed by the time it runs.
+     */
+    pumping = drain().finally(() => {
+      pumping = undefined
+    })
     return pumping
+  }
+
+  /** One drain of the render plan. See `pump` for why it is a separate function. */
+  async function drain(): Promise<void> {
+    while (dirty) {
+      dirty = false
+      const tasks = planRenders({
+        pageOrder: doc.pageOrder,
+        pages: doc.pages,
+        anchorIndex: anchorIndex.value,
+        visibleRadius: VISIBLE_RADIUS,
+        zoom: zoom.value,
+        dpr: dpr.value,
+        cache: cache.value,
+      })
+      for (const task of tasks) {
+        if (dirty) break // stale plan — abandon it, the outer loop re-plans
+        const key = cacheKey(task.pageId, task.scale)
+        if (cache.value.has(key)) continue
+        // A rejection here (worker died post-boot; a render racing
+        // `closeSharedDocument()` from `doc.reset()`) used to propagate
+        // out of this loop, clearing `pumping` and rejecting a promise
+        // every caller discards with `void` — leaving every page stuck
+        // as a pulsing placeholder with `dirty` already false, so
+        // nothing would ever re-plan. Catch it, record it, and move on
+        // to the next task instead of abandoning the whole drain.
+        let result
+        try {
+          result = await getPdfClient().render(task.sourceIndex, task.scale, task.sourceId)
+        } catch (e) {
+          lastError.value = e instanceof Error ? e.message : String(e)
+          continue
+        }
+        if (!result) continue // never started (should not happen in practice; render() has no cancellation path)
+        cache.value.set(key, result)
+        version.value++
+      }
+    }
   }
 
   const zoomPercent = computed(() => Math.round(zoom.value * 100))

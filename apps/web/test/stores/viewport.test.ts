@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { effectiveScale } from '@/features/viewport/renderPriority'
 
 const render = vi.fn()
 // Amendment A1: the brief mocks `createPdfClient`, which the store no longer
@@ -61,6 +62,65 @@ describe('useViewportStore', () => {
     const calls = render.mock.calls.length
     await vp.pump()
     expect(render.mock.calls.length).toBe(calls)
+  })
+
+  /**
+   * A drain with nothing to do must not wedge every drain after it.
+   *
+   * `pump` used to assign `pumping` the result of an async IIFE whose
+   * `finally` cleared it. An async body runs synchronously until its first
+   * await, so a drain with no work -- every page already cached at the
+   * current scale, which is what happens the moment you zoom back to a
+   * scale you have seen before -- never awaited at all. Its `finally`
+   * cleared `pumping`, and then the assignment overwrote that with the
+   * settled promise.
+   *
+   * `pumping` stayed truthy forever, every later call returned early, and
+   * NOTHING RENDERED AGAIN for the rest of the session. The viewer fell
+   * back to the 0.2-scale placeholder and stayed there, which reads as the
+   * page going permanently blurry after a zoom click.
+   *
+   * The two existing tests around this each used a fresh store, so the
+   * no-op drain and the drain that follows it never met.
+   */
+  it('still renders after a drain that had nothing to do', async () => {
+    const { vp } = await seededStores()
+    await vp.pump()
+
+    // Nothing to do: everything is cached at this scale. This is the drain
+    // that used to poison the flag.
+    await vp.pump()
+
+    const calls = render.mock.calls.length
+    vp.setZoom(2)
+    await vp.pump()
+    expect(render.mock.calls.length, 'the renderer was wedged').toBeGreaterThan(calls)
+    expect(vp.bitmapFor('p0')).toBeDefined()
+  })
+
+  /** The same, driven the way the zoom buttons drive it: out then back in. */
+  it('recovers the full-resolution bitmap when zooming back to a seen scale', async () => {
+    const { vp } = await seededStores()
+    await vp.pump()
+    const atOne = vp.bitmapFor('p0')
+
+    vp.setZoom(2)
+    await vp.pump()
+    vp.setZoom(1) // back to a scale already in the cache: a no-op drain
+    await vp.pump()
+    expect(vp.bitmapFor('p0')).toBe(atOne)
+
+    vp.setZoom(3) // and a new scale after it must still render
+    await vp.pump()
+
+    // Asserting the RESOLUTION, not merely that something came back:
+    // `bitmapFor` falls back to the 0.2 placeholder when the full tier is
+    // missing, so "defined" is true even when nothing rendered -- which is
+    // exactly the blurry state being guarded against. The mock sizes its
+    // bitmap from the scale it was asked for.
+    expect(vp.bitmapFor('p0')?.width, 'fell back to the placeholder tier').toBe(
+      Math.round(612 * effectiveScale(3, vp.dpr)),
+    )
   })
 
   it('re-renders after a zoom change', async () => {
