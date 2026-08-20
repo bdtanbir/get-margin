@@ -12,6 +12,7 @@ import type { StorageAdapter } from '../storage/types.js'
 import type { JobQueue } from '../jobs/types.js'
 import { sniff } from '../upload/sniff.js'
 import { jobFields } from '../plugins/logging.js'
+import { declaredType } from '../plugins/rateLimit.js'
 
 export type JobRoutesOptions = {
   storage: StorageAdapter
@@ -91,23 +92,37 @@ export async function jobRoutes(app: FastifyInstance, options: JobRoutesOptions)
       throw err
     }
 
-    if (!rawType || !isJobType(rawType)) {
-      // Naming the supported types is safe -- it is our capability list,
-      // not the caller's data -- and it is the only way a client can tell
-      // "unsupported" from "misspelled".
+    /**
+     * Two places can name the type: `?type=` and the multipart field.
+     *
+     * The query string is what the rate limiter saw, before the body was
+     * read. If the body then names a different type, the request has been
+     * charged the wrong budget -- declaring the cheap conversion to buy a
+     * generous limit and then uploading the expensive one. So a
+     * disagreement is refused rather than resolved in either direction.
+     */
+    const declared = declaredType(req)
+    if (declared && rawType && declared !== rawType) {
+      return reply.code(400).send({ error: 'The declared and submitted conversion types disagree.' })
+    }
+    const type = rawType ?? declared
+    if (!type || !isJobType(type)) {
+      // Refusing without naming the alternatives is safe -- the capability
+      // list is ours, not the caller's data -- but it is the only way a
+      // client can tell "unsupported" from "misspelled".
       return reply.code(400).send({ error: 'Unsupported conversion type.' })
     }
     if (!bytes || bytes.length === 0) {
       return reply.code(400).send({ error: 'No file was sent.' })
     }
 
-    const verdict = sniff(rawType, bytes)
+    const verdict = sniff(type, bytes)
     if (!verdict.ok) return reply.code(415).send({ error: verdict.reason })
 
     // Only now does anything get written.
-    const id = await createJob(rawType, bytes)
+    const id = await createJob(type, bytes)
     const body: CreateJobResponse = { jobId: id, statusUrl: `/v1/jobs/${id}` }
-    req.log.info(jobFields({ jobId: id, type: rawType, bytes: bytes.length }), 'job accepted')
+    req.log.info(jobFields({ jobId: id, type, bytes: bytes.length }), 'job accepted')
     return reply.code(202).send(body)
   })
 

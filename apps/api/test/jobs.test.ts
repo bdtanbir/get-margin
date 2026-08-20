@@ -95,6 +95,16 @@ beforeEach(async () => {
     logger,
     // No interval: a sweeper timer outliving the file would hang the run.
     sweep: false,
+    /**
+     * A budget these tests cannot reach. Rate limiting has its own file;
+     * here it would only turn a route assertion into a 429 the moment
+     * someone adds a fourth request to a test.
+     */
+    rateLimit: {
+      budgets: { 'html-to-pdf': { limit: 10_000, windowMs: 60_000 } },
+      undeclared: { limit: 10_000, windowMs: 60_000 },
+      read: { limit: 10_000, windowMs: 60_000 },
+    },
     handlers: {
       'html-to-pdf': async () => {
         if (converterThrows) throw new Error(converterThrows)

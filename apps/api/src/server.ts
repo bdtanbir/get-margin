@@ -9,12 +9,14 @@ import type { StorageAdapter } from './storage/types.js'
 import { MemoryQueue } from './jobs/memoryQueue.js'
 import type { JobHandler, JobQueue } from './jobs/types.js'
 import { jobRoutes } from './routes/jobs.js'
+import { rateLimit, type RateLimitOptions } from './plugins/rateLimit.js'
 
 export type ServerOptions = {
   storage: StorageAdapter
   queue: JobQueue
   logger?: Logger
   maxUploadBytes?: number
+  rateLimit?: RateLimitOptions
 }
 
 /**
@@ -64,6 +66,11 @@ export async function createServer(options: ServerOptions): Promise<FastifyInsta
     bodyLimit: maxUploadBytes,
   })
 
+  // Called directly rather than through `register`, because a hook added
+  // inside a plugin only fires for that plugin's own routes. The limit has
+  // to cover everything, so it is installed on the root instance.
+  await rateLimit(app, options.rateLimit ?? {})
+
   await app.register(multipart, {
     limits: {
       fileSize: maxUploadBytes,
@@ -110,6 +117,7 @@ export type ApiOptions = {
   handlers?: Partial<Record<string, JobHandler>>
   logger?: Logger
   maxUploadBytes?: number
+  rateLimit?: RateLimitOptions
   /** Off in tests: an interval that outlives a test file makes it hang. */
   sweep?: boolean
 }
@@ -134,6 +142,7 @@ export async function createApi(options: ApiOptions): Promise<{
     queue,
     ...(options.logger ? { logger: options.logger } : {}),
     ...(options.maxUploadBytes ? { maxUploadBytes: options.maxUploadBytes } : {}),
+    ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}),
   })
   if (options.sweep !== false) sweeper.start()
   app.addHook('onClose', async () => sweeper.stop())
