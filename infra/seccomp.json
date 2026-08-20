@@ -1,0 +1,66 @@
+{
+  "_README_1": "NEVER APPLIED. This profile has not been loaded by any kernel, and no container has been run under it. No Docker daemon was available when it was written: `docker info` -> Cannot connect to the Docker daemon at unix:///var/run/docker.sock.",
+
+  "_README_2": "READ THIS BEFORE USING IT. Docker's `security_opt: seccomp:<file>` REPLACES the built-in default profile, it does not merge with it. Docker's default is deny-by-default with an allowlist of roughly 300 syscalls. This file is allow-by-default with a deny list. Applying it as-is therefore makes the container WEAKER than doing nothing, because it swaps a deny-by-default profile for an allow-by-default one.",
+
+  "_README_3": "So this is NOT a drop-in profile. It is the deny list to merge INTO a copy of Docker's default profile (moby/profiles/seccomp/default.json), by removing these syscall names from that file's allowlist. docs/findings/17-deploy-verification.md item 6 has the procedure and the check that proves the result is stricter than the default rather than looser.",
+
+  "_README_4": "Until someone does that merge and runs the checklist, the correct configuration is to set no seccomp option at all and inherit Docker's default. The seccomp line in compose.yaml is commented out for exactly that reason. An unverified profile that reads as a control while weakening the container is the specific failure PHASE-7-DESIGN.md §0 is about.",
+
+  "_WHY": "A document converter execs a browser and reads and writes files in one tmpdir. It never loads a kernel module, never changes the system clock, never traces another process, and never mounts anything. Removing what it cannot need shrinks the surface a Chromium RCE can pivot through -- PLAN.md §4 notes these engines have a long documented history of exactly that.",
+
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "archMap": [
+    { "architecture": "SCMP_ARCH_X86_64", "subArchitectures": ["SCMP_ARCH_X86", "SCMP_ARCH_X32"] },
+    { "architecture": "SCMP_ARCH_AARCH64", "subArchitectures": ["SCMP_ARCH_ARM"] }
+  ],
+  "syscalls": [
+    {
+      "_reason": "Kernel modules. Nothing in a converter loads code into the kernel; a call here is an escalation attempt, not a bug.",
+      "names": ["init_module", "finit_module", "delete_module", "create_module", "query_module"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "_reason": "Mounting and pivoting the root. The filesystem this process should see is fixed at container start.",
+      "names": ["mount", "umount", "umount2", "pivot_root", "chroot", "move_mount", "open_tree", "fsconfig", "fsmount", "fsopen", "fspick"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "_reason": "Tracing and injecting into other processes. ptrace is how a compromised renderer would reach into a sibling; process_vm_* is the same idea without the ceremony.",
+      "names": ["ptrace", "process_vm_readv", "process_vm_writev", "kcmp"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "_reason": "The system clock and the kernel's identity. A converter has no business changing either, and changing the clock would move every job's TTL.",
+      "names": ["settimeofday", "clock_settime", "clock_adjtime", "adjtimex", "sethostname", "setdomainname"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "_reason": "Kernel debugging and profiling interfaces, and swap. bpf and perf_event_open are recurring escalation primitives.",
+      "names": ["bpf", "perf_event_open", "swapon", "swapoff", "kexec_load", "kexec_file_load", "reboot"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "_reason": "Legacy and rarely-audited IPC and quota interfaces the converter never touches.",
+      "names": ["uselib", "acct", "quotactl", "nfsservctl", "vm86", "vm86old", "lookup_dcookie", "personality"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "_reason": "io_uring. A large, young kernel surface with its own CVE history, and Chromium does not need it. UNVERIFIED: glibc or Node may use it for async IO on some builds -- checklist item 6 is where that gets tested rather than assumed.",
+      "names": ["io_uring_setup", "io_uring_enter", "io_uring_register"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "_NOT_DENIED": "clone, clone3, unshare, setns, and seccomp itself are deliberately ABSENT from this list. Chromium builds its own renderer sandbox out of user and PID namespaces, and denying them does not harden the container -- it disables Chromium's sandbox, which is a net loss. Docker's default profile allows them with argument filters; keep those filters when merging.",
+      "names": [],
+      "action": "SCMP_ACT_ALLOW"
+    }
+  ]
+}

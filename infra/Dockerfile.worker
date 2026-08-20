@@ -1,0 +1,83 @@
+# =============================================================================
+#  NEVER EXECUTED. This file has not been built, run, or tested.
+#
+#  No Docker daemon was available when it was written:
+#      $ docker info
+#      ERROR: Cannot connect to the Docker daemon at unix:///var/run/docker.sock
+#
+#  This matters more here than in Dockerfile.api. This image is the SANDBOX,
+#  and PLAN.md §4 is explicit that the converters are the real security
+#  surface. Unverified sandbox configuration is worse than none, because it
+#  reads as protection while providing an unknown amount of it.
+#
+#  Nothing below may be described as a control until the checklist in
+#  docs/findings/17-deploy-verification.md has been run and its results
+#  recorded. In particular: the network claim is the one most likely to be
+#  quietly false, and item 5 is how you find out.
+# =============================================================================
+
+FROM node:22-slim AS build
+
+WORKDIR /repo
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/worker/package.json apps/worker/
+RUN pnpm install --frozen-lockfile --filter @margin/worker...
+
+COPY tsconfig.base.json tsconfig.json ./
+COPY packages/shared packages/shared
+COPY apps/worker apps/worker
+
+# -----------------------------------------------------------------------------
+
+FROM node:22-slim AS runtime
+
+ENV NODE_ENV=production
+WORKDIR /app
+
+# Chromium's own dependencies. `playwright install --with-deps` would fetch
+# them at build time; listing them makes the image reproducible and makes
+# an added dependency visible in a diff.
+#
+# UNVERIFIED: this list has never been resolved by apt. It is the documented
+# set for Debian bookworm and is the single most likely thing in this file
+# to be wrong on first build. Checklist item 1.
+RUN apt-get update && apt-get install --no-install-recommends -y \
+      libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
+      libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
+      libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
+      fonts-liberation fonts-noto-color-emoji \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /repo/node_modules ./node_modules
+COPY --from=build /repo/packages/shared ./packages/shared
+COPY --from=build /repo/apps/worker ./apps/worker
+COPY --from=build /repo/tsconfig.base.json ./tsconfig.base.json
+
+# Browsers into a path the non-root user owns, downloaded as that user.
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright
+USER node
+RUN npx playwright install chromium
+
+# The tmpdir is the ONLY writable path. Everything else is read-only at
+# runtime (see compose.yaml). Chromium needs somewhere to write; giving it
+# exactly one place, on tmpfs, means a compromised render leaves nothing
+# behind a restart.
+ENV TMPDIR=/tmp/margin
+
+# No port. The worker listens on nothing. It takes work from the queue and
+# has no inbound surface at all, which is half of why it is a separate
+# container.
+
+CMD ["node", "--experimental-strip-types", "apps/worker/src/main.ts"]
+
+# UNVERIFIED: `apps/worker/src/main.ts` DOES NOT EXIST. The worker currently
+# ships a converter registry and handler factory (`apps/worker/src/index.ts`)
+# and no queue-consuming entrypoint, because the queue that exists is
+# in-process and there is no Redis here to consume from
+# (docs/findings/16-phase-7-preflight.md). Whoever wires BullMQ writes this
+# file. Checklist item 2.
