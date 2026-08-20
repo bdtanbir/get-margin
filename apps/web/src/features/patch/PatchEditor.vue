@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { nanoid } from 'nanoid'
 import { pageViewSize } from '@margin/transform'
 import type { PageState } from '@/stores/document'
-import type { EditObject, PageQuadIndex } from '@margin/pdf-core'
+import type { EditObject, PageQuadIndex, TextPatchObject } from '@margin/pdf-core'
 import { hashText } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
@@ -22,8 +22,39 @@ const vp = useViewportStore()
 
 /** Which line is being edited, by index into the page's extraction. */
 const editing = ref<number | undefined>(undefined)
+/**
+ * The patch already on the line being edited, if there is one.
+ *
+ * Editing a line that has been edited before must CHANGE that patch, not
+ * add a second one on top. Adding a second one is what used to happen:
+ * both covered the same line and both drew their own text, so the second
+ * edit came out overlapping the first -- two strings of glyphs printed
+ * over each other, in the export as well as on screen.
+ */
+const editingId = ref<string | undefined>(undefined)
+
+/** The patch on a given line, if the user has already edited it. */
+function patchOn(lineIndex: number): TextPatchObject | undefined {
+  return Object.values(edits.doc.objects).find(
+    (o): o is TextPatchObject =>
+      o.kind === 'textPatch' && o.pageId === props.page.id && o.lineIndex === lineIndex,
+  )
+}
 const draft = ref('')
-const fit = ref<'shrink' | 'overflow' | 'truncate'>('shrink')
+/**
+ * What happens when the replacement is wider than the line it replaces.
+ *
+ * Defaults to letting it run, and there is no longer a control for it.
+ * Shrinking was the old default and it silently made the user's text
+ * smaller than everything around it; every inline editor people have used
+ * lets typed text simply extend, and surprising them with a size change is
+ * worse than a long line.
+ *
+ * The other modes are still honoured by the writer and still stored on the
+ * object -- only the picker is gone, so restoring one is a UI change rather
+ * than a format change.
+ */
+const fit = ref<'shrink' | 'overflow' | 'truncate'>('overflow')
 const missing = ref<string[]>([])
 const input = ref<HTMLInputElement | null>(null)
 
@@ -122,9 +153,36 @@ const style = computed(() => {
 /** Where the original line ended, so the guide can show it while typing. */
 const originalWidth = computed(() => (box.value ? box.value.w : 0))
 
+/**
+ * How wide a line's clickable target has to be.
+ *
+ * The extraction's own width describes the ORIGINAL line, so once a patch
+ * ran past it the tail of the user's own text was not clickable -- the one
+ * part of the line they had just written could not be edited again.
+ *
+ * Measured the way the patch is drawn, so the target covers exactly what
+ * is on screen.
+ */
+function targetWidth(lineIndex: number, lineWidth: number, lineHeight: number): number {
+  const patch = patchOn(lineIndex)
+  if (!patch || patch.text === '') return lineWidth
+  const size = patch.fontSize > 0 ? patch.fontSize : lineHeight * 0.8
+  // 'shrink' and 'truncate' both keep the text inside the original line, so
+  // only 'overflow' can make the target wider than the extraction says.
+  if (patch.fit !== 'overflow') return lineWidth
+  return Math.max(lineWidth, measureText(patch.text, patch.fontFamily, size))
+}
+
 async function begin(lineIndex: number): Promise<void> {
   editing.value = lineIndex
-  draft.value = originalText.value
+  // What the user last typed, if they have edited this line before --
+  // otherwise the line as the document has it. Loading the original over
+  // an existing edit made every re-edit start from scratch, which read as
+  // the edit having been lost.
+  const existing = patchOn(lineIndex)
+  editingId.value = existing?.id
+  draft.value = existing ? existing.text : originalText.value
+  fit.value = existing ? existing.fit : 'overflow'
   missing.value = []
   await nextTick()
   input.value?.focus()
@@ -133,6 +191,7 @@ async function begin(lineIndex: number): Promise<void> {
 
 function cancel(): void {
   editing.value = undefined
+  editingId.value = undefined
   draft.value = ''
   missing.value = []
 }
@@ -162,7 +221,39 @@ function commit(): void {
   const b = box.value
   const at = editing.value
   if (!l || !b || at === undefined) return
-  if (draft.value === originalText.value) { cancel(); return }
+
+  const existing = editingId.value
+
+  /**
+   * Typing the original text back is a request to undo the edit.
+   *
+   * With no existing patch there is simply nothing to record. With one,
+   * leaving it in place would keep painting a cover over text identical to
+   * what is underneath -- a visible flat rectangle achieving nothing.
+   */
+  if (draft.value === originalText.value) {
+    if (existing) edits.applyOp({ type: 'deleteObject', id: existing }, 'Undo text edit')
+    cancel()
+    return
+  }
+
+  /**
+   * Editing a line that already has a patch UPDATES it.
+   *
+   * `originalText` and `originalHash` are deliberately left alone: they
+   * describe the line in the source document, which has not changed, and
+   * they are what the writer checks before applying anything. Recomputing
+   * them from the current draft would make that guard compare the edit
+   * against itself.
+   */
+  if (existing) {
+    edits.applyOp(
+      { type: 'updateObject', id: existing, patch: { text: draft.value, fit: fit.value } },
+      'Edit text',
+    )
+    cancel()
+    return
+  }
 
   const sample = background.value
   const object: EditObject = {
@@ -215,7 +306,11 @@ defineExpose({ begin })
         :style="{
           left: `${Math.min(...l.chars.map((c) => c.quad[0])) * props.zoom}px`,
           top: `${Math.min(...l.chars.map((c) => c.quad[1])) * props.zoom}px`,
-          width: `${(Math.max(...l.chars.map((c) => c.quad[2])) - Math.min(...l.chars.map((c) => c.quad[0]))) * props.zoom}px`,
+          width: `${targetWidth(
+            i,
+            Math.max(...l.chars.map((c) => c.quad[2])) - Math.min(...l.chars.map((c) => c.quad[0])),
+            Math.max(...l.chars.map((c) => c.quad[5])) - Math.min(...l.chars.map((c) => c.quad[1])),
+          ) * props.zoom}px`,
           height: `${(Math.max(...l.chars.map((c) => c.quad[5])) - Math.min(...l.chars.map((c) => c.quad[1]))) * props.zoom}px`,
         }"
         :data-patch-target="i"
@@ -258,49 +353,43 @@ defineExpose({ begin })
         :style="style"
         @keydown.enter.prevent="commit()"
         @keydown.esc.prevent="cancel()"
+        @blur="commit()"
       >
 
+      <!--
+        Warnings only, and only when there are any.
+        
+        This used to be a panel carrying a three-way "if it does not fit"
+        picker and Replace/Cancel buttons, shown on every single click. It
+        put a form in front of someone who had asked to type a word. Enter
+        or clicking away commits, Escape cancels, and text simply runs on
+        -- which is what every inline editor does and what people already
+        expect.
+        
+        What is NOT dropped is the honesty. Both warnings below are things
+        the user can only act on before committing, and finding either out
+        in the exported file is finding out too late.
+      -->
       <div
-        class="pointer-events-auto absolute z-10 flex flex-col gap-1 rounded-panel border
-               border-border bg-surface-raised p-2 text-[12px] shadow-high"
+        v-if="risky || missing.length"
+        class="pointer-events-none absolute z-10 max-w-64 rounded-panel border border-border
+               bg-surface-raised p-2 text-[12px] text-warning shadow-high"
         :style="{ left: style.left, top: `calc(${style.top} + ${style.height})` }"
-        data-patch-controls
+        data-patch-warnings
+        role="status"
       >
-        <label class="flex items-center gap-1">
-          <span class="text-text-muted">If it does not fit</span>
-          <select v-model="fit" data-patch-fit
-                  class="rounded-control border border-border bg-surface-sunken px-1">
-            <option value="shrink">Shrink it</option>
-            <option value="overflow">Let it run</option>
-            <option value="truncate">Cut it short</option>
-          </select>
-        </label>
-
-        <!--
-          Said BEFORE committing. A patch over a gradient or a photograph
-          works, but the flat cover leaves a visible scar -- and the user is
-          the only one who can decide whether that matters here.
-        -->
-        <p v-if="risky" data-patch-risky class="max-w-56 text-warning">
+        <p v-if="risky" data-patch-risky>
           The area behind this line is not a flat colour, so the patch will
           leave a visible mark. Covering a photograph or a gradient rarely
           looks right.
         </p>
 
-        <p v-if="missing.length" data-patch-missing class="max-w-56 text-warning">
+        <p v-if="missing.length" data-patch-missing>
           This font cannot draw {{ missing.join(' ') }} — those characters
           would come out blank.
         </p>
-
-        <div class="flex gap-1">
-          <button type="button" data-patch-commit
-                  class="rounded-control bg-accent px-2 py-0.5 text-white"
-                  @click="commit()">Replace</button>
-          <button type="button" data-patch-cancel
-                  class="rounded-control border border-border px-2 py-0.5"
-                  @click="cancel()">Cancel</button>
-        </div>
       </div>
+
     </template>
   </div>
 </template>

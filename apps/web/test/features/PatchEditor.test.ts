@@ -143,7 +143,7 @@ describe('PatchEditor', () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
     await w.get('[data-patch-input]').setValue('Replacement')
-    await w.get('[data-patch-commit]').trigger('click')
+    await w.get('[data-patch-input]').trigger('keydown.enter')
 
     const made = patches(edits)
     expect(made).toHaveLength(1)
@@ -162,7 +162,7 @@ describe('PatchEditor', () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
     await w.get('[data-patch-input]').setValue('Replacement')
-    await w.get('[data-patch-commit]').trigger('click')
+    await w.get('[data-patch-input]').trigger('keydown.enter')
 
     expect(patches(edits)[0]!.originalHash).toBe(hashText('Original line'))
     expect(patches(edits)[0]!.originalText).toBe('Original line')
@@ -174,7 +174,7 @@ describe('PatchEditor', () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
     await w.get('[data-patch-input]').setValue('Replacement')
-    await w.get('[data-patch-commit]').trigger('click')
+    await w.get('[data-patch-input]').trigger('keydown.enter')
 
     expect(patches(edits)[0]!.background).toEqual([1, 1, 1])
     expect(patches(edits)[0]!.backgroundConfidence).toBe(1)
@@ -185,7 +185,7 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-commit]').trigger('click')
+    await w.get('[data-patch-input]').trigger('keydown.enter')
     expect(patches(edits)).toHaveLength(0)
   })
 
@@ -195,20 +195,110 @@ describe('PatchEditor', () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
     await w.get('[data-patch-input]').setValue('Replacement')
-    await w.get('[data-patch-cancel]').trigger('click')
+    await w.get('[data-patch-input]').trigger('keydown.esc')
     expect(patches(edits)).toHaveLength(0)
     expect(w.find('[data-patch-input]').exists()).toBe(false)
   })
 
-  it('records the chosen fit', async () => {
+  /**
+   * Typed text runs on rather than shrinking, and nothing asks about it.
+   *
+   * The editor used to default to shrinking and put a three-way picker in
+   * front of every edit. Shrinking silently made the replacement smaller
+   * than the text around it, and the picker asked a question before the
+   * user had typed anything to ask it about. The writer still honours all
+   * three modes -- only the control is gone.
+   */
+  it('lets a long replacement run, without asking', async () => {
     const edits = seed()
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
+
+    expect(w.find('[data-patch-fit]').exists()).toBe(false)
+
     await w.get('[data-patch-input]').setValue('A much longer replacement')
-    await w.get('[data-patch-fit]').setValue('truncate')
-    await w.get('[data-patch-commit]').trigger('click')
-    expect(patches(edits)[0]!.fit).toBe('truncate')
+    await w.get('[data-patch-input]').trigger('keydown.enter')
+    expect(patches(edits)[0]!.fit).toBe('overflow')
+  })
+
+  /** Clicking away is a commit, the way every inline editor behaves. */
+  it('commits when the field loses focus', async () => {
+    const edits = seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+    const w = mountEditor(INDEX)
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').setValue('Committed by blurring')
+    await w.get('[data-patch-input]').trigger('blur')
+
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.text).toBe('Committed by blurring')
+  })
+
+  /** Escape unmounts the field, which blurs it -- that must not commit. */
+  it('does not commit the edit it just cancelled', async () => {
+    const edits = seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+    const w = mountEditor(INDEX)
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').setValue('Abandoned')
+    await w.get('[data-patch-input]').trigger('keydown.esc')
+    expect(patches(edits)).toHaveLength(0)
+  })
+
+  /**
+   * Editing a line twice must CHANGE the edit, not add a second one.
+   *
+   * It used to add a second patch on the same line. Both covered it and
+   * both drew their own text, so the result was two strings of glyphs
+   * printed over each other -- on screen and in the exported file.
+   */
+  describe('editing a line that has already been edited', () => {
+    async function editTwice(first: string, second: string) {
+      const edits = seed()
+      vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+      const w = mountEditor(INDEX)
+
+      await w.get('[data-patch-target="0"]').trigger('click')
+      await w.get('[data-patch-input]').setValue(first)
+      await w.get('[data-patch-input]').trigger('keydown.enter')
+
+      await w.get('[data-patch-target="0"]').trigger('click')
+      const reopened = (w.get('[data-patch-input]').element as HTMLInputElement).value
+      await w.get('[data-patch-input]').setValue(second)
+      await w.get('[data-patch-input]').trigger('keydown.enter')
+
+      return { edits, reopened }
+    }
+
+    it('reopens with what the user last typed, not the original line', async () => {
+      const { reopened } = await editTwice('First replacement', 'Second replacement')
+      expect(reopened).toBe('First replacement')
+    })
+
+    it('leaves exactly one patch on the line', async () => {
+      const { edits } = await editTwice('First replacement', 'Second replacement')
+      expect(patches(edits)).toHaveLength(1)
+      expect(patches(edits)[0]!.text).toBe('Second replacement')
+    })
+
+    /**
+     * The guard the writer uses describes the SOURCE line, which has not
+     * changed. Recomputing it from the second edit would have it comparing
+     * the edit against itself.
+     */
+    it('keeps the original text and hash pointing at the source document', async () => {
+      const { edits } = await editTwice('First replacement', 'Second replacement')
+      const patch = patches(edits)[0]!
+      expect(patch.originalText).toBe('Original line')
+      expect(patch.originalHash).toBe(hashText('Original line'))
+    })
+
+    /** Typing the original back is a request to undo, not to cover it with itself. */
+    it('removes the patch when the original text is typed back', async () => {
+      const { edits } = await editTwice('First replacement', 'Original line')
+      expect(patches(edits)).toHaveLength(0)
+    })
   })
 
   it('handles a page whose text has not been extracted yet', () => {
@@ -293,6 +383,7 @@ describe('warnings before committing', () => {
     await w.get('[data-patch-input]').setValue('something')
     await flushPromises()
     expect(w.find('[data-patch-missing]').exists()).toBe(false)
-    expect(w.find('[data-patch-commit]').exists()).toBe(true)
+    // Still editable: a font that cannot be checked is not a reason to stop.
+    expect(w.find('[data-patch-input]').exists()).toBe(true)
   })
 })

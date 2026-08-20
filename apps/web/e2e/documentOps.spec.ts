@@ -195,7 +195,9 @@ test('editing a line shows the replacement in the viewer', async ({ page }) => {
   await target.click()
 
   await page.locator('[data-patch-input]').fill('Replaced by a test')
-  await page.locator('[data-patch-commit]').click()
+  // Enter commits; there is no Replace button any more. Clicking away
+  // commits too -- see PatchEditor.
+  await page.locator('[data-patch-input]').press('Enter')
 
   // The page itself is a canvas, so the only DOM text on the page is what
   // the overlay drew.
@@ -213,7 +215,7 @@ test('editing a line replaces it in the export', async ({ page }) => {
   await target.click()
 
   await page.locator('[data-patch-input]').fill('Replaced by a test')
-  await page.locator('[data-patch-commit]').click()
+  await page.locator('[data-patch-input]').press('Enter')
 
   const bytes = await download(page)
   expect(bytes.equals(readFileSync(FIXTURE))).toBe(false)
