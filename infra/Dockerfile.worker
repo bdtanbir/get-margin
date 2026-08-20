@@ -75,9 +75,15 @@ ENV TMPDIR=/tmp/margin
 
 CMD ["node", "--experimental-strip-types", "apps/worker/src/main.ts"]
 
-# UNVERIFIED: `apps/worker/src/main.ts` DOES NOT EXIST. The worker currently
-# ships a converter registry and handler factory (`apps/worker/src/index.ts`)
-# and no queue-consuming entrypoint, because the queue that exists is
-# in-process and there is no Redis here to consume from
-# (docs/findings/16-phase-7-preflight.md). Whoever wires BullMQ writes this
-# file. Checklist item 2.
+# The entrypoint exists and is tested (apps/worker/test/worker.test.ts).
+#
+# It WILL exit 1 in this build, deliberately: no cross-process queue adapter
+# ships, because the only queue in the repository is in-process and there is
+# no Redis here to build a BullMQ adapter against
+# (docs/findings/16-phase-7-preflight.md). It exits with a message naming
+# what is missing rather than dying on a module-resolution error.
+#
+# With `restart: unless-stopped` that is a crash loop with an explanation in
+# the logs. That is intended. A stub that idled would look healthy to every
+# orchestrator watching it, and the missing worker would be discovered as a
+# queue that silently never drains. Checklist item 2.

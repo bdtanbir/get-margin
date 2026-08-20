@@ -46,11 +46,20 @@ much under 1 GB probably means Chromium did not actually install, which item 3 w
 
 ## 2. The entrypoints exist and start
 
-`Dockerfile.worker` names `apps/worker/src/main.ts`, **which does not exist**. The worker currently
-ships a converter registry and a handler factory (`apps/worker/src/index.ts`) and no
-queue-consuming entrypoint, because the only queue that exists is in-process and there is no Redis
-here to consume from (`docs/findings/16-phase-7-preflight.md`). Whoever wires BullMQ writes that
-file; until they do, the worker container cannot start and this item fails by construction.
+`Dockerfile.worker` names `apps/worker/src/main.ts`. It exists and is tested, and it **exits 1 in
+this build on purpose**: no cross-process queue adapter ships, because the only queue in the
+repository is in-process and there is no Redis here to build a BullMQ adapter against
+(`docs/findings/16-phase-7-preflight.md`). It prints what is missing and points back at this
+document.
+
+So the worker container is expected to crash-loop with an explanation until someone registers an
+adapter in `QUEUE_ADAPTERS` (`apps/worker/src/worker.ts`). That is the intended failure: a stub that
+idled instead would look healthy to every orchestrator watching it, and the absent worker would be
+discovered later as a queue that silently never drains.
+
+**Pass for this item today:** `docker compose logs worker` shows `no cross-process queue adapter`
+and the container exits 1 — not a module-resolution error, and not a container that appears to be
+running.
 
 Both entrypoints also run under `node --experimental-strip-types`, which this repo has never done —
 development and tests go through `tsx`. Node ≥ 22.6 is required, and stripping rejects some

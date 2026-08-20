@@ -88,13 +88,14 @@ block fails both network tests. Without that check they would be assertions abou
 Every file opens with a header saying it has never been built or run, quoting the `docker info`
 failure, and pointing at `docs/findings/17-deploy-verification.md`.
 
-The checklist is ten items with commands, expected output, and what a pass looks like. **Two are
-expected to fail as written**, and say so:
+The checklist is ten items with commands, expected output, and what a pass looks like. **One is
+expected to fail as written**, and says so:
 
 1. The Chromium apt dependency list was typed from documentation rather than resolved by apt.
-2. `apps/worker/src/main.ts` does not exist. The worker ships a converter registry and a handler
-   factory; the queue-consuming entrypoint belongs to whoever wires BullMQ, because the only queue
-   here is in-process and there is no Redis to consume from.
+
+The worker entrypoint the Dockerfile names now exists and is tested. It exits 1 with a message
+naming what is missing, because no cross-process queue adapter ships — a legible crash rather than
+a module-resolution error, and deliberately not a stub that would idle and look healthy.
 
 Egress has its own item and its own argument, because it is the property people assume rather than
 test, and the cloud metadata endpoint is called out separately: reaching it turns "rendered a

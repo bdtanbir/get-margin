@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, rm, mkdir, writeFile, readdir } from 'node:fs/promises'
+import { mkdtemp, rm, mkdir, writeFile, readdir, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { JOB_ID_LENGTH, JOB_TTL_MS, type JobId } from '@margin/shared'
@@ -64,11 +64,14 @@ describe('LocalStorage', () => {
     expect(await storage.get(id, 'result')).toEqual(bytes('converted'))
   })
 
-  it('uses the job id as the directory name and writes nothing else', async () => {
+  it('uses the job id as the directory name, and writes only its own files', async () => {
     const id = newJobId()
     await storage.put(id, 'input', bytes('x'))
     expect(await readdir(root)).toEqual([id])
-    expect(await readdir(join(root, id))).toEqual(['input'])
+    // `created` carries the arrival timestamp and nothing else -- no name,
+    // no size, nothing about the file. See `age`.
+    expect((await readdir(join(root, id))).sort()).toEqual(['created', 'input'])
+    expect(await readFile(join(root, id, 'created'), 'utf8')).toMatch(/^\d+$/)
   })
 
   it('reports nothing for a job that does not exist', async () => {
@@ -127,16 +130,59 @@ describe('LocalStorage', () => {
   })
 
   /**
-   * Writing the result must not extend the input's life, or a job that
-   * produces output whenever it is polled would never expire.
+   * Age is measured from ARRIVAL, and nothing that happens afterwards may
+   * move it.
+   *
+   * The previous version of this test compared two `age` calls a
+   * microsecond apart against a 50ms tolerance, so it passed whether or
+   * not the clock reset -- it could not have failed. It was hiding a real
+   * bug: `age` used the job directory's mtime, and creating a file inside
+   * a directory updates that directory's mtime, so writing the result
+   * restarted the hour.
+   *
+   * Driving an injected clock across half an hour is what makes the
+   * difference observable: a reset would report 30 minutes here instead of
+   * 60.
    */
-  it('does not reset age when a second slot is written', async () => {
+  it('measures age from arrival, not from the last write', async () => {
+    const HALF_HOUR = 30 * 60_000
+    let now = 1_000_000
+    const clocked = new LocalStorage(root, { clock: () => now })
+
+    const id = newJobId()
+    await clocked.put(id, 'input', bytes('x'))
+
+    now += HALF_HOUR
+    await clocked.put(id, 'result', bytes('y'))
+    expect(await clocked.age(id, now)).toBe(HALF_HOUR)
+
+    // And deleting the input -- which also touches the directory -- must
+    // not buy the result another hour.
+    await clocked.delete(id, 'input')
+    now += HALF_HOUR
+    expect(await clocked.age(id, now)).toBe(2 * HALF_HOUR)
+  })
+
+  /**
+   * A job written before the timestamp file existed still has to expire.
+   * Falling back to mtime is a worse clock; a job with no age at all would
+   * be one the sweeper skips forever.
+   */
+  it('falls back to the directory when there is no timestamp to read', async () => {
     const id = newJobId()
     await storage.put(id, 'input', bytes('x'))
-    const before = await storage.age(id, Date.now() + 10_000)
-    await storage.put(id, 'result', bytes('y'))
-    const after = await storage.age(id, Date.now() + 10_000)
-    expect(after).toBeGreaterThanOrEqual((before ?? 0) - 50)
+    await rm(join(root, id, 'created'))
+    const age = await storage.age(id, Date.now() + 10_000)
+    expect(age).toBeGreaterThan(9_000)
+  })
+
+  it('ignores a garbled timestamp rather than making the job immortal', async () => {
+    const id = newJobId()
+    await storage.put(id, 'input', bytes('x'))
+    await writeFile(join(root, id, 'created'), 'not-a-number')
+    const age = await storage.age(id, Date.now() + 10_000)
+    expect(age).not.toBeNull()
+    expect(age).toBeGreaterThan(9_000)
   })
 
   it('refuses an id that is not a job id, before it becomes a path', async () => {
