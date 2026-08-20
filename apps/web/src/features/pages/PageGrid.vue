@@ -50,6 +50,86 @@ function onClick(id: PageId, index: number, e: MouseEvent): void {
 const listEl = ref<HTMLElement | null>(null)
 const splitting = ref(false)
 
+/**
+ * Roving tabindex: one tile in the tab order, arrows move between them.
+ *
+ * The grid had NO keyboard support before this. It was a `role="listbox"`
+ * whose options were not focusable, and the only way in was tabbing to the
+ * buttons nested inside each tile -- which is the same nesting axe flags,
+ * and one of those buttons did nothing when activated. Removing them
+ * without this would have taken the grid from badly reachable to
+ * unreachable.
+ */
+const focusIndex = ref(0)
+
+function tileLabel(id: PageId, index: number): string {
+  const from = merged.value ? `, from ${sourceName(id)}` : ''
+  return `Page ${index + 1}${from}`
+}
+
+function focusTile(index: number): void {
+  const clamped = Math.min(doc.pageOrder.length - 1, Math.max(0, index))
+  focusIndex.value = clamped
+  // Focus follows the roving index on the next frame, once the tabindex
+  // attributes have been re-rendered.
+  requestAnimationFrame(() => {
+    const id = doc.pageOrder[clamped]
+    if (!id) return
+    listEl.value?.querySelector<HTMLElement>(`[data-page-tile="${id}"]`)?.focus()
+  })
+}
+
+/**
+ * Listbox keys.
+ *
+ * Arrows move without selecting, which is what a multi-select listbox
+ * wants -- moving the focus should not destroy a selection the user has
+ * built up. Space toggles the focused page, Enter navigates to it, and
+ * Shift+Arrow extends, mirroring what shift-click already did with a
+ * mouse.
+ */
+function onKeydown(id: PageId, index: number, e: KeyboardEvent): void {
+  const last = doc.pageOrder.length - 1
+  let next: number | null = null
+
+  switch (e.key) {
+    case 'ArrowRight':
+    case 'ArrowDown':
+      next = Math.min(last, index + 1)
+      break
+    case 'ArrowLeft':
+    case 'ArrowUp':
+      next = Math.max(0, index - 1)
+      break
+    case 'Home':
+      next = 0
+      break
+    case 'End':
+      next = last
+      break
+    case ' ':
+    case 'Spacebar':
+      e.preventDefault()
+      selection.toggle(id)
+      return
+    case 'Enter':
+      e.preventDefault()
+      selection.selectOnly(id)
+      vp.setAnchor(index)
+      emit('select', index)
+      return
+    default:
+      return
+  }
+
+  e.preventDefault()
+  if (e.shiftKey) {
+    const target = doc.pageOrder[next]
+    if (target) selection.extendTo(target, doc.pageOrder)
+  }
+  focusTile(next)
+}
+
 /** More than one file open means the grid spans sources. */
 const merged = computed(() => Object.keys(doc.sources).length > 1)
 
@@ -178,26 +258,43 @@ function remove(): void {
         role="option"
         :aria-selected="selection.isSelected(id) ? 'true' : 'false'"
         :aria-grabbed="draggingId === id ? 'true' : undefined"
-        class="group relative rounded-control"
+        :aria-label="tileLabel(id, i)"
+        :aria-current="vp.anchorIndex === i ? 'true' : undefined"
+        :tabindex="i === focusIndex ? 0 : -1"
+        class="group relative rounded-control focus-visible:outline-2 focus-visible:outline-offset-2
+               focus-visible:outline-focus"
         :class="[
           selection.isSelected(id) ? 'ring-2 ring-accent' : '',
           draggingId === id ? 'opacity-40' : '',
         ]"
         @click="(e) => onClick(id, i, e)"
+        @focus="focusIndex = i"
+        @keydown="(e) => onKeydown(id, i, e)"
         @pointerdown="(e) => startReorder(id, e)"
       >
         <!--
-          Selection control. `pointerdown.stop` as well as `click.stop`
-          because the tile also starts a reorder drag on pointerdown, and
-          without it every tap of this checkbox would begin dragging the
-          page it is trying to select.
+          Selection affordance for pointers, and deliberately NOT a button.
+
+          The tile is a `role="option"`, and axe's nested-interactive is
+          explicit that a negative tabindex inside an interactive control
+          "does not prevent assistive technologies from focusing the
+          element (even with aria-hidden=true)" -- so a <button
+          tabindex="-1" aria-hidden> here still violated the rule. A span
+          is not focusable at all, which is the only version that actually
+          resolves it.
+
+          Nothing is lost: the option carries the selection semantics
+          (`aria-selected`), its own name, and Space to toggle. This is the
+          mouse shortcut that adds to a selection without replacing it.
+
+          `pointerdown.stop` as well as `click.stop` because the tile also
+          starts a reorder drag on pointerdown, and without it every tap
+          here would begin dragging the page it is trying to select.
         -->
-        <button
-          type="button"
+        <span
           :data-select-page="id"
-          :aria-label="selection.isSelected(id) ? `Deselect page ${i + 1}` : `Select page ${i + 1}`"
-          :aria-pressed="selection.isSelected(id)"
-          class="absolute left-1 top-1 z-10 flex size-6 items-center justify-center rounded-control
+          aria-hidden="true"
+          class="absolute left-1 top-1 z-10 flex size-6 cursor-pointer items-center justify-center rounded-control
                  border border-border bg-surface/90 opacity-0 transition-opacity
                  focus-visible:opacity-100 group-hover:opacity-100
                  [@media(hover:none)]:opacity-100"
@@ -206,7 +303,7 @@ function remove(): void {
           @pointerdown.stop
         >
           <Check v-if="selection.isSelected(id)" :size="14" :stroke-width="2" />
-        </button>
+        </span>
 
         <!--
           An insertion marker rather than animating the tiles apart: the
@@ -218,11 +315,17 @@ function remove(): void {
           data-drop-marker
           class="pointer-events-none absolute inset-x-1 -top-0.5 h-0.5 rounded bg-accent"
         />
+        <!--
+          `interactive: false`: the tile is the option, so the thumbnail
+          must not be a control inside it. Its handler here was already a
+          no-op -- the tile's own click did the work -- so this removes a
+          focusable element that did nothing when activated.
+        -->
         <Thumbnail
           :page="doc.pages[id]!"
           :index="i"
           :active="vp.anchorIndex === i"
-          @select="() => {}"
+          :interactive="false"
         />
         <span v-if="merged" class="sr-only">from {{ sourceName(id) }}</span>
       </div>

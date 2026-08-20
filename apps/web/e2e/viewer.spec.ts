@@ -27,10 +27,10 @@ const BIG = fileURLToPath(
  * Page 1's canvas, scoped past both places a `<canvas>` can legitimately
  * exist once a document is open: the main viewer (PageCanvas.vue, wrapped in
  * `role="img"` `aria-label="Page N"`) and, on desktop only, ThumbnailPanel's
- * sidebar thumbnails (Thumbnail.vue, `aria-label="Go to page N"` on a
- * `<button>` — a different role, so it can't collide with the selector
- * below, but a bare `page.locator('canvas').first()` cannot tell the two
- * apart by DOM order alone).
+ * sidebar thumbnails, which since Phase 8 sit inside a `role="option"`
+ * tile labelled `Page N` — the SAME accessible name as the viewer canvas,
+ * so the role is the only thing telling them apart, and a bare
+ * `page.locator('canvas').first()` certainly cannot).
  *
  * This is not a hypothetical mistake: the first version of this spec used
  * exactly that bare `.first()` locator (matching the task brief's own
@@ -179,6 +179,6 @@ test('tapping a thumbnail closes the Pages modal on phone', async ({ page }, tes
   const modal = page.getByRole('dialog', { name: 'Pages' })
   await expect(modal).toBeVisible()
 
-  await modal.getByRole('button', { name: 'Go to page 8', exact: true }).click()
+  await modal.getByRole('option', { name: 'Page 8', exact: true }).click()
   await expect(modal).not.toBeVisible()
 })

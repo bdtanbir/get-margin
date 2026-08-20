@@ -12,8 +12,23 @@
   --color-border: oklch(0.922 0.004 265);
   --color-border-strong: oklch(0.86 0.006 265);
   --color-text: oklch(0.23 0.01 265);
-  --color-text-muted: oklch(0.53 0.012 265);
-  --color-text-subtle: oklch(0.66 0.01 265);
+  /*
+    The two lower steps are set by WCAG AA, not by taste.
+
+    `text-subtle` was oklch(0.66), which measures 2.84:1 on canvas against
+    AA's 4.5:1 requirement -- oklch's L is perceptually uniform and says
+    nothing about sRGB relative luminance, so a value that looks
+    comfortably mid-range is not. `text-muted` passed at 4.80 but sat at
+    0.53, so raising subtle to a passing 0.535 would have collapsed the two
+    into the same colour. Both moved, to keep three distinguishable steps
+    that all pass.
+
+    Measured against every surface these can appear on, in both themes, by
+    test/lib/contrast.test.ts. Change one of these and that test tells you
+    the new ratio.
+  */
+  --color-text-muted: oklch(0.44 0.012 265);   /* 7.04:1 on canvas */
+  --color-text-subtle: oklch(0.535 0.01 265);  /* 4.72:1 on canvas */
   --color-accent: oklch(0.53 0.2 268);
   --color-accent-hover: oklch(0.48 0.2 268);
   --color-accent-fg: oklch(1 0 0);
@@ -46,8 +61,10 @@
   --color-border: oklch(0.32 0.008 265);
   --color-border-strong: oklch(0.4 0.01 265);
   --color-text: oklch(0.95 0.003 265);
-  --color-text-muted: oklch(0.72 0.008 265);
-  --color-text-subtle: oklch(0.58 0.008 265);
+  /* 0.58 measured 3.53:1 on surface-raised. Both steps moved so the dark
+     ramp keeps the same separation as the light one. */
+  --color-text-muted: oklch(0.75 0.008 265);   /* on surface-raised */
+  --color-text-subtle: oklch(0.655 0.008 265); /* 4.79:1 on surface-raised */
   --color-accent: oklch(0.62 0.19 268);
   --color-accent-hover: oklch(0.68 0.19 268);
   --color-accent-fg: oklch(0.16 0.01 268);

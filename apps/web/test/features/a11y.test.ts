@@ -116,11 +116,43 @@ describe('icon-only controls', () => {
   ])('every control in %s has an accessible name', (_name, open) => {
     const w = open()
     for (const button of w.findAll('button')) {
+      // A button removed from the accessibility tree is not a control a
+      // screen reader user can encounter, so a name would be unreachable
+      // anyway. The page grid's select checkbox is one: it duplicates the
+      // tile's own selection semantics as a mouse affordance. The pairing
+      // that makes this safe is asserted below.
+      if (button.attributes('aria-hidden') === 'true') continue
+
       const named =
         (button.text().trim().length > 0) ||
         Boolean(button.attributes('aria-label')) ||
         Boolean(button.attributes('aria-labelledby'))
       expect(named, `unnamed button: ${button.html().slice(0, 80)}`).toBe(true)
+    }
+  })
+
+  /**
+   * Hidden from assistive technology AND out of the tab order, always
+   * together.
+   *
+   * One without the other is its own violation: a focusable element that
+   * is `aria-hidden` puts keyboard users on a control their screen reader
+   * cannot announce, which is worse than either problem alone. This is
+   * axe's `aria-hidden-focus` rule, checked here so a component test
+   * catches it without needing a browser.
+   */
+  it.each([
+    ['the tool rail', () => mount(ToolRail)],
+    ['the page grid', () => mount(PageGrid)],
+  ])('nothing in %s is focusable while hidden from screen readers', (_name, open) => {
+    const w = open()
+    for (const el of w.findAll('[aria-hidden="true"]')) {
+      const focusable = el.element.matches('button, a[href], input, select, textarea, [tabindex]')
+      if (!focusable) continue
+      expect(
+        el.attributes('tabindex'),
+        `aria-hidden but still focusable: ${el.html().slice(0, 80)}`,
+      ).toBe('-1')
     }
   })
 })

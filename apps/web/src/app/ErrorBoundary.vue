@@ -2,6 +2,7 @@
 import { ref, onErrorCaptured } from 'vue'
 import { TriangleAlert } from 'lucide-vue-next'
 import Button from '@/ui/Button.vue'
+import { reporter } from '@/lib/telemetry/reporter'
 
 const props = defineProps<{
   /** What part of the app this guards, named as the user would recognise it. */
@@ -28,6 +29,20 @@ const attempt = ref(0)
 onErrorCaptured((err) => {
   failure.value = err instanceof Error ? err : new Error(String(err))
   emit('captured', failure.value)
+  /**
+   * Reported, if and only if reporting is both configured and consented
+   * to -- the reporter decides that, not this call site.
+   *
+   * The ERROR is handed over rather than a message assembled here, because
+   * the reporter is the thing that knows how to take a type and a scrubbed
+   * message and nothing else. Passing a string built at this call site is
+   * exactly how a filename would end up in a payload.
+   */
+  reporter().reportError({
+    name: 'boundary-caught',
+    component: 'ErrorBoundary',
+    error: failure.value,
+  })
   return false
 })
 

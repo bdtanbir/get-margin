@@ -193,6 +193,40 @@ describe('the upload claim tracks whether a conversion service exists', () => {
     expect(w.find('[data-privacy-convert]').exists()).toBe(false)
   })
 
+  it('claims no analytics only in a build that cannot send any', async () => {
+    // A real computed, not a plain object with a `.value`: the template
+    // reads `telemetry.configured`, and Vue only auto-unwraps actual refs.
+    // A look-alike silently resolves to undefined and the test passes for
+    // the wrong reason.
+    vi.doMock('@/lib/telemetry/analytics', async () => {
+      const { computed } = await import('vue')
+      return {
+        telemetryState: computed(() => ({ configured: false, choice: 'unset', sending: false })),
+      }
+    })
+    const w = await pageWith('')
+    expect(w.text()).toMatch(/there are no analytics/i)
+    expect(w.find('[data-privacy-telemetry]').exists()).toBe(false)
+  })
+
+  it('describes usage counts, and their state, in a build that can send them', async () => {
+    vi.doMock('@/lib/telemetry/analytics', async () => {
+      const { computed } = await import('vue')
+      return {
+        telemetryState: computed(() => ({ configured: true, choice: 'granted', sending: true })),
+      }
+    })
+    const w = await pageWith('')
+    // The unqualified claim is gone, because it would no longer be true.
+    expect(w.text()).not.toMatch(/there are no analytics/i)
+
+    const telemetry = w.get('[data-privacy-telemetry]').text()
+    expect(telemetry).toMatch(/usage counts are on/i)
+    expect(telemetry).toMatch(/never a document/i)
+    expect(telemetry).toMatch(/never a file name/i)
+    expect(telemetry).toMatch(/off until you say yes/i)
+  })
+
   it('names the exception, and its deletion policy, in a build that has one', async () => {
     const w = await pageWith('https://convert.example')
     // The absolute claim is gone, because it would no longer be true.

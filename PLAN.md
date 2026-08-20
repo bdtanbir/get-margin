@@ -651,9 +651,17 @@ The sandboxing could not be *verified* here — no Docker daemon, no Redis, no L
 
 **The MVP's no-backend property still holds.** The API is optional and off by default; with no `VITE_CONVERT_API` configured the app works entirely without it, offers no conversion, and uploads nothing.
 
-### Phase 8 — Polish & launch · weeks 19–21.5
+### Phase 8 — Polish & launch · weeks 19–21.5 — **shipped, with three items left open by design**
 
-Cross-browser matrix · real-device testing · **Artifex commercial license finalized** · load testing on the worker tier · error monitoring · analytics (privacy-respecting) · docs/help · marketing site · pricing/limits if applicable.
+Cross-browser matrix (Chromium, Firefox, WebKit, on every commit) · accessibility to WCAG AA with axe asserting zero · performance budget on the built bundle · error monitoring and privacy-respecting analytics, both opt-in and both off by default · in-app help.
+
+**Left open, and named rather than implied:** real-device testing · load testing on the worker tier · **Artifex commercial license**. See `docs/findings/20-launch-checklist.md` — what to run, what to observe, what a pass looks like.
+
+**Not built:** marketing site (a separate artefact from the application) · billing and pricing (nothing to integrate against).
+
+The cross-browser matrix paid for itself on its first run: it found a ZIP downloading as `.pdf` in Firefox, a defect that had shipped for three phases behind 89 green e2e tests, because nothing ran Firefox. Accessibility work fixed a design token rather than the two elements axe happened to report, and rebuilt the pages grid as a listbox that can actually be used with a keyboard. Phase results: `docs/findings/21-phase-8-verification.md`.
+
+**The `MAX_BYTES` / `MAX_PAGES` caps remain unvalidated on real hardware**, as they have been since Phase 1. Emulation has no memory ceiling to hit, so this is checklist item 1 and not something the suite can close.
 
 ### Summary
 
