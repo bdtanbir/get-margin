@@ -13,6 +13,7 @@ import CropOverlay from '@/features/pages/CropOverlay.vue'
 import TextSelectionLayer from './TextSelectionLayer.vue'
 import MarkupObject from './objects/MarkupObject.vue'
 import RedactionObject from './objects/RedactionObject.vue'
+import TextPatchObject from './objects/TextPatchObject.vue'
 import { useTextSelection } from './useTextSelection'
 import { useSelectionStore } from '@/stores/selection'
 import { useViewportStore } from '@/stores/viewport'
@@ -41,8 +42,10 @@ const rootTransform = computed(() => svgRootTransform(props.page.geometry))
 
 // Kinds whose geometry is MuPDF PAGE space rather than raw PDF space, so
 // they render OUTSIDE the y-flipped root <g>. Redaction joins the markup
-// three because its quads come from the same buildQuadIndex.
-const MARKUP_KINDS = ['highlight', 'underline', 'strikeout', 'redaction'] as const
+// three because its quads come from the same buildQuadIndex, and textPatch
+// joins them because its rect is derived from that index's character quads
+// (see PatchEditor's `box`).
+const MARKUP_KINDS = ['highlight', 'underline', 'strikeout', 'redaction', 'textPatch'] as const
 const isMarkup = (kind: string): boolean =>
   (MARKUP_KINDS as readonly string[]).includes(kind)
 
@@ -245,6 +248,7 @@ const draft = computed(() => {
         @pointerdown="edits.select([o.id])"
       >
         <RedactionObject v-if="o.kind === 'redaction'" :object="(o as never)" />
+        <TextPatchObject v-else-if="o.kind === 'textPatch'" :object="(o as never)" />
         <MarkupObject v-else :object="(o as never)" />
       </g>
       <TextSelectionLayer :page="props.page" />

@@ -177,6 +177,33 @@ test('compression measures before offering a download', async ({ page }) => {
   await expect(page.locator('[data-compress-download]')).toBeVisible()
 })
 
+/**
+ * The viewer has to show the edit, not just the exported file.
+ *
+ * The test below this one asserts the EXPORT changes, and passed for
+ * months while the viewer showed the original text and gave no sign
+ * anything had happened -- `ObjectLayer` had no renderer registered for
+ * `textPatch`, and an unregistered kind renders nothing. An editor whose
+ * edits are only visible after downloading is not an editor.
+ */
+test('editing a line shows the replacement in the viewer', async ({ page }) => {
+  await open(page)
+  await page.getByRole('button', { name: 'Edit text' }).first().click()
+
+  const target = page.locator('[data-patch-target]').first()
+  await expect(target).toBeVisible()
+  await target.click()
+
+  await page.locator('[data-patch-input]').fill('Replaced by a test')
+  await page.locator('[data-patch-commit]').click()
+
+  // The page itself is a canvas, so the only DOM text on the page is what
+  // the overlay drew.
+  const drawn = page.locator('svg text', { hasText: 'Replaced by a test' })
+  await expect(drawn).toHaveCount(1)
+  await expect(drawn).toBeVisible()
+})
+
 test('editing a line replaces it in the export', async ({ page }) => {
   await open(page)
   await page.getByRole('button', { name: 'Edit text' }).first().click()
