@@ -86,7 +86,27 @@ if (typeof globalThis.ImageData === 'undefined') {
  */
 if (typeof HTMLCanvasElement !== 'undefined') {
   HTMLCanvasElement.prototype.getContext = function (): unknown {
-    return { putImageData() {} }
+    return {
+      putImageData() {},
+      /**
+       * jsdom implements no text metrics, and `lib/fonts.ts`'s
+       * `measureText` uses a canvas to lay text out — so any component that
+       * positions text by measuring it (TextObject, PatchEditor) throws
+       * "ctx.measureText is not a function" the moment it renders.
+       *
+       * A crude proportional estimate rather than 0: returning 0 would make
+       * every centred or right-aligned line land at the same place and let
+       * a real positioning bug pass. This gives widths that scale with the
+       * text and the size, which is enough for a component test to tell
+       * "wider" from "narrower". Anything that depends on REAL metrics
+       * belongs in an e2e test against a browser that has them.
+       */
+      measureText(this: { font?: string }, text: string) {
+        const size = Number(/(\d+(?:\.\d+)?)px/.exec(String(this.font ?? ''))?.[1] ?? 16)
+        return { width: text.length * size * 0.5 }
+      },
+      font: '',
+    }
   } as typeof HTMLCanvasElement.prototype.getContext
 }
 

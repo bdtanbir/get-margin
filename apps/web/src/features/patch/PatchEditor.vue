@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { nanoid } from 'nanoid'
+import { pageViewSize } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import type { EditObject, PageQuadIndex } from '@margin/pdf-core'
 import { hashText } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
 import { getPdfClient } from '@/workers/pdfClient'
-import { fontsForExport, DEFAULT_FAMILY } from '@/lib/fonts'
+import { fontsForExport, measureText, cssFamily, DEFAULT_FAMILY } from '@/lib/fonts'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
 
 const props = defineProps<{
@@ -71,17 +72,55 @@ const background = computed(() => {
 const risky = computed(() => (background.value?.confidence ?? 0) < CONFIDENT_ENOUGH)
 
 /** The editing box, positioned over the line it replaces. */
+/** The font size the writer will use when `fontSize` is 0, in page units. */
+const editSize = computed(() => (box.value ? box.value.h * 0.8 : 0))
+
+/**
+ * How wide the input has to be to show what is being typed.
+ *
+ * It used to be the ORIGINAL line's width. That is the right box for the
+ * cover the writer paints, and the wrong box for an editor: type anything
+ * longer than the text you are replacing and a single-line <input> scrolls,
+ * so the start of your own sentence disappears off the left edge while you
+ * are still writing it. Replacing "Notes" with "something" showed
+ * "nething".
+ *
+ * So the field grows with its content, and the dashed guide underneath goes
+ * on showing where the original line ended -- which is the thing the fit
+ * setting is actually about, and which the field's own width was never
+ * communicating anyway.
+ *
+ * Capped at the page's right edge: past that the input would hang off the
+ * paper, and horizontal scrolling inside the field is the lesser evil.
+ */
+const inputWidth = computed(() => {
+  const b = box.value
+  if (!b) return 0
+  const measured = measureText(draft.value || ' ', DEFAULT_FAMILY, editSize.value)
+  // A little slack so the caret at the end of the text is never against the
+  // border, and a floor so an emptied field stays clickable.
+  const wanted = Math.max(b.w, measured + editSize.value, 40)
+  const pageWidth = pageViewSize(props.page.geometry, 1).width
+  return Math.min(wanted, Math.max(40, pageWidth - b.x))
+})
+
 const style = computed(() => {
   const b = box.value
   if (!b) return {}
   return {
     left: `${b.x * props.zoom}px`,
     top: `${b.y * props.zoom}px`,
-    width: `${Math.max(b.w, 40) * props.zoom}px`,
+    width: `${inputWidth.value * props.zoom}px`,
     height: `${b.h * props.zoom}px`,
-    fontSize: `${b.h * 0.8 * props.zoom}px`,
+    fontSize: `${editSize.value * props.zoom}px`,
+    // The family the export will use, so what is typed is the width it will
+    // be measured at rather than whatever the UI font happens to be.
+    fontFamily: cssFamily(DEFAULT_FAMILY),
   }
 })
+
+/** Where the original line ended, so the guide can show it while typing. */
+const originalWidth = computed(() => (box.value ? box.value.w : 0))
 
 async function begin(lineIndex: number): Promise<void> {
   editing.value = lineIndex
@@ -186,6 +225,28 @@ defineExpose({ begin })
     </template>
 
     <template v-else>
+      <!--
+        Where the original line ended.
+        
+        The input used to be exactly this wide, which meant its edge doubled
+        as the "will it fit" guide. Now that the field grows with what is
+        typed, that information would simply be gone -- so it is drawn
+        explicitly. It is what the fit setting below is about: text past this
+        mark is what gets shrunk, cut, or allowed to run.
+      -->
+      <div
+        v-if="originalWidth > 0"
+        data-patch-guide
+        aria-hidden="true"
+        class="pointer-events-none absolute border-r-2 border-dashed border-accent/50"
+        :style="{
+          left: `${(box?.x ?? 0) * props.zoom}px`,
+          top: `${(box?.y ?? 0) * props.zoom}px`,
+          width: `${originalWidth * props.zoom}px`,
+          height: `${(box?.h ?? 0) * props.zoom}px`,
+        }"
+      />
+
       <input
         ref="input"
         v-model="draft"

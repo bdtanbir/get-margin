@@ -87,6 +87,56 @@ describe('PatchEditor', () => {
     expect((w.get('[data-patch-input]').element as HTMLInputElement).value).toBe('Original line')
   })
 
+  /**
+   * The field has to show what is being typed into it.
+   *
+   * It used to be exactly the width of the line being replaced, so typing
+   * anything longer scrolled a single-line <input> and the start of the
+   * user's own sentence went off the left edge while they were still
+   * writing it -- replacing "Notes" with "something" showed "nething".
+   */
+  it('grows the field as the replacement outgrows the original line', async () => {
+    const w = mountEditor(indexOf('Notes'))
+    await w.get('[data-patch-target="0"]').trigger('click')
+
+    const width = (): number =>
+      Number(/width:\s*([\d.]+)px/.exec(w.get('[data-patch-input]').attributes('style') ?? '')?.[1] ?? 0)
+
+    const before = width()
+    await w.get('[data-patch-input]').setValue('something considerably longer than Notes')
+    expect(width()).toBeGreaterThan(before)
+  })
+
+  it('does not shrink below the original line for a shorter replacement', async () => {
+    const w = mountEditor(indexOf('A reasonably long original line'))
+    await w.get('[data-patch-target="0"]').trigger('click')
+
+    const width = (): number =>
+      Number(/width:\s*([\d.]+)px/.exec(w.get('[data-patch-input]').attributes('style') ?? '')?.[1] ?? 0)
+
+    const before = width()
+    await w.get('[data-patch-input]').setValue('x')
+    // Still covers the line it is replacing: that is the area being painted
+    // over, and collapsing to the width of one character would hide it.
+    expect(width()).toBe(before)
+  })
+
+  /**
+   * The field's edge used to double as the "will it fit" mark. Now that it
+   * grows, that has to be drawn explicitly or the fit setting below it
+   * refers to a boundary nobody can see.
+   */
+  it('marks where the original line ended', async () => {
+    const w = mountEditor(indexOf('Notes'))
+    await w.get('[data-patch-target="0"]').trigger('click')
+
+    // The fixture's five characters span x = 40..90, so the line is 50 wide.
+    const guide = w.get('[data-patch-guide]')
+    expect(guide.attributes('style')).toContain('width: 50px')
+    // Decorative: the input beside it is what a screen reader should find.
+    expect(guide.attributes('aria-hidden')).toBe('true')
+  })
+
   it('creates a patch carrying the replacement', async () => {
     const edits = seed()
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
