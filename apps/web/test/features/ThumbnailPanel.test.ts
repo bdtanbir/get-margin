@@ -13,16 +13,21 @@ import { seedDocument } from '../helpers/seedDocument'
 // wiring gap — Thumbnail only proves it EMITS `select`, not that anything
 // listens.
 /**
- * The thumbnail buttons only.
+ * The page tiles, which ARE the controls.
  *
- * PageGrid's header renders buttons (split, add, and the rotate/delete
- * actions once pages are selected), and since Task 64 every tile also
- * carries a select control. Indexing `findAll('button')` positionally
- * silently shifts each time one of those is added -- which has now happened
- * twice.
+ * Selecting by tile rather than by `findAll('button')` position: PageGrid's
+ * header renders buttons (split, add, and the rotate/delete actions once
+ * pages are selected), so a positional index silently shifts each time one
+ * is added -- which had already happened twice.
+ *
+ * This used to select the button inside each tile. That button is now a
+ * plain div: a tile is a `role="option"` and an interactive element inside
+ * an option is an axe `nested-interactive` violation -- and that
+ * particular button's click handler was a no-op in this grid, so it was a
+ * focusable control that did nothing. The tile carries the click, the
+ * keyboard, the label and `aria-current` now.
  */
-const thumbnails = (w: ReturnType<typeof mount>) =>
-  w.findAll('[data-page-tile] button:not([data-select-page])')
+const thumbnails = (w: ReturnType<typeof mount>) => w.findAll('[data-page-tile]')
 
 vi.mock('../../src/workers/pdfClient.js', () => ({
   getPdfClient: () => ({

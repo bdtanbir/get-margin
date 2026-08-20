@@ -383,21 +383,23 @@ test('thumbnail panel renders real page content from the placeholder tier', asyn
   const panel = page.getByRole('complementary', { name: 'Pages' })
   await expect(panel).toBeVisible()
 
-  // 12 thumbnail buttons, one per page — the panel is actually wired to
-  // pageOrder, not stubbed with a fixed count.
+  // 12 tiles, one per page — the panel is actually wired to pageOrder, not
+  // stubbed with a fixed count.
   //
-  // Scoped to the tiles: since Phase 3 the panel's header also carries page
-  // actions (add a PDF, split), so counting every button in the panel would
-  // shift the moment another control is added there.
-  await expect(
-    panel.locator('[data-page-tile] button:not([data-select-page])'),
-  ).toHaveCount(12)
+  // Counts the tiles themselves. This used to count the button inside each
+  // tile; since Phase 8 that is a plain div, because the tile is a
+  // `role="option"` and an interactive element inside an option is an axe
+  // nested-interactive violation.
+  await expect(panel.locator('[data-page-tile]')).toHaveCount(12)
 
   // `exact: true` matters here for the same reason it does on the page-1
   // check above: accessible-name matching is substring by default, and
-  // "Go to page 1" would also match "Go to page 10"/"11"/"12" in this
-  // 12-page fixture.
-  const thumb8 = panel.getByRole('button', { name: 'Go to page 8', exact: true })
+  // "Page 1" would also match "Page 10"/"11"/"12" in this 12-page fixture.
+  //
+  // `option` rather than `button`: the tile carries the name now. The main
+  // viewer's canvas is `role="img"` with the same name, so the role is what
+  // keeps these apart -- the same scoping this file already relies on.
+  const thumb8 = panel.getByRole('option', { name: 'Page 8', exact: true })
   await expect(thumb8).toBeVisible()
   const canvas = thumb8.locator('canvas')
   await expect(canvas).toBeVisible()
@@ -407,10 +409,8 @@ test('thumbnail panel renders real page content from the placeholder tier', asyn
   // a real worker call, same as the page-1 checks above.
   const nonBlankFraction = await page.waitForFunction(
     () => {
-      const btn = Array.from(document.querySelectorAll('button')).find(
-        (b) => b.getAttribute('aria-label') === 'Go to page 8',
-      )
-      const el = btn?.querySelector('canvas')
+      const tile = document.querySelector('[role="option"][aria-label="Page 8"]')
+      const el = tile?.querySelector('canvas')
       if (!el || el.width === 0 || el.height === 0) return false
       const ctx = el.getContext('2d')
       if (!ctx) return false

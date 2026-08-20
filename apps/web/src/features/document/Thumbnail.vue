@@ -10,7 +10,30 @@ import { cn } from '@/ui/cn'
 // `page.sourceIndex` (original document order). Phase 3 reorders pages, at
 // which point the two diverge; everything shown to the user here — the
 // label, the emitted `select` payload — must be derived from `index`.
-const props = defineProps<{ page: PageState; index: number; active: boolean }>()
+const props = withDefaults(
+  defineProps<{
+    page: PageState
+    index: number
+    active: boolean
+    /**
+     * Whether this thumbnail is itself a control.
+     *
+     * True in the thumbnail PANEL, where activating it navigates. False in
+     * the pages grid, where the surrounding tile is the `role="option"`
+     * and owns both the click and the keyboard -- an interactive element
+     * inside an option is an axe `nested-interactive` violation, and in
+     * that grid this button's click handler was a no-op, so keyboard users
+     * could tab to it and pressing Enter did nothing.
+     *
+     * (The explanation lives here rather than above the template's root
+     * element on purpose: a comment at the root makes Vue render the
+     * component as a fragment, which silently breaks attribute
+     * inheritance and every `wrapper.attributes()` assertion against it.)
+     */
+    interactive?: boolean
+  }>(),
+  { interactive: true },
+)
 const emit = defineEmits<{ select: [number] }>()
 
 const vp = useViewportStore()
@@ -35,13 +58,14 @@ function paintBitmap(el: HTMLCanvasElement | null): void {
 </script>
 
 <template>
-  <button
-    type="button"
-    :aria-current="props.active ? 'true' : undefined"
-    :aria-label="`Go to page ${props.index + 1}`"
+  <component
+    :is="props.interactive ? 'button' : 'div'"
+    :type="props.interactive ? 'button' : undefined"
+    :aria-current="props.interactive && props.active ? 'true' : undefined"
+    :aria-label="props.interactive ? `Go to page ${props.index + 1}` : undefined"
     class="group flex w-full flex-col items-center gap-1 rounded-panel p-1.5 transition-colors duration-fast
            hover:bg-surface-sunken"
-    @click="emit('select', props.index)"
+    @click="props.interactive && emit('select', props.index)"
   >
     <div
       data-testid="thumb-frame"
@@ -61,5 +85,5 @@ function paintBitmap(el: HTMLCanvasElement | null): void {
       <div v-else class="size-full animate-pulse bg-surface-sunken" />
     </div>
     <span class="text-[11px] tabular-nums text-text-subtle">{{ props.index + 1 }}</span>
-  </button>
+  </component>
 </template>

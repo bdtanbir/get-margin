@@ -277,12 +277,97 @@ describe('PageGrid per-tile selection control', () => {
     expect(w.findAll('[data-page-tile][aria-selected="true"]')).toHaveLength(2)
   })
 
-  it('names itself for screen readers, by page position and state', async () => {
+  /**
+   * The NAME and the state live on the tile, not on this control.
+   *
+   * The tile is a `role="option"` in a multi-select listbox, so its name
+   * and `aria-selected` are what a screen reader announces. This checkbox
+   * used to carry its own label and `aria-pressed` -- a second interactive
+   * element inside the option, which is an axe `nested-interactive`
+   * violation and produced two competing announcements for one page. It is
+   * now a mouse affordance, hidden from the accessibility tree, with the
+   * option's own Space key doing the same job.
+   */
+  it('names the tile for screen readers, by page position and state', async () => {
     const w = mount(PageGrid)
-    expect(selectControl(w, 0).attributes('aria-label')).toBe('Select page 1')
+    const tile = () => w.findAll('[data-page-tile]')[0]!
+
+    expect(tile().attributes('aria-label')).toBe('Page 1')
+    expect(tile().attributes('aria-selected')).toBe('false')
+
     await selectControl(w, 0).trigger('click')
-    expect(selectControl(w, 0).attributes('aria-label')).toBe('Deselect page 1')
-    expect(selectControl(w, 0).attributes('aria-pressed')).toBe('true')
+    expect(tile().attributes('aria-selected')).toBe('true')
+  })
+
+  /**
+   * Hidden from the accessibility tree AND not focusable -- which for this
+   * control means not being a button at all.
+   *
+   * axe's nested-interactive is explicit that a negative tabindex inside
+   * an interactive control does not stop assistive technology focusing it,
+   * even with aria-hidden. So `<button tabindex="-1" aria-hidden>` still
+   * failed; only a non-focusable element passes.
+   */
+  it('is a pointer affordance, not a control in the accessibility tree', () => {
+    const w = mount(PageGrid)
+    expect(selectControl(w, 0).attributes('aria-hidden')).toBe('true')
+    expect(selectControl(w, 0).element.tagName).toBe('SPAN')
+    expect(selectControl(w, 0).attributes('tabindex')).toBeUndefined()
+  })
+
+  /**
+   * The grid had no keyboard support at all: a listbox whose options were
+   * not focusable, reachable only by tabbing to the buttons nested inside
+   * each tile. Removing that nesting without this would have taken it from
+   * badly reachable to unreachable.
+   */
+  describe('keyboard', () => {
+    const tiles = (w: ReturnType<typeof mount>) => w.findAll('[data-page-tile]')
+
+    it('puts exactly one tile in the tab order', () => {
+      const w = mount(PageGrid)
+      const tabbable = tiles(w).filter((t) => t.attributes('tabindex') === '0')
+      expect(tabbable).toHaveLength(1)
+    })
+
+    it('toggles selection with Space, without navigating', async () => {
+      const w = mount(PageGrid)
+      await tiles(w)[1]!.trigger('keydown', { key: ' ' })
+      expect(tiles(w)[1]!.attributes('aria-selected')).toBe('true')
+      expect(w.emitted('select')).toBeUndefined()
+    })
+
+    it('navigates with Enter', async () => {
+      const w = mount(PageGrid)
+      await tiles(w)[2]!.trigger('keydown', { key: 'Enter' })
+      expect(w.emitted('select')?.[0]).toEqual([2])
+    })
+
+    /** Arrows move focus without destroying a selection built up so far. */
+    it('moves the roving tabindex with the arrow keys, leaving selection alone', async () => {
+      const w = mount(PageGrid)
+      await tiles(w)[0]!.trigger('keydown', { key: ' ' })
+      await tiles(w)[0]!.trigger('keydown', { key: 'ArrowRight' })
+
+      expect(tiles(w)[1]!.attributes('tabindex')).toBe('0')
+      expect(tiles(w)[0]!.attributes('tabindex')).toBe('-1')
+      expect(tiles(w)[0]!.attributes('aria-selected')).toBe('true')
+    })
+
+    it('extends the selection with Shift and an arrow', async () => {
+      const w = mount(PageGrid)
+      await tiles(w)[0]!.trigger('keydown', { key: ' ' })
+      await tiles(w)[0]!.trigger('keydown', { key: 'ArrowRight', shiftKey: true })
+      expect(w.findAll('[data-page-tile][aria-selected="true"]').length).toBeGreaterThan(1)
+    })
+
+    it('jumps to the ends with Home and End', async () => {
+      const w = mount(PageGrid)
+      await tiles(w)[0]!.trigger('keydown', { key: 'End' })
+      expect(tiles(w).at(-1)!.attributes('tabindex')).toBe('0')
+      await tiles(w).at(-1)!.trigger('keydown', { key: 'Home' })
+      expect(tiles(w)[0]!.attributes('tabindex')).toBe('0')
+    })
   })
 
   // The tile starts a reorder drag on pointerdown; without stopping it here

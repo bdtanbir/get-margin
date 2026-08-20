@@ -68,7 +68,29 @@ function onInput(e: Event): void {
         {{ busy ? 'Opening…' : 'Choose file' }}
       </Button>
 
-      <input ref="input" type="file" accept="application/pdf,.pdf" class="sr-only" @change="onInput" />
+      <!--
+        Hidden from the accessibility tree, and out of the tab order, the
+        same way AddSourceButton hides its own input.
+
+        `sr-only` alone left it visible to screen readers with no name at
+        all -- axe rates a nameless file input as critical, and this is the
+        control that opens a document. It also left a second tab stop
+        immediately after "Choose file", invisible and with no focus ring,
+        that did the same thing as the button.
+
+        The visible button IS the control: it has a name, a focus ring, and
+        forwards its click here. So the fix is to stop exposing the input
+        twice rather than to give the duplicate a label.
+      -->
+      <input
+        ref="input"
+        type="file"
+        accept="application/pdf,.pdf"
+        class="sr-only"
+        tabindex="-1"
+        aria-hidden="true"
+        @change="onInput"
+      >
 
       <!--
         The limits are said UP FRONT rather than surfaced as an error after
