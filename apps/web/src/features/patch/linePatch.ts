@@ -16,6 +16,29 @@ import type { BackgroundSample } from './sampleBackground'
  * fine until it is previewed or opened in the inspector.
  */
 
+/**
+ * A colour as a PLAIN array, detached from whatever it was read out of.
+ *
+ * Load-bearing, and the reason is two layers away from here. The quad index
+ * arrives from the worker and is parked in a plain `ref()` -- by
+ * `PageOverlay` for the inline editor, by the selection store for the
+ * toolbar -- and a `ref` holding an object makes that object DEEPLY
+ * reactive, so `line.color` is a Proxy over an array rather than an array.
+ *
+ * Store that Proxy on a patch and it lives in the edit document until
+ * Download, which hands the document to the worker by `postMessage`. A
+ * Proxy cannot be structure-cloned, so the export fails with "Proxy object
+ * could not be cloned" -- pointing at the boundary rather than at the line
+ * that put a reactive value into the format three actions earlier.
+ *
+ * Copying here rather than at the boundary because the format's rule is
+ * that an edit document holds plain data, and the place to keep that true
+ * is where data enters it.
+ */
+export function plainColor(c: Color): Color {
+  return [c[0], c[1], c[2]]
+}
+
 /** The four axes a patch inherits from the line it replaces. */
 export type PatchStyle = {
   bold: boolean
@@ -26,7 +49,12 @@ export type PatchStyle = {
 
 /** The style the DOCUMENT itself sets a line in. */
 export function documentStyle(line: LineRun): PatchStyle {
-  return { bold: line.bold, italic: line.italic, fontSize: line.size, color: line.color }
+  return {
+    bold: line.bold,
+    italic: line.italic,
+    fontSize: line.size,
+    color: plainColor(line.color),
+  }
 }
 
 /**
@@ -41,7 +69,7 @@ export function styleOf(patch: TextPatchObject): PatchStyle {
     bold: patch.bold === true,
     italic: patch.italic === true,
     fontSize: patch.fontSize,
-    color: patch.color,
+    color: plainColor(patch.color),
   }
 }
 
@@ -146,8 +174,8 @@ export function buildLinePatch(args: NewLinePatch): TextPatchObject {
     // replacement where the export will put it. Not derivable from the box:
     // how far a baseline sits above it depends on the font's descender.
     baseline: args.line.baseline,
-    color: args.style.color,
-    background: args.background?.color ?? [1, 1, 1],
+    color: plainColor(args.style.color),
+    background: args.background ? plainColor(args.background.color) : [1, 1, 1],
     backgroundConfidence: args.background?.confidence ?? 0,
     fit: args.fit ?? 'overflow',
     rect: box,

@@ -14,7 +14,9 @@ import {
 } from '@/lib/fonts'
 import { rgb } from '@/features/overlay/objects/svgPaint'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
-import { buildLinePatch, documentStyle, lineBox, patchOnLine, sameStyle } from './linePatch'
+import {
+  buildLinePatch, documentStyle, lineBox, patchOnLine, plainColor, sameStyle,
+} from './linePatch'
 
 const props = defineProps<{
   page: PageState
@@ -240,7 +242,13 @@ async function begin(lineIndex: number): Promise<void> {
   bold.value = existing ? existing.bold === true : line?.bold === true
   italic.value = existing ? existing.italic === true : line?.italic === true
   // The patch's own colour once it has one, otherwise the line's.
-  color.value = existing ? existing.color : line?.color ?? [0, 0, 0]
+  //
+  // Deliberately NOT copied here, because copying here would achieve
+  // nothing and read as though it did: `color` is a `ref`, and a ref holding
+  // an array hands back a reactive Proxy on every read whatever was
+  // assigned to it. The copy that matters is at the point the value enters
+  // the edit document -- see plainColor and its two call sites below.
+  color.value = existing?.color ?? line?.color ?? [0, 0, 0]
   // Likewise the size -- and a patch stored by an older build carries 0,
   // the "work it out at export" sentinel, so re-opening one heals it to the
   // real number rather than showing the sentinel back to the user.
@@ -352,7 +360,16 @@ function commit(): void {
         id: existing,
         patch: {
           text: draft.value, fit: fit.value, fontSize: size.value,
-          bold: bold.value, italic: italic.value, color: color.value,
+          bold: bold.value, italic: italic.value,
+          // Defensive rather than load-bearing, and the distinction is
+          // worth stating: reaching this path means the line already had a
+          // patch, so the colour was seeded from the STORE, and immer
+          // deep-freezes what it produces while Vue declines to proxy a
+          // frozen object -- so `color.value` happens to be plain here.
+          // That is a conclusion about two libraries' internals, not about
+          // this code, and it stops being true the day auto-freeze is
+          // turned off. Everything else in this patch is a primitive.
+          color: plainColor(color.value),
         },
       },
       'Edit text',
