@@ -34,6 +34,6 @@ const open = computed(() => edits.selection.length > 0)
         @click="edits.clearSelection()"
       >Done</button>
     </header>
-    <Inspector class="w-full border-l-0" />
+    <Inspector :back="false" class="w-full border-l-0" />
   </div>
 </template>

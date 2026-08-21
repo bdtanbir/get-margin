@@ -50,7 +50,7 @@ export const useViewportStore = defineStore('viewport', () => {
    * must scroll twice, and comparing indices alone would treat the second
    * ask as no change at all.
    */
-  const scrollRequest = ref<{ index: number; nonce: number } | null>(null)
+  const scrollRequest = ref<{ index: number; nonce: number; offset?: number } | null>(null)
   let requestNonce = 0
   const dpr = ref(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1)
   // shallowRef: the cache holds large typed arrays that must never be made reactive.
@@ -135,11 +135,15 @@ export const useViewportStore = defineStore('viewport', () => {
    * scroller can report where it is without that report being read back as
    * an instruction to go somewhere.
    */
-  function goToPage(i: number): void {
+  function goToPage(i: number, offset?: number): void {
     const clamped = Math.max(0, Math.min(doc.pageOrder.length - 1, i))
     setAnchor(clamped)
     requestNonce += 1
-    scrollRequest.value = { index: clamped, nonce: requestNonce }
+    // `offset` is view pixels from the page's TOP edge -- a point inside
+    // the page rather than the page itself. "Go to page 4" is enough for
+    // the find panel; "show me that object" is not, because at any real
+    // zoom the object can sit well below the page's top.
+    scrollRequest.value = { index: clamped, nonce: requestNonce, ...(offset === undefined ? {} : { offset }) }
   }
 
   /**

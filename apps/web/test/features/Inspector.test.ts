@@ -1,10 +1,20 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import Inspector from '@/features/tools/Inspector.vue'
 import { useEditsStore } from '@/stores/edits'
 import { useDocumentStore } from '@/stores/document'
+import { seedDocument } from '../helpers/seedDocument'
 import type { EditObject, FieldObject } from '@margin/pdf-core'
+
+// The layers list, which the sidebar shows when nothing is selected, reads
+// the viewport store -- and instantiating that reaches for the worker.
+vi.mock('../../src/workers/pdfClient.js', () => ({
+  getPdfClient: () => ({
+    open: vi.fn(), authenticate: vi.fn(), render: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined), terminate: vi.fn(),
+  }),
+}))
 
 const rect: EditObject = {
   id: 'o1', pageId: 'p1', kind: 'rect',
@@ -18,12 +28,60 @@ describe('Inspector', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     edits = useEditsStore()
-    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
+    // seedDocument rather than edits.reset alone: the layers list resolves
+    // each object's page through the document store, which needs the
+    // source's geometry as well as the edit store's page entries.
+    seedDocument([{ id: 'p1', sourceIndex: 0 }])
     edits.applyOp({ type: 'addObject', object: rect }, 'add')
   })
 
-  it('prompts to select something when nothing is selected', () => {
-    expect(mount(Inspector).text()).toContain('Select an object')
+  /**
+   * The sidebar has two states and nothing else: the layers list, and one
+   * object's properties. "Select an object to edit its properties" used to
+   * be the whole of the first state, which told the user what to do without
+   * giving them anything to do it with.
+   */
+  it('shows the layers list when nothing is selected', () => {
+    const w = mount(Inspector)
+    expect(w.find('[aria-label="Layers"]').exists()).toBe(true)
+    expect(w.find('[data-layer-row="o1"]').exists()).toBe(true)
+  })
+
+  it('shows the properties instead of the list once something is selected', () => {
+    edits.select(['o1'])
+    const w = mount(Inspector)
+    expect(w.find('[aria-label="Layers"]').exists()).toBe(false)
+    expect(w.find('[data-field="strokeWidth"]').exists()).toBe(true)
+  })
+
+  // The panel's accessible name has to follow its state: a screen reader
+  // announcing "Properties" over a list of layers describes the surface the
+  // sidebar used to be, not the one it is showing.
+  it('names the sidebar after what it is showing', () => {
+    expect(mount(Inspector).get('aside').attributes('aria-label')).toBe('Layers')
+    edits.select(['o1'])
+    expect(mount(Inspector).get('aside').attributes('aria-label')).toBe('Properties')
+  })
+
+  /**
+   * The mobile sheet renders this same component, and it only exists WHILE
+   * something is selected -- there is no list behind it to go back to, so
+   * the button would dismiss the sheet while promising a list the phone
+   * never shows.
+   */
+  it('hides the back button where there is no list behind it', () => {
+    edits.select(['o1'])
+    const w = mount(Inspector, { props: { back: false } })
+    expect(w.find('[data-layers-back]').exists()).toBe(false)
+    expect(w.find('[data-field="strokeWidth"]').exists()).toBe(true)
+  })
+
+  it('goes back to the list from the properties', async () => {
+    edits.select(['o1'])
+    const w = mount(Inspector)
+    await w.get('[data-layers-back]').trigger('click')
+    expect(edits.selection).toEqual([])
+    expect(w.find('[aria-label="Layers"]').exists()).toBe(true)
   })
 
   it('shows the fields for the selected kind', () => {

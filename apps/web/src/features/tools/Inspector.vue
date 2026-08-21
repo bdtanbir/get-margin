@@ -2,9 +2,20 @@
 import { computed } from 'vue'
 import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
+import { ChevronLeft } from 'lucide-vue-next'
 import { fieldsFor, type Field } from './inspectorFields'
 import { toHex, fromHex } from './colorInput'
 import TabOrderList from './TabOrderList.vue'
+import LayersPanel from '@/features/layers/LayersPanel.vue'
+import { layerLabel } from '@/features/layers/layerLabel'
+
+/**
+ * `back` is false on the mobile sheet, which renders this component ONLY
+ * while something is selected: there is no layers list behind it there, so
+ * a Back button would dismiss the sheet while promising a list the phone
+ * never shows.
+ */
+const props = withDefaults(defineProps<{ back?: boolean }>(), { back: true })
 
 const edits = useEditsStore()
 const doc = useDocumentStore()
@@ -114,13 +125,30 @@ function handleInput(field: Field, e: Event): void {
 <template>
   <aside
     class="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border bg-surface p-3"
-    aria-label="Properties"
+    :aria-label="selected ? 'Properties' : 'Layers'"
   >
-    <p v-if="!selected" class="text-[13px] text-text-subtle">
-      Select an object to edit its properties.
-    </p>
+    <!--
+      Two states, never both: the list of what is on the document, and one
+      object's properties. Selecting anywhere -- a row here or the object
+      itself on the page -- swaps to properties, and clearing the selection
+      (Back, Escape, a click on bare page) swaps back, so the sidebar always
+      agrees with what is selected rather than being a third place to look.
+    -->
+    <LayersPanel v-if="!selected" />
 
     <template v-else>
+      <button
+        v-if="props.back"
+        data-layers-back
+        type="button"
+        class="flex min-h-8 items-center gap-1 self-start rounded-control pr-2 text-[13px] text-text-muted hover:text-text"
+        @click="edits.clearSelection()"
+      >
+        <ChevronLeft :size="16" :stroke-width="1.5" />
+        Layers
+      </button>
+      <h2 class="truncate text-[13px] font-medium text-text">{{ layerLabel(selected) }}</h2>
+
       <!--
         Spec 2.1. This copy is load-bearing, not decoration: people white out
         SSNs and account numbers believing the data is gone, and it is not --

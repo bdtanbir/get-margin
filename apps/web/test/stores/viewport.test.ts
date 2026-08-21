@@ -43,6 +43,43 @@ async function seededStores() {
   return { doc, vp: useViewportStore() }
 }
 
+/**
+ * Navigating to a point inside a page, not just to the page.
+ *
+ * "Go to page 4" is enough for the find panel and the thumbnail grid, but
+ * clicking a layer means "show me THAT object" -- and at 131% zoom an
+ * object two thirds down a letter page is off screen when the page's top
+ * is at the top of the viewport.
+ */
+describe('navigating inside a page', () => {
+  it('carries an in-page offset on the scroll request', async () => {
+    const { vp } = await seededStores()
+    vp.goToPage(2, 400)
+    expect(vp.scrollRequest).toMatchObject({ index: 2, offset: 400 })
+  })
+
+  it('asks for the page alone when no offset is given', async () => {
+    const { vp } = await seededStores()
+    vp.goToPage(2)
+    expect(vp.scrollRequest?.offset).toBeUndefined()
+  })
+
+  // The nonce is what makes clicking the same layer twice scroll twice.
+  it('issues a fresh request for the same point asked for twice', async () => {
+    const { vp } = await seededStores()
+    vp.goToPage(1, 100)
+    const first = vp.scrollRequest?.nonce
+    vp.goToPage(1, 100)
+    expect(vp.scrollRequest?.nonce).not.toBe(first)
+  })
+
+  it('records the page as the anchor, offset or not', async () => {
+    const { vp } = await seededStores()
+    vp.goToPage(2, 400)
+    expect(vp.anchorIndex).toBe(2)
+  })
+})
+
 describe('useViewportStore', () => {
   it('defaults to zoom 1 and anchor 0', async () => {
     const { vp } = await seededStores()

@@ -7,6 +7,7 @@ import PageOverlay from '@/features/overlay/PageOverlay.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useViewportStore } from '@/stores/viewport'
 import { useGestures } from './useGestures'
+import { scrollTarget } from './scrollTarget'
 
 const doc = useDocumentStore()
 const vp = useViewportStore()
@@ -78,6 +79,18 @@ watch(items, (list) => {
  */
 watch(() => vp.scrollRequest, (request) => {
   if (!request) return
+  // A request with an offset names a POINT inside the page -- the layers
+  // list asking to show one object. `getOffsetForIndex` gives the page's
+  // own place in the virtual list, and the offset is added to it, so the
+  // scroll is one move rather than a jump to the page followed by a
+  // correction the user would see.
+  if (request.offset !== undefined) {
+    const [pageStart] = virtualizer.value.getOffsetForIndex(request.index, 'start') ?? []
+    if (pageStart !== undefined) {
+      virtualizer.value.scrollToOffset(scrollTarget(pageStart, request.offset), { align: 'start' })
+      return
+    }
+  }
   virtualizer.value.scrollToIndex(request.index, { align: 'start' })
 })
 
