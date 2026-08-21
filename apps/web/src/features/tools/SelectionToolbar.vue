@@ -3,18 +3,25 @@ import { computed } from 'vue'
 import { nanoid } from 'nanoid'
 import {
   Copy, Trash2, BringToFront, SendToBack, Lock, LockOpen,
-  Highlighter, Underline, Strikethrough, SquareSlash,
+  Highlighter, Underline, Strikethrough, SquareSlash, Bold, Italic,
 } from 'lucide-vue-next'
 import { objectViewRect } from '@/features/overlay/objectViewRect'
 import IconButton from '@/ui/IconButton.vue'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useSelectionStore } from '@/stores/selection'
-import type { MarkupObject, RedactionObject, EditObject } from '@margin/pdf-core'
+import { useViewportStore } from '@/stores/viewport'
+import { DEFAULT_FAMILY } from '@/lib/fonts'
+import { sampleBackground } from '@/features/patch/sampleBackground'
+import {
+  buildLinePatch, documentStyle, isPristine, lineBox, patchOnLine, styleOf,
+} from '@/features/patch/linePatch'
+import type { LineRun, MarkupObject, RedactionObject, EditObject } from '@margin/pdf-core'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
 const selection = useSelectionStore()
+const vp = useViewportStore()
 
 /** How far above the selection box the toolbar floats, in CSS pixels. */
 const GAP_PX = 44
@@ -183,6 +190,100 @@ function redact(): void {
   edits.select([object.id])
 }
 
+/**
+ * The lines the selection touches, with their indices.
+ *
+ * WHOLE LINES, and that is the honest limit of this control rather than a
+ * shortcut. A patch covers and redraws an entire line -- it is addressed by
+ * line index and guarded by a hash of the line's text -- so there is no way
+ * to set three words of a line in bold without rebuilding the patch format
+ * around character ranges. Selecting part of a line and pressing Bold
+ * therefore bolds the line, which is why the buttons say so.
+ */
+const touchedLines = computed<Array<{ index: number; line: LineRun }>>(() => {
+  const r = selection.range
+  const idx = selection.index
+  if (!r || !idx || !textSelected.value) return []
+  const out: Array<{ index: number; line: LineRun }> = []
+  for (let i = r.from.line; i <= r.to.line; i++) {
+    const line = idx.lines[i]
+    if (line && line.chars.length > 0) out.push({ index: i, line })
+  }
+  return out
+})
+
+/** What a line is set in NOW: its patch's style if it has one, else the document's. */
+function currentStyle(index: number, line: LineRun) {
+  const patch = patchOnLine(Object.values(edits.doc.objects), props.page.id, index)
+  return patch ? styleOf(patch) : documentStyle(line)
+}
+
+/**
+ * Whether every touched line already carries the style, which is both the
+ * button's pressed state and what decides the direction of the toggle.
+ *
+ * EVERY, not some: selecting a bold heading together with the regular
+ * paragraph under it and pressing Bold should make the whole selection
+ * bold, not un-bold the half that already was.
+ */
+function allHave(axis: 'bold' | 'italic'): boolean {
+  const lines = touchedLines.value
+  return lines.length > 0 && lines.every(({ index, line }) => currentStyle(index, line)[axis])
+}
+
+const allBold = computed(() => allHave('bold'))
+const allItalic = computed(() => allHave('italic'))
+
+/**
+ * Set or clear one style axis across every line the selection touches.
+ *
+ * ONE undo step for the whole gesture: pressing Bold over a paragraph is
+ * one thing the user did, and making it eight is making Ctrl+Z lie.
+ *
+ * A patch that ends up drawing exactly what the document already draws is
+ * DELETED rather than kept. Toggling Bold on and off again would otherwise
+ * leave a cover painted over the line and redrawn identically -- invisible
+ * on white, a visible scar anywhere the background is not flat, and a row
+ * in the layers list for an edit that is not one.
+ */
+function toggleStyle(axis: 'bold' | 'italic'): void {
+  const lines = touchedLines.value
+  if (lines.length === 0) return
+  const next = !allHave(axis)
+  const label = `${next ? '' : 'Remove '}${axis === 'bold' ? 'Bold' : 'Italic'}`
+
+  edits.withTransaction(label, () => {
+    for (const { index, line } of lines) {
+      const existing = patchOnLine(Object.values(edits.doc.objects), props.page.id, index)
+
+      if (existing) {
+        const updated = { ...existing, [axis]: next }
+        if (isPristine(updated, line)) {
+          edits.applyOp({ type: 'deleteObject', id: existing.id }, label)
+        } else {
+          edits.applyOp({ type: 'updateObject', id: existing.id, patch: { [axis]: next } }, label)
+        }
+        continue
+      }
+
+      const bitmap = vp.bitmapFor(props.page.id)
+      const object = buildLinePatch({
+        pageId: props.page.id,
+        lineIndex: index,
+        line,
+        fontFamily: DEFAULT_FAMILY,
+        style: { ...documentStyle(line), [axis]: next },
+        background: sampleBackground(bitmap, lineBox(line), bitmap ? bitmap.scale : 1),
+        z: edits.nextZ(),
+      })
+      // A line already set the way the button asks for needs no patch at
+      // all -- the document is drawing it correctly.
+      if (isPristine(object, line)) continue
+      edits.applyOp({ type: 'addObject', object: object as EditObject }, label)
+    }
+  })
+}
+
 function toggleLock(): void {
   const o = selected.value
   if (!o) return
@@ -212,6 +313,32 @@ function toggleLock(): void {
     :style="textStyle"
     @pointerdown.stop
   >
+    <!--
+      Bold and Italic act on WHOLE LINES, and the labels say so because the
+      alternative is a control that quietly does more than it was asked. A
+      patch is addressed by line index and guarded by a hash of the line's
+      text, so styling three words of a line is not something the format can
+      express -- see touchedLines.
+    -->
+    <IconButton
+      size="sm"
+      label="Bold line"
+      data-style-bold
+      :active="allBold"
+      @click="toggleStyle('bold')"
+    >
+      <Bold :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <IconButton
+      size="sm"
+      label="Italic line"
+      data-style-italic
+      :active="allItalic"
+      @click="toggleStyle('italic')"
+    >
+      <Italic :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <span class="mx-0.5 h-4 w-px bg-border" aria-hidden="true" />
     <IconButton size="sm" label="Highlight" @click="markup('highlight')">
       <Highlighter :size="16" :stroke-width="1.5" />
     </IconButton>

@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { nanoid } from 'nanoid'
 import { pageViewSize } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import type {
   Color, EditObject, LineRun, PageQuadIndex, TextPatchObject,
 } from '@margin/pdf-core'
-import { hashText } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
 import { getPdfClient } from '@/workers/pdfClient'
@@ -16,6 +14,7 @@ import {
 } from '@/lib/fonts'
 import { rgb } from '@/features/overlay/objects/svgPaint'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
+import { buildLinePatch, documentStyle, lineBox, patchOnLine, sameStyle } from './linePatch'
 
 const props = defineProps<{
   page: PageState
@@ -39,13 +38,14 @@ const editing = ref<number | undefined>(undefined)
  */
 const editingId = ref<string | undefined>(undefined)
 
-/** The patch on a given line, if the user has already edited it. */
-function patchOn(lineIndex: number): TextPatchObject | undefined {
-  return Object.values(edits.doc.objects).find(
-    (o): o is TextPatchObject =>
-      o.kind === 'textPatch' && o.pageId === props.page.id && o.lineIndex === lineIndex,
-  )
-}
+/**
+ * The patch on a given line, if the user has already edited it. Shared with
+ * the selection toolbar, which can style the same line without ever opening
+ * this editor -- and a second answer to "which patch covers this line"
+ * would let the two of them add one each.
+ */
+const patchOn = (lineIndex: number): TextPatchObject | undefined =>
+  patchOnLine(Object.values(edits.doc.objects), props.page.id, lineIndex)
 const draft = ref('')
 /**
  * The weight the replacement will be drawn in.
@@ -112,24 +112,10 @@ const originalText = computed(() =>
   line.value ? line.value.chars.map((c) => c.char).join('') : '',
 )
 
-/**
- * The line's box in MuPDF page space, from its character quads.
- *
- * Taken from the CHARS rather than the stored bbox so it matches exactly
- * what the writer will re-derive at export -- the two must agree or the
- * cover lands somewhere the user did not see it.
- */
+/** The line's box in MuPDF page space, from its character quads. */
 const box = computed(() => {
   const l = line.value
-  if (!l || l.chars.length === 0) return undefined
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-  for (const c of l.chars) {
-    for (let i = 0; i < 8; i += 2) {
-      x0 = Math.min(x0, c.quad[i]!); x1 = Math.max(x1, c.quad[i]!)
-      y0 = Math.min(y0, c.quad[i + 1]!); y1 = Math.max(y1, c.quad[i + 1]!)
-    }
-  }
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+  return l && l.chars.length > 0 ? lineBox(l) : undefined
 })
 
 /**
@@ -316,11 +302,9 @@ watch([draft, bold, italic], async ([text]) => {
  * is what the comparison has to be against.
  */
 function matchesDocument(l: LineRun): boolean {
-  return (
-    bold.value === l.bold &&
-    italic.value === l.italic &&
-    size.value === l.size &&
-    l.color.every((channel, i) => channel === color.value[i])
+  return sameStyle(
+    { bold: bold.value, italic: italic.value, fontSize: size.value, color: color.value },
+    documentStyle(l),
   )
 }
 
@@ -377,36 +361,21 @@ function commit(): void {
     return
   }
 
-  const sample = background.value
-  const object: EditObject = {
-    id: nanoid(10),
+  const object = buildLinePatch({
     pageId: props.page.id,
-    kind: 'textPatch',
     lineIndex: at,
-    // Hashed HERE, from what the user was actually looking at. That is
-    // what makes the export's guard meaningful rather than circular.
-    originalHash: hashText(originalText.value),
-    originalText: originalText.value,
-    text: draft.value,
+    line: l,
     fontFamily: DEFAULT_FAMILY,
-    bold: bold.value,
-    italic: italic.value,
-    fontSize: size.value,
-    // The pen position on the line being replaced, so the overlay draws the
-    // replacement where the export will put it. See TextPatchObject.baseline.
-    baseline: l.baseline,
-    color: color.value,
-    background: sample?.color ?? [1, 1, 1],
-    backgroundConfidence: sample?.confidence ?? 0,
-    fit: fit.value,
-    rect: { x: b.x, y: b.y, w: b.w, h: b.h },
-    rotation: 0,
+    style: {
+      bold: bold.value, italic: italic.value, fontSize: size.value, color: color.value,
+    },
+    background: background.value,
     z: edits.nextZ(),
-    locked: false,
-    opacity: 1,
-  } as EditObject
+    text: draft.value,
+    fit: fit.value,
+  })
 
-  edits.applyOp({ type: 'addObject', object }, 'Edit text')
+  edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Edit text')
   cancel()
 }
 

@@ -20,6 +20,8 @@ const fontFile = (f: string): Uint8Array =>
 const FONTS = new Map([
   ['Inter', fontFile('Inter.ttf')],
   ['Inter Bold', fontFile('Inter-Bold.ttf')],
+  ['Inter Italic', fontFile('Inter-Italic.ttf')],
+  ['Inter Bold Italic', fontFile('Inter-BoldItalic.ttf')],
 ])
 const src = (): Uint8Array => new Uint8Array(readFileSync(fixturePath('simple-text')))
 
@@ -438,5 +440,70 @@ describe('text patch size', () => {
     const small = write([patch({ id: 's', text: long, fontSize: 10, fit: 'truncate' }) as EditObject])
     const large = write([patch({ id: 'l', text: long, fontSize: 20, fit: 'truncate' }) as EditObject])
     expect(textOf(large, 'A rep').length).toBeLessThan(textOf(small, 'A rep').length)
+  })
+})
+
+/**
+ * A patch that changes ONLY the style, leaving the text alone.
+ *
+ * What the selection toolbar's Bold and Italic buttons produce, and what
+ * pressing Ctrl+B in the inline editor produces: `text` identical to
+ * `originalText`, with one style flag flipped. Worth its own test because
+ * every other patch test here changes the text, so none of them would
+ * notice the writer taking a shortcut for a replacement that reads the
+ * same as the original.
+ */
+describe('a style-only patch', () => {
+  /**
+   * Every extracted line reading `needle`, with its style.
+   *
+   * Plural because a patch COVERS rather than removes: the document's own
+   * glyphs are still under the cover, so a patched line comes back twice.
+   * Taking `.find()` here would have returned the covered original and
+   * reported the patch had done nothing.
+   */
+  const drawnStyles = (pdf: Uint8Array, needle: string) => {
+    const d = PdfDocument.open(pdf)
+    try {
+      return buildQuadIndex(d, 0).lines
+        .filter((l) => l.text.includes(needle))
+        .map((l) => ({ bold: l.bold, italic: l.italic, text: l.text }))
+    } finally { d.close() }
+  }
+
+  const original = (): string => linesOf(src())[0]!
+
+  it('redraws the same words in the new face', () => {
+    const out = write([patch({
+      text: original(), bold: true, italic: true, fit: 'overflow',
+    }) as EditObject])
+    const drawn = drawnStyles(out, 'Hello margin')
+    // The covered original, upright and regular, and the redraw over it.
+    expect(drawn).toContainEqual({ text: original(), bold: false, italic: false })
+    expect(drawn).toContainEqual({ text: original(), bold: true, italic: true })
+  })
+
+  it('still passes the hash guard, because the ORIGINAL is what is hashed', () => {
+    // The guard compares the document's line against `originalHash`. A
+    // style-only patch leaves both alone, so this is really a check that
+    // nothing in the style path recomputes the hash from the replacement.
+    expect(() => write([patch({ text: original(), bold: true }) as EditObject])).not.toThrow()
+  })
+
+  /**
+   * COVERS the original. Does not remove it.
+   *
+   * The upright glyphs are still in the content stream under the cover, so
+   * a style-only patch makes the line extractable TWICE -- once as the
+   * document set it, once as the patch redrew it. That is the same property
+   * `whiteout.test.ts` asserts, and it is the reason redaction is a
+   * separate tool: styling text is not a way to hide it.
+   *
+   * Written expecting one line and corrected to two, which is how the
+   * distinction earned a test of its own here rather than a comment.
+   */
+  it('leaves the original extractable, because covering is not removing', () => {
+    const out = write([patch({ text: original(), bold: true, fit: 'overflow' }) as EditObject])
+    expect(linesOf(out).filter((l) => l.includes('Hello margin'))).toHaveLength(2)
   })
 })

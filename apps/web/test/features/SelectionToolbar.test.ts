@@ -5,7 +5,7 @@ import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useEditsStore } from '@/stores/edits'
 import { useSelectionStore } from '@/stores/selection'
 import type { PageState } from '@/stores/document'
-import type { Color, EditObject } from '@margin/pdf-core'
+import type { Color, EditObject, TextPatchObject } from '@margin/pdf-core'
 
 const page: PageState = { id: 'p1', sourceId: 'src-0', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
 
@@ -167,5 +167,187 @@ describe('SelectionToolbar markup actions', () => {
     const before = edits.historySize
     await mountFor().get('[aria-label="Highlight"]').trigger('click')
     expect(edits.historySize).toBe(before + 1)
+  })
+})
+
+/**
+ * Bold and Italic over a text selection.
+ *
+ * WHOLE LINES, which is the honest limit of the control rather than a
+ * shortcut taken: a patch is addressed by line index and guarded by a hash
+ * of the line's text, so styling three words of a line is not something the
+ * format can express. The buttons are labelled "Bold line" for that reason,
+ * and these tests pin the label as much as the behaviour.
+ */
+describe('SelectionToolbar style actions', () => {
+  let edits: ReturnType<typeof useEditsStore>
+  let selection: ReturnType<typeof useSelectionStore>
+
+  /** Two lines of two characters each, in MuPDF page space (top-down). */
+  const lineAt = (
+    row: number,
+    text: string,
+    style: { bold?: boolean; italic?: boolean } = {},
+  ) => ({
+    bbox: [10, 100 + row * 30, 30, 120 + row * 30] as [number, number, number, number],
+    text,
+    font: 'Helvetica',
+    bold: style.bold === true,
+    italic: style.italic === true,
+    color: [0, 0, 0] as Color,
+    size: 10,
+    baseline: 116 + row * 30,
+    chars: [...text].map((char, i) => ({
+      char,
+      quad: [
+        10 + i * 10, 100 + row * 30, 20 + i * 10, 100 + row * 30,
+        10 + i * 10, 120 + row * 30, 20 + i * 10, 120 + row * 30,
+      ] as never,
+    })),
+  })
+
+  const twoLines = { lines: [lineAt(0, 'ab'), lineAt(1, 'cd')] }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    edits = useEditsStore()
+    selection = useSelectionStore()
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'],
+      { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
+  })
+
+  const mountFor = () => mount(SelectionToolbar, { props: { page, zoom: 1 } })
+
+  const patches = (): TextPatchObject[] =>
+    Object.values(edits.doc.objects).filter(
+      (o): o is TextPatchObject => o.kind === 'textPatch',
+    )
+
+  function select(index: typeof twoLines, from = { line: 0, char: 0 }, to = { line: 0, char: 1 }) {
+    selection.begin('p1', index, from)
+    selection.extend(to)
+  }
+
+  it('offers Bold and Italic beside the markup actions', () => {
+    select(twoLines)
+    const w = mountFor()
+    expect(w.find('[data-style-bold]').exists()).toBe(true)
+    expect(w.find('[data-style-italic]').exists()).toBe(true)
+  })
+
+  it('says the action is on the line, because it is', () => {
+    select(twoLines)
+    const w = mountFor()
+    expect(w.get('[data-style-bold]').attributes('aria-label')).toBe('Bold line')
+    expect(w.get('[data-style-italic]').attributes('aria-label')).toBe('Italic line')
+  })
+
+  it('patches the selected line in bold', async () => {
+    select(twoLines)
+    await mountFor().get('[data-style-bold]').trigger('click')
+    expect(patches()).toHaveLength(1)
+    expect(patches()[0]!.bold).toBe(true)
+    // The WHOLE line's text, redrawn -- not the selected characters alone.
+    expect(patches()[0]!.text).toBe('ab')
+  })
+
+  it('inherits everything it was not asked to change', () => {
+    select(twoLines)
+    mountFor().get('[data-style-bold]').trigger('click')
+    const patch = patches()[0]!
+    expect(patch.italic).toBe(false)
+    expect(patch.fontSize).toBe(10)
+    expect(patch.baseline).toBe(116)
+    expect(patch.color).toEqual([0, 0, 0])
+    expect(patch.originalText).toBe('ab')
+  })
+
+  it('bolds the whole line even when only part of it is selected', async () => {
+    // Stated as a test rather than left implicit: it is the behaviour the
+    // label promises and the one the format forces.
+    select(twoLines, { line: 0, char: 0 }, { line: 0, char: 0 })
+    selection.extend({ line: 0, char: 1 })
+    await mountFor().get('[data-style-bold]').trigger('click')
+    expect(patches()[0]!.text).toBe('ab')
+  })
+
+  it('patches every line a multi-line selection touches', async () => {
+    select(twoLines, { line: 0, char: 0 }, { line: 1, char: 1 })
+    await mountFor().get('[data-style-bold]').trigger('click')
+    expect(patches()).toHaveLength(2)
+    expect(patches().map((p) => p.lineIndex).sort()).toEqual([0, 1])
+  })
+
+  it('is one undo step however many lines it touched', async () => {
+    select(twoLines, { line: 0, char: 0 }, { line: 1, char: 1 })
+    const before = edits.historySize
+    await mountFor().get('[data-style-bold]').trigger('click')
+    expect(edits.historySize).toBe(before + 1)
+  })
+
+  it('shows pressed once every touched line carries the style', async () => {
+    select(twoLines)
+    const w = mountFor()
+    expect(w.get('[data-style-bold]').attributes('aria-pressed')).toBe('false')
+    await w.get('[data-style-bold]').trigger('click')
+    expect(w.get('[data-style-bold]').attributes('aria-pressed')).toBe('true')
+  })
+
+  /**
+   * A patch that redraws exactly what the document already draws is worth
+   * deleting rather than keeping: it paints a flat rectangle over the line
+   * and redraws it identically, which shows as a scar wherever the
+   * background is not flat and as a row in the layers list for an edit that
+   * is not one.
+   */
+  it('removes the patch when the style is toggled back off', async () => {
+    select(twoLines)
+    const w = mountFor()
+    await w.get('[data-style-bold]').trigger('click')
+    expect(patches()).toHaveLength(1)
+    await w.get('[data-style-bold]').trigger('click')
+    expect(patches()).toHaveLength(0)
+  })
+
+  it('starts pressed over a line the document already sets bold', async () => {
+    select({ lines: [lineAt(0, 'ab', { bold: true }), lineAt(1, 'cd')] })
+    const w = mountFor()
+    // The button reflects the DOCUMENT's own style, not just the patches --
+    // otherwise pressing it over an already-bold line would appear to do
+    // nothing while actually turning the bold off.
+    expect(w.get('[data-style-bold]').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('un-bolds a line the document set bold, which needs a patch of its own', async () => {
+    select({ lines: [lineAt(0, 'ab', { bold: true }), lineAt(1, 'cd')] })
+    await mountFor().get('[data-style-bold]').trigger('click')
+    // Turning the document's own bold OFF is a real edit: the page draws
+    // that line bold, so something has to cover and redraw it.
+    expect(patches()).toHaveLength(1)
+    expect(patches()[0]!.bold).toBe(false)
+  })
+
+  it('adds to an existing patch rather than fighting it', async () => {
+    select(twoLines)
+    const w = mountFor()
+    await w.get('[data-style-bold]').trigger('click')
+    await w.get('[data-style-italic]').trigger('click')
+    // ONE patch per line is load-bearing: two would each cover the other.
+    expect(patches()).toHaveLength(1)
+    expect(patches()[0]!.bold).toBe(true)
+    expect(patches()[0]!.italic).toBe(true)
+  })
+
+  it('bolds a mixed selection rather than un-bolding the half that was', async () => {
+    select(
+      { lines: [lineAt(0, 'ab', { bold: true }), lineAt(1, 'cd')] },
+      { line: 0, char: 0 },
+      { line: 1, char: 1 },
+    )
+    await mountFor().get('[data-style-bold]').trigger('click')
+    // Line 0 was already bold and needs no patch; line 1 gets one.
+    expect(patches()).toHaveLength(1)
+    expect(patches()[0]!.lineIndex).toBe(1)
+    expect(patches()[0]!.bold).toBe(true)
   })
 })
