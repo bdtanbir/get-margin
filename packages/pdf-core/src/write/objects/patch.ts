@@ -148,7 +148,7 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
   const w = lx1 - lx0
   const h = ly1 - ly0
 
-  const face = faceKey(o.fontFamily, o.bold)
+  const face = faceKey(o.fontFamily, o)
   const font = ctx.fonts.resolve(face)
   addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
 

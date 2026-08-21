@@ -32,6 +32,17 @@ export type LineRun = {
    */
   bold: boolean
   /**
+   * Whether the run is set on a SLANT.
+   *
+   * `isItalic()` is trustworthy where `isSerif()` is not -- checked against
+   * embedded TrueType, not only the standard 14, and it reports bold and
+   * italic together correctly for a bold-italic face. It is also right
+   * where the font file's own `post.italicAngle` is not: Roboto's italic
+   * declares an angle of 0 and is unmistakably slanted, so the angle is not
+   * a signal worth consulting and the flag is.
+   */
+  italic: boolean
+  /**
    * The colour the run is FILLED with, sRGB 0..1 -- the same range and the
    * same type every object in the format stores.
    *
@@ -95,6 +106,20 @@ function isBoldFace(font: { isBold(): boolean; getName(): string }): boolean {
 }
 
 /**
+ * Names that mean italic even when the font's own flag does not say so.
+ *
+ * The same supplement `BOLD_IN_NAME` is, for the same reason: a generator
+ * can embed a subset of an oblique face and leave the fsSelection bit
+ * clear, and then the PostScript name is all that is left. "Oblique" counts
+ * because it is what the standard 14 call theirs.
+ */
+const ITALIC_IN_NAME = /italic|oblique|-it\b/i
+
+function isItalicFace(font: { isItalic(): boolean; getName(): string }): boolean {
+  return font.isItalic() || ITALIC_IN_NAME.test(font.getName())
+}
+
+/**
  * A glyph's fill colour as an sRGB triple.
  *
  * MuPDF converts to three components before it gets here -- grey and CMYK
@@ -122,6 +147,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
     let bbox: [number, number, number, number] | undefined
     let font = ''
     let bold = false
+    let italic = false
     let color: Color = [0, 0, 0]
     let size = 0
     let baseline = 0
@@ -132,6 +158,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         chars = []
         font = ''
         bold = false
+        italic = false
         color = [0, 0, 0]
         size = 0
         baseline = 0
@@ -144,6 +171,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         if (!font) {
           font = charFont.getName()
           bold = isBoldFace(charFont)
+          italic = isItalicFace(charFont)
           color = toRgb(charColor)
           size = charSize
           // The pen position, which IS the baseline. Taken from the first
@@ -161,6 +189,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
             text: chars.map((c) => c.char).join(''),
             font,
             bold,
+            italic,
             color,
             size,
             baseline,

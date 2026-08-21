@@ -77,6 +77,74 @@ describe('buildQuadIndex', () => {
         }
       })
     })
+  })
+
+  /**
+   * Slope, per run.
+   *
+   * Trustworthy where `isSerif()` is not: checked against embedded
+   * TrueType and not only the standard 14, and correct for a face that is
+   * both bold and italic at once.
+   */
+  describe('italic', () => {
+    it('marks the slanted runs and only those', () => {
+      withDoc('mixed-fonts', (doc) => {
+        const lines = buildQuadIndex(doc, 0).lines
+        const italic = lines.filter((l) => l.italic).map((l) => l.text)
+        expect(italic).toHaveLength(2)
+        // "Oblique" is what the standard 14 call theirs; it is the same thing.
+        expect(italic.some((t) => t.includes('Helvetica-Oblique'))).toBe(true)
+        expect(italic.some((t) => t.includes('Times-Italic'))).toBe(true)
+      })
+    })
+
+    it('does not mistake bold or serif for italic', () => {
+      withDoc('mixed-fonts', (doc) => {
+        const lines = buildQuadIndex(doc, 0).lines
+        for (const name of ['Helvetica-Bold', 'Times-Roman', 'Courier']) {
+          expect(lines.find((l) => l.text.includes(name))!.italic).toBe(false)
+        }
+      })
+    })
+
+    /**
+     * The case that matters, for the same reason as the bold one: real
+     * documents embed subsets of real font files, and a different code path
+     * inside MuPDF reads a different source of truth for those.
+     *
+     * Bold AND italic together, because a bold-italic face is a distinct
+     * file and the two flags must both come back from it -- a reading that
+     * collapsed to one axis would hand the patch editor half the style.
+     */
+    it('recognises an embedded bold italic TrueType', () => {
+      const fonts = new Map([
+        ['Inter', fontFile('Inter.ttf')],
+        ['Inter Bold Italic', fontFile('Inter-BoldItalic.ttf')],
+      ])
+      const out = replay(new Map([['src-0', bytes('simple-text')]]), {
+        ...emptyEditDocument(),
+        sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+        pageOrder: ['p0'],
+        pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
+        objects: {
+          h: {
+            id: 'h', pageId: 'p0', kind: 'text', text: 'Embedded emphasis',
+            rect: { x: 60, y: 500, w: 400, h: 30 },
+            rotation: 0, z: 1, locked: false, opacity: 1,
+            fontFamily: 'Inter', bold: true, italic: true, fontSize: 18,
+            color: [0, 0, 0], align: 'left',
+          },
+        },
+      }, { fonts })
+
+      const doc = PdfDocument.open(out)
+      try {
+        const line = buildQuadIndex(doc, 0).lines
+          .find((l) => l.text.includes('Embedded emphasis'))
+        expect(line?.bold).toBe(true)
+        expect(line?.italic).toBe(true)
+      } finally { doc.close() }
+    })
 
     /**
      * The case that actually matters.

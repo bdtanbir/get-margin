@@ -5,19 +5,22 @@ import type { PageQuadIndex, Quad } from '../../src/text/index.js'
 /**
  * A page index whose lines are the given strings, one quad per character.
  *
- * A line spelled `*bold*` is marked bold, so a test can assert that a match
- * carries its line's weight without needing a second builder.
+ * A line spelled `*bold*` is marked bold and `_italic_` italic, so a test
+ * can assert that a match carries its line's style without needing a second
+ * builder.
  */
 function pageOf(...lines: string[]): PageQuadIndex {
   return {
     lines: lines.map((raw, li) => {
       const bold = raw.startsWith('*') && raw.endsWith('*') && raw.length > 1
-      const text = bold ? raw.slice(1, -1) : raw
+      const italic = raw.startsWith('_') && raw.endsWith('_') && raw.length > 1
+      const text = bold || italic ? raw.slice(1, -1) : raw
       return {
         bbox: [0, li * 20, text.length * 10, li * 20 + 18] as [number, number, number, number],
         text,
         font: 'Test',
         bold,
+        italic,
         color: [0, 0, 0],
         size: 12,
         baseline: li * 20 + 14,

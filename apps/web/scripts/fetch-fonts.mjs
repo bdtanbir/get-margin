@@ -14,14 +14,15 @@
  * add 4.6 MB to every document that used it. See LICENSES.md.
  *
  * WHY `:700` AND NOT `:wght@700`: this is the **v1** CSS endpoint, and it
- * takes weights as a bare list. `wght@700` is css2 syntax; the v1 endpoint
- * does not recognise it, silently ignores it, and serves weight 400. That
- * is not a hypothetical -- the bold faces were first fetched that way and
- * every one of them came back as the regular, byte-for-byte identical
- * advance widths and all. The magic check below cannot catch it, because a
- * regular TrueType is still a valid TrueType, so the assertion that DOES
- * catch it lives in test/lib/fonts.test.ts: the bold file must measure
- * wider than the regular.
+ * takes styles as a bare list -- `400`, `700`, `400italic`, `700italic`.
+ * `wght@700` is css2 syntax; the v1 endpoint does not recognise it,
+ * silently ignores it, and serves weight 400. That is not a hypothetical --
+ * the bold faces were first fetched that way and every one of them came
+ * back as the regular, byte-for-byte identical advance widths and all. The
+ * magic check below cannot catch it, because a regular TrueType is still a
+ * valid TrueType, so the assertions that DO catch it live in
+ * test/lib/fonts.test.ts, reading each file's own OS/2 weight class and its
+ * fsSelection BOLD and ITALIC bits.
  *
  * Usage: node scripts/fetch-fonts.mjs
  */
@@ -38,44 +39,50 @@ const UA =
 /**
  * `query` is the Google Fonts `family=` value; `file` is what we write.
  *
- * Each body face is fetched at BOTH weights. The bold is a separate static
- * instance rather than a synthesised one: faux bold (stroking the regular)
- * has the regular's advance widths, so the export's alignment maths and the
- * browser's preview would agree with each other and disagree with the ink.
+ * Each body face is fetched in all FOUR styles. Every one is a separate
+ * static instance rather than a synthesised one: faux bold (stroking the
+ * regular) and faux italic (shearing it) both keep the regular's advance
+ * widths, so the export's alignment maths and the browser's preview would
+ * agree with each other and disagree with the ink. Bold italic is its own
+ * file rather than the bold one on a slant, because in a serif face the
+ * italic is a different alphabet, not the roman leaning over.
  */
 const FONTS = [
-  { query: 'Inter', weight: 400, file: 'Inter.ttf' },
-  { query: 'Inter', weight: 700, file: 'Inter-Bold.ttf' },
-  { query: 'Roboto', weight: 400, file: 'Roboto.ttf' },
-  { query: 'Roboto', weight: 700, file: 'Roboto-Bold.ttf' },
-  { query: 'Source+Serif+4', weight: 400, file: 'SourceSerif4.ttf' },
-  { query: 'Source+Serif+4', weight: 700, file: 'SourceSerif4-Bold.ttf' },
-  { query: 'Merriweather', weight: 400, file: 'Merriweather.ttf' },
-  { query: 'Merriweather', weight: 700, file: 'Merriweather-Bold.ttf' },
-  { query: 'JetBrains+Mono', weight: 400, file: 'JetBrainsMono.ttf' },
-  { query: 'JetBrains+Mono', weight: 700, file: 'JetBrainsMono-Bold.ttf' },
+  ...[
+    { query: 'Inter', base: 'Inter' },
+    { query: 'Roboto', base: 'Roboto' },
+    { query: 'Source+Serif+4', base: 'SourceSerif4' },
+    { query: 'Merriweather', base: 'Merriweather' },
+    { query: 'JetBrains+Mono', base: 'JetBrainsMono' },
+  ].flatMap(({ query, base }) => [
+    { query, spec: '400', file: `${base}.ttf` },
+    { query, spec: '700', file: `${base}-Bold.ttf` },
+    { query, spec: '400italic', file: `${base}-Italic.ttf` },
+    { query, spec: '700italic', file: `${base}-BoldItalic.ttf` },
+  ]),
   // Signature script faces. Browser-only -- never embedded in a PDF, because
-  // a typed signature is rasterised to a PNG. See LICENSES.md. No bold: a
-  // signature is drawn at one weight and nobody picks a heavier hand.
-  { query: 'Caveat', weight: 400, file: 'Caveat.ttf' },
-  { query: 'Dancing+Script', weight: 400, file: 'DancingScript.ttf' },
-  { query: 'Great+Vibes', weight: 400, file: 'GreatVibes.ttf' },
+  // a typed signature is rasterised to a PNG. See LICENSES.md. One style
+  // only: a signature is written in one hand, and a script face is already
+  // slanted.
+  { query: 'Caveat', spec: '400', file: 'Caveat.ttf' },
+  { query: 'Dancing+Script', spec: '400', file: 'DancingScript.ttf' },
+  { query: 'Great+Vibes', spec: '400', file: 'GreatVibes.ttf' },
 ]
 
-async function ttfUrl(query, weight) {
+async function ttfUrl(query, spec) {
   const css = await (
-    await fetch(`https://fonts.googleapis.com/css?family=${query}:${weight}`, {
+    await fetch(`https://fonts.googleapis.com/css?family=${query}:${spec}`, {
       headers: { 'User-Agent': UA },
     })
   ).text()
   const match = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/.exec(css)
-  if (!match) throw new Error(`no font url in the CSS for "${query}" at ${weight}`)
+  if (!match) throw new Error(`no font url in the CSS for "${query}" at ${spec}`)
   return match[1]
 }
 
 await mkdir(OUT, { recursive: true })
-for (const { query, weight, file } of FONTS) {
-  const bytes = new Uint8Array(await (await fetch(await ttfUrl(query, weight))).arrayBuffer())
+for (const { query, spec, file } of FONTS) {
+  const bytes = new Uint8Array(await (await fetch(await ttfUrl(query, spec))).arrayBuffer())
   // TrueType files start with 0x00010000; a woff2 starts 'wOF2'. Fail loudly
   // rather than committing something MuPDF will reject at export time.
   const magic = new DataView(bytes.buffer, bytes.byteOffset).getUint32(0)

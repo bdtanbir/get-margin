@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
   FONTS, SIGNATURE_FACES, DEFAULT_FAMILY, fontUrl, cssFamily, fontBytes, fontsForExport,
-  faceFile, faceKey, cssWeight,
+  faceFile, faceKey, cssWeight, cssStyle,
 } from '@/lib/fonts'
 import { ASCENT_RATIO, LINE_HEIGHT } from '@/lib/fonts'
 
@@ -118,15 +118,6 @@ describe('signature script faces', () => {
 })
 
 /**
- * A bundled font's own declared weight, read out of its OS/2 table.
- *
- * Written by hand rather than pulled from a parser because it answers one
- * question and the answer must not depend on a dependency's version. The
- * layout is fixed by the OpenType spec: an sfnt begins with a 12-byte
- * header whose table directory records are 16 bytes each, and `usWeightClass`
- * sits at offset 4 of the OS/2 table with `fsSelection` at offset 62.
- */
-/**
  * `public/fonts`, found by walking up from the working directory.
  *
  * Vitest runs this project from the repo root or from `apps/web` depending
@@ -143,7 +134,25 @@ const FONT_DIR = (() => {
   throw new Error(`could not find public/fonts from ${process.cwd()}`)
 })()
 
-function declaredWeight(file: string): { usWeightClass: number; boldBit: boolean } {
+/**
+ * A bundled font's own declared style, read out of its OS/2 table.
+ *
+ * Written by hand rather than pulled from a parser because it answers one
+ * question and the answer must not depend on a dependency's version. The
+ * layout is fixed by the OpenType spec: an sfnt begins with a 12-byte
+ * header whose table directory records are 16 bytes each, `usWeightClass`
+ * sits at offset 4 of the OS/2 table and `fsSelection` at offset 62, where
+ * bit 0 is ITALIC and bit 5 is BOLD.
+ *
+ * `post.italicAngle` is deliberately NOT consulted: Roboto's italic
+ * declares an angle of 0 and is unmistakably slanted, so the angle would
+ * fail a face that is fine.
+ */
+function declaredStyle(file: string): {
+  usWeightClass: number
+  boldBit: boolean
+  italicBit: boolean
+} {
   const bytes = new Uint8Array(readFileSync(join(FONT_DIR, file)))
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const numTables = view.getUint16(4)
@@ -152,75 +161,118 @@ function declaredWeight(file: string): { usWeightClass: number; boldBit: boolean
     const tag = String.fromCharCode(...bytes.subarray(record, record + 4))
     if (tag !== 'OS/2') continue
     const at = view.getUint32(record + 8)
+    const fsSelection = view.getUint16(at + 62)
     return {
       usWeightClass: view.getUint16(at + 4),
-      boldBit: (view.getUint16(at + 62) & 0x20) !== 0,
+      boldBit: (fsSelection & 0x20) !== 0,
+      italicBit: (fsSelection & 0x01) !== 0,
     }
   }
   throw new Error(`${file} has no OS/2 table`)
 }
 
 /**
- * Weight.
+ * Style.
  *
  * THE FILES THEMSELVES, not just the plumbing that points at them. The
- * Google Fonts v1 CSS endpoint takes weights as a bare list (`Inter:700`)
- * and silently ignores the css2 spelling (`Inter:wght@700`), serving
- * weight 400 instead. What comes back is a perfectly valid TrueType, so
- * the fetch script's magic-number check passes and nothing downstream
- * notices -- every "bold" file in the repo would be a byte-identical
- * regular, and the only symptom would be that ticking Bold changed
- * nothing. That mistake was made once. These assertions are what stop it
- * being made twice.
+ * Google Fonts v1 CSS endpoint takes styles as a bare list (`Inter:700`,
+ * `Inter:400italic`) and silently ignores the css2 spelling
+ * (`Inter:wght@700`), serving the upright weight 400 instead. What comes
+ * back is a perfectly valid TrueType, so the fetch script's magic-number
+ * check passes and nothing downstream notices -- every "bold" file in the
+ * repo would be a byte-identical regular, and the only symptom would be
+ * that ticking Bold changed nothing. That mistake was made once. These
+ * assertions are what stop it being made twice, on either axis.
  */
-describe('bold faces', () => {
-  it('gives every body face a bold file', () => {
-    for (const f of FONTS) expect(f.bold).toBeTruthy()
-  })
+describe('the four styles of each face', () => {
+  /** Every body face, in every style, with what that style should declare. */
+  const everyFace = FONTS.flatMap((f) => [
+    { file: f.file, bold: false, italic: false },
+    { file: f.bold, bold: true, italic: false },
+    { file: f.italic, bold: false, italic: true },
+    { file: f.boldItalic, bold: true, italic: true },
+  ])
 
-  it('ships files that are genuinely weight 700, not regulars under a bold name', () => {
+  it('gives every body face all four files', () => {
     for (const f of FONTS) {
-      const bold = declaredWeight(f.bold)
-      expect(bold.usWeightClass, `${f.bold} usWeightClass`).toBeGreaterThanOrEqual(600)
-      expect(bold.boldBit, `${f.bold} fsSelection BOLD bit`).toBe(true)
+      expect(f.file, f.family).toBeTruthy()
+      expect(f.bold, f.family).toBeTruthy()
+      expect(f.italic, f.family).toBeTruthy()
+      expect(f.boldItalic, f.family).toBeTruthy()
     }
   })
 
-  it('ships regulars that are actually regular', () => {
-    for (const f of FONTS) {
-      const regular = declaredWeight(f.file)
-      expect(regular.usWeightClass, `${f.file} usWeightClass`).toBeLessThan(600)
-      expect(regular.boldBit, `${f.file} fsSelection BOLD bit`).toBe(false)
+  it('ships files that declare the style their name claims', () => {
+    for (const { file, bold, italic } of everyFace) {
+      const declared = declaredStyle(file)
+      expect(declared.boldBit, `${file} fsSelection BOLD bit`).toBe(bold)
+      expect(declared.italicBit, `${file} fsSelection ITALIC bit`).toBe(italic)
+      if (bold) {
+        expect(declared.usWeightClass, `${file} usWeightClass`).toBeGreaterThanOrEqual(600)
+      } else {
+        expect(declared.usWeightClass, `${file} usWeightClass`).toBeLessThan(600)
+      }
     }
   })
 
-  it('resolves a face to the file for its weight', () => {
+  /**
+   * Four distinct files, not one file under four names. A copy-paste in the
+   * fetch script would sail past the assertion above, because the same file
+   * declares the same correct thing every time it is read.
+   */
+  it('ships four different files per family', () => {
+    for (const f of FONTS) {
+      const files = [f.file, f.bold, f.italic, f.boldItalic]
+      expect(new Set(files).size, `${f.family} has a repeated file`).toBe(4)
+    }
+  })
+
+  it('resolves a face to the file for its style', () => {
     expect(faceFile('Inter')).toBe('Inter.ttf')
-    expect(faceFile('Inter', true)).toBe('Inter-Bold.ttf')
-    expect(fontUrl('Inter', true)).toBe('/fonts/Inter-Bold.ttf')
+    expect(faceFile('Inter', { bold: true })).toBe('Inter-Bold.ttf')
+    expect(faceFile('Inter', { italic: true })).toBe('Inter-Italic.ttf')
+    expect(faceFile('Inter', { bold: true, italic: true })).toBe('Inter-BoldItalic.ttf')
+    expect(fontUrl('Inter', { bold: true, italic: true }))
+      .toBe('/fonts/Inter-BoldItalic.ttf')
   })
 
-  it('refuses a bold script face rather than handing back its regular', () => {
+  it('refuses a style a script face has no file for', () => {
     // A silent fallback here would render one face and embed another.
-    expect(() => faceFile('Great Vibes', true)).toThrow(/Great Vibes/)
+    expect(() => faceFile('Great Vibes', { bold: true })).toThrow(/Great Vibes/)
+    expect(() => faceFile('Great Vibes', { italic: true })).toThrow(/Great Vibes/)
   })
 
   it('addresses faces exactly as the writer does', () => {
     // faceKey is pdf-core's, re-exported. If these two ever disagreed the
     // app would build a provider map the writer could not look anything up
-    // in, and every export with a bold object would throw.
-    expect(faceKey('Inter', true)).toBe('Inter Bold')
-    expect(faceKey('Inter', false)).toBe('Inter')
+    // in, and every export with a styled object would throw.
+    expect(faceKey('Inter', { bold: true })).toBe('Inter Bold')
+    expect(faceKey('Inter', { italic: true })).toBe('Inter Italic')
+    expect(faceKey('Inter', { bold: true, italic: true })).toBe('Inter Bold Italic')
+    expect(faceKey('Inter', { bold: false, italic: false })).toBe('Inter')
     expect(faceKey('Inter')).toBe('Inter')
   })
 
-  it('asks CSS for the weight it registered the file under', () => {
+  /**
+   * The suffixes append in ONE order. The key is the face's identity, so
+   * two spellings of the same face would embed the same font program twice
+   * under two resource names -- and the app and the writer would each pick
+   * whichever they built first.
+   */
+  it('spells a combined style one way only', () => {
+    expect(faceKey('Inter', { italic: true, bold: true })).toBe('Inter Bold Italic')
+  })
+
+  it('asks CSS for the descriptors it registered the files under', () => {
     expect(cssWeight(true)).toBe('700')
     expect(cssWeight(false)).toBe('400')
     expect(cssWeight()).toBe('400')
+    expect(cssStyle(true)).toBe('italic')
+    expect(cssStyle(false)).toBe('normal')
+    expect(cssStyle()).toBe('normal')
   })
 
-  it('fetches the bold file for a bold face key', async () => {
+  it('fetches the file each face key names', async () => {
     const original = globalThis.fetch
     const urls: string[] = []
     globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
@@ -228,9 +280,12 @@ describe('bold faces', () => {
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]).buffer }
     }) as unknown as typeof fetch
     try {
-      const map = await fontsForExport(['Inter', 'Inter Bold'])
-      expect([...map.keys()].sort()).toEqual(['Inter', 'Inter Bold'])
-      expect(urls.sort()).toEqual(['/fonts/Inter-Bold.ttf', '/fonts/Inter.ttf'])
+      const map = await fontsForExport(['Inter', 'Inter Bold Italic', 'Inter Italic'])
+      expect([...map.keys()].sort())
+        .toEqual(['Inter', 'Inter Bold Italic', 'Inter Italic'])
+      expect(urls.sort()).toEqual([
+        '/fonts/Inter-BoldItalic.ttf', '/fonts/Inter-Italic.ttf', '/fonts/Inter.ttf',
+      ])
     } finally {
       globalThis.fetch = original
     }

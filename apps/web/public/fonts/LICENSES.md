@@ -5,36 +5,58 @@ full text is in [`OFL.txt`](./OFL.txt) beside this file. The OFL requires the
 licence to travel with the font, which is why it is vendored here rather than
 linked.
 
-| File | Family | Weight | Copyright | Upstream |
+| File | Family | Style | Copyright | Upstream |
 |---|---|---|---|---|
 | `Inter.ttf` | Inter | 400 | Copyright 2020 The Inter Project Authors | https://github.com/rsms/inter |
 | `Inter-Bold.ttf` | Inter | 700 | Copyright 2020 The Inter Project Authors | https://github.com/rsms/inter |
+| `Inter-Italic.ttf` | Inter | 400 italic | Copyright 2020 The Inter Project Authors | https://github.com/rsms/inter |
+| `Inter-BoldItalic.ttf` | Inter | 700 italic | Copyright 2020 The Inter Project Authors | https://github.com/rsms/inter |
 | `Roboto.ttf` | Roboto | 400 | Copyright 2011 The Roboto Project Authors | https://github.com/googlefonts/roboto-classic |
 | `Roboto-Bold.ttf` | Roboto | 700 | Copyright 2011 The Roboto Project Authors | https://github.com/googlefonts/roboto-classic |
+| `Roboto-Italic.ttf` | Roboto | 400 italic | Copyright 2011 The Roboto Project Authors | https://github.com/googlefonts/roboto-classic |
+| `Roboto-BoldItalic.ttf` | Roboto | 700 italic | Copyright 2011 The Roboto Project Authors | https://github.com/googlefonts/roboto-classic |
 | `SourceSerif4.ttf` | Source Serif 4 | 400 | Copyright 2014 The Source Serif 4 Project Authors | https://github.com/adobe-fonts/source-serif |
 | `SourceSerif4-Bold.ttf` | Source Serif 4 | 700 | Copyright 2014 The Source Serif 4 Project Authors | https://github.com/adobe-fonts/source-serif |
+| `SourceSerif4-Italic.ttf` | Source Serif 4 | 400 italic | Copyright 2014 The Source Serif 4 Project Authors | https://github.com/adobe-fonts/source-serif |
+| `SourceSerif4-BoldItalic.ttf` | Source Serif 4 | 700 italic | Copyright 2014 The Source Serif 4 Project Authors | https://github.com/adobe-fonts/source-serif |
 | `Merriweather.ttf` | Merriweather | 400 | Copyright 2020 The Merriweather Project Authors, with Reserved Font Name "Merriweather" | https://github.com/EbenSorkin/Merriweather4 |
 | `Merriweather-Bold.ttf` | Merriweather | 700 | Copyright 2020 The Merriweather Project Authors, with Reserved Font Name "Merriweather" | https://github.com/EbenSorkin/Merriweather4 |
+| `Merriweather-Italic.ttf` | Merriweather | 400 italic | Copyright 2020 The Merriweather Project Authors, with Reserved Font Name "Merriweather" | https://github.com/EbenSorkin/Merriweather4 |
+| `Merriweather-BoldItalic.ttf` | Merriweather | 700 italic | Copyright 2020 The Merriweather Project Authors, with Reserved Font Name "Merriweather" | https://github.com/EbenSorkin/Merriweather4 |
 | `JetBrainsMono.ttf` | JetBrains Mono | 400 | Copyright 2020 The JetBrains Mono Project Authors | https://github.com/JetBrains/JetBrainsMono |
 | `JetBrainsMono-Bold.ttf` | JetBrains Mono | 700 | Copyright 2020 The JetBrains Mono Project Authors | https://github.com/JetBrains/JetBrainsMono |
+| `JetBrainsMono-Italic.ttf` | JetBrains Mono | 400 italic | Copyright 2020 The JetBrains Mono Project Authors | https://github.com/JetBrains/JetBrainsMono |
+| `JetBrainsMono-BoldItalic.ttf` | JetBrains Mono | 700 italic | Copyright 2020 The JetBrains Mono Project Authors | https://github.com/JetBrains/JetBrainsMono |
 
-### Why a real bold file and not a synthesised one
+### Why real files and not synthesised styles
 
-A viewer asked for bold with only a regular face loaded draws *faux* bold —
-it strokes the regular outlines. That is cheap and it is wrong here for a
-reason that is not aesthetic: faux bold keeps the **regular's advance
-widths**, so a centred or right-aligned line would be positioned by the
-writer's `measure()` against metrics that do not describe the ink on the
-page. The preview would agree with the export and both would be visibly
-off-centre. A real weight-700 instance costs one more file per family
-(~33–130 KB, fetched only when a document actually uses it) and makes the
-measurement true.
+A viewer asked for bold or italic with only the upright regular loaded draws
+a *faux* face — it strokes the outlines for bold, shears them for italic.
+That is cheap and it is wrong here for a reason that is not aesthetic: a
+synthesised face keeps the **regular's advance widths**, so a centred or
+right-aligned line would be positioned by the writer's `measure()` against
+metrics that do not describe the ink on the page. The preview would agree
+with the export and both would be visibly off-centre.
 
-Fetched at `:700` from the **v1** CSS endpoint. `:wght@700` is css2 syntax
-and the v1 endpoint ignores it and serves weight 400 instead — silently,
-because what comes back is still a perfectly valid TrueType. `fonts.test.ts`
-asserts each bold measures wider than its regular so that mistake cannot be
-committed twice.
+Bold italic is its own file rather than the bold one on a slant, because
+that is what a type designer draws: in a serif face the italic is a
+different alphabet, not the roman leaning over. Compare Source Serif 4's
+roman `a` with its italic one.
+
+Four instances per family costs ~1.6 MB in the repo, fetched only when a
+document actually uses one, and makes the measurement true.
+
+Fetched from the **v1** CSS endpoint, which takes styles as a bare list:
+`:400`, `:700`, `:400italic`, `:700italic`. `:wght@700` is css2 syntax and
+the v1 endpoint ignores it and serves weight 400 instead — silently, because
+what comes back is still a perfectly valid TrueType. `fonts.test.ts` reads
+each file's own OS/2 weight class and its fsSelection BOLD and ITALIC bits
+so that mistake cannot be committed twice.
+
+Note that `post.italicAngle` is **not** what identifies an italic: Roboto's
+italic declares an angle of 0 and is unmistakably slanted. The fsSelection
+ITALIC bit is the signal, and it is what MuPDF's `isItalic()` reads when the
+app detects the style of text a document already contains.
 
 ### Signature script faces (browser-only)
 
@@ -65,12 +87,12 @@ measured 57–65% of raw size, and `subsetFonts()` makes no difference for a
 freshly registered font). Variable Merriweather is 4.6 MB, so a document with
 one line of text in it would carry roughly 3 MB of font.
 
-These files are therefore the static weight-400 and weight-700 instances
-Google Fonts serves to legacy user agents, refetchable with
+These files are therefore the static upright and italic instances at weights
+400 and 700 that Google Fonts serves to legacy user agents, refetchable with
 `pnpm --filter @margin/web fonts:fetch`
 (see `apps/web/scripts/fetch-fonts.mjs`, which records the exact request).
-Combined they are ~680 KB across both weights, and a typical document embeds
-one or two of them.
+Combined they are ~1.6 MB across all four styles, and a typical document
+embeds one or two of them.
 
 Subsetting — which would cut even that to a few KB — needs `pdf-lib` +
 `@pdf-lib/fontkit` and is deliberately deferred to Phase 4

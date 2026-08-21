@@ -23,6 +23,7 @@ const match = (page: number, text = 'hit'): PageMatch => ({
   page, lineIndex: 0, start: 0, end: text.length, text,
   lineText: text,
   bold: false,
+  italic: false,
   size: 12,
   baseline: 14,
   color: [0, 0, 0],

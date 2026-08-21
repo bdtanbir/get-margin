@@ -1,7 +1,7 @@
 import type { EditObject } from '@margin/pdf-core'
-import { faceKey } from '@margin/pdf-core'
+import { faceKey, type FaceStyle } from '@margin/pdf-core'
 
-export { faceKey }
+export { faceKey, type FaceStyle }
 
 /**
  * The curated font set, shared by preview and export.
@@ -12,21 +12,47 @@ export { faceKey }
  * -- "Source Serif 4" does not munge into "SourceSerif4" by any rule worth
  * maintaining, and a wrong guess is a 404 at export time.
  *
- * `bold` is a SEPARATE FILE, not a flag. Asking the browser for weight 700
- * with only the regular registered gets faux bold -- stroked regular
- * outlines that keep the regular's advance widths -- while the export would
- * embed a real bold face with different ones. The two would disagree about
- * where a centred line starts. One file per weight keeps preview and export
- * measuring the same glyphs, which is the whole point of self-hosting them.
+ * EVERY STYLE IS A SEPARATE FILE, not a flag. Asking the browser for
+ * weight 700 or `font-style: italic` with only the upright regular
+ * registered gets a SYNTHESISED face -- stroked outlines for bold, sheared
+ * ones for italic -- and both keep the regular's advance widths, while the
+ * export would embed a real face with different ones. The two would
+ * disagree about where a centred line starts. Four files per family keeps
+ * preview and export measuring the same glyphs, which is the whole point of
+ * self-hosting them.
+ *
+ * Bold italic is its OWN file rather than the bold one on a slant, because
+ * that is what a type designer draws: in a serif face the italic is a
+ * different alphabet, not the roman leaning over.
  *
  * See public/fonts/LICENSES.md for provenance and licences.
  */
 export const FONTS = [
-  { family: 'Inter', file: 'Inter.ttf', bold: 'Inter-Bold.ttf', fallback: 'sans-serif' },
-  { family: 'Roboto', file: 'Roboto.ttf', bold: 'Roboto-Bold.ttf', fallback: 'sans-serif' },
-  { family: 'Source Serif 4', file: 'SourceSerif4.ttf', bold: 'SourceSerif4-Bold.ttf', fallback: 'serif' },
-  { family: 'Merriweather', file: 'Merriweather.ttf', bold: 'Merriweather-Bold.ttf', fallback: 'serif' },
-  { family: 'JetBrains Mono', file: 'JetBrainsMono.ttf', bold: 'JetBrainsMono-Bold.ttf', fallback: 'monospace' },
+  {
+    family: 'Inter', fallback: 'sans-serif',
+    file: 'Inter.ttf', bold: 'Inter-Bold.ttf',
+    italic: 'Inter-Italic.ttf', boldItalic: 'Inter-BoldItalic.ttf',
+  },
+  {
+    family: 'Roboto', fallback: 'sans-serif',
+    file: 'Roboto.ttf', bold: 'Roboto-Bold.ttf',
+    italic: 'Roboto-Italic.ttf', boldItalic: 'Roboto-BoldItalic.ttf',
+  },
+  {
+    family: 'Source Serif 4', fallback: 'serif',
+    file: 'SourceSerif4.ttf', bold: 'SourceSerif4-Bold.ttf',
+    italic: 'SourceSerif4-Italic.ttf', boldItalic: 'SourceSerif4-BoldItalic.ttf',
+  },
+  {
+    family: 'Merriweather', fallback: 'serif',
+    file: 'Merriweather.ttf', bold: 'Merriweather-Bold.ttf',
+    italic: 'Merriweather-Italic.ttf', boldItalic: 'Merriweather-BoldItalic.ttf',
+  },
+  {
+    family: 'JetBrains Mono', fallback: 'monospace',
+    file: 'JetBrainsMono.ttf', bold: 'JetBrainsMono-Bold.ttf',
+    italic: 'JetBrainsMono-Italic.ttf', boldItalic: 'JetBrainsMono-BoldItalic.ttf',
+  },
 ] as const
 
 /**
@@ -42,15 +68,25 @@ export const FONTS = [
  * Self-hosted for the same reason as FONTS (spec 2.5): no third-party
  * request when a document is opened.
  *
- * No bold: a signature is written in one hand, and a heavier one is not a
- * setting anybody reaches for. `bold: undefined` also keeps `faceFile`
- * below honest -- asking for a bold script face fails rather than quietly
- * handing back the regular.
+ * One style only: a signature is written in one hand, and a heavier or
+ * slanted one is not a setting anybody reaches for -- a script face is
+ * already slanted. The undefined variants also keep `faceFile` below honest
+ * -- asking for a bold or italic script face fails rather than quietly
+ * handing back the upright regular.
  */
 export const SIGNATURE_FACES = [
-  { family: 'Caveat', file: 'Caveat.ttf', bold: undefined, fallback: 'cursive' },
-  { family: 'Dancing Script', file: 'DancingScript.ttf', bold: undefined, fallback: 'cursive' },
-  { family: 'Great Vibes', file: 'GreatVibes.ttf', bold: undefined, fallback: 'cursive' },
+  {
+    family: 'Caveat', file: 'Caveat.ttf', fallback: 'cursive',
+    bold: undefined, italic: undefined, boldItalic: undefined,
+  },
+  {
+    family: 'Dancing Script', file: 'DancingScript.ttf', fallback: 'cursive',
+    bold: undefined, italic: undefined, boldItalic: undefined,
+  },
+  {
+    family: 'Great Vibes', file: 'GreatVibes.ttf', fallback: 'cursive',
+    bold: undefined, italic: undefined, boldItalic: undefined,
+  },
 ] as const
 
 /** Every face this app can load, whether or not it is embeddable. */
@@ -86,22 +122,32 @@ export const REGULAR_WEIGHT = '400'
 export const cssWeight = (bold?: boolean): string =>
   bold ? BOLD_WEIGHT : REGULAR_WEIGHT
 
+/** The `font-style` a face is registered and asked for under. */
+export const cssStyle = (italic?: boolean): string => (italic ? 'italic' : 'normal')
+
 /**
- * The file behind a family at a weight.
+ * The file behind a family in a given style.
  *
- * Throws for a bold script face rather than falling back to its regular: a
- * silent fallback here would render one thing and embed another.
+ * Throws for a style a family has no file for -- a bold or italic script
+ * face -- rather than falling back to its regular: a silent fallback here
+ * would render one thing and embed another.
  */
-export function faceFile(family: string, bold?: boolean): string {
+export function faceFile(family: string, style?: FaceStyle): string {
   const f = entry(family)
   if (!f) throw new Error(`unknown font family "${family}"`)
-  if (!bold) return f.file
-  if (!f.bold) throw new Error(`"${family}" has no bold face`)
-  return f.bold
+  const wanted = style?.bold
+    ? style.italic ? f.boldItalic : f.bold
+    : style?.italic ? f.italic : f.file
+  if (!wanted) {
+    throw new Error(
+      `"${family}" has no ${style?.bold ? 'bold ' : ''}${style?.italic ? 'italic ' : ''}face`,
+    )
+  }
+  return wanted
 }
 
-export function fontUrl(family: string, bold?: boolean): string {
-  return `/fonts/${faceFile(family, bold)}`
+export function fontUrl(family: string, style?: FaceStyle): string {
+  return `/fonts/${faceFile(family, style)}`
 }
 
 /** CSS font-family value: the real family, then its generic fallback. */
@@ -115,24 +161,26 @@ const loading = new Map<string, Promise<void>>()
 /**
  * Register a face with the document so it can be rendered and measured.
  *
- * Both weights register under the SAME CSS family name, distinguished by
- * the FontFace `weight` descriptor. That is what makes `font-weight: 700`
- * in the overlay pick up Inter-Bold.ttf instead of asking the browser to
- * fake it by stroking the regular -- and a faked bold would measure at the
- * regular's advance widths while the export used the real ones.
+ * All four styles register under the SAME CSS family name, distinguished by
+ * the FontFace `weight` and `style` descriptors. That is what makes
+ * `font-weight: 700` and `font-style: italic` in the overlay pick up
+ * Inter-BoldItalic.ttf instead of asking the browser to fake it by stroking
+ * and shearing the regular -- and a faked face measures at the regular's
+ * advance widths while the export uses the real ones.
  *
  * Cached by FACE, not family: the text tool asks for the active face on
  * every keystroke, and FontFace construction plus load() is a fetch and a
  * parse.
  */
-export function loadFont(family: string, bold?: boolean): Promise<void> {
-  const key = faceKey(family, bold)
+export function loadFont(family: string, style?: FaceStyle): Promise<void> {
+  const key = faceKey(family, style)
   const hit = loading.get(key)
   if (hit) return hit
   const promise = (async () => {
     if (typeof FontFace === 'undefined' || !document.fonts) return
-    const face = new FontFace(family, `url(${fontUrl(family, bold)})`, {
-      weight: cssWeight(bold),
+    const face = new FontFace(family, `url(${fontUrl(family, style)})`, {
+      weight: cssWeight(style?.bold),
+      style: cssStyle(style?.italic),
     })
     await face.load()
     document.fonts.add(face)
@@ -141,15 +189,25 @@ export function loadFont(family: string, bold?: boolean): Promise<void> {
   return promise
 }
 
+/** The four combinations a bundled family has a file for. */
+export const ALL_STYLES: FaceStyle[] = [
+  {},
+  { bold: true },
+  { italic: true },
+  { bold: true, italic: true },
+]
+
 /**
- * Both weights of every body face.
+ * Every style of every body face.
  *
- * The bold half doubles this to ~680KB. It is still a preload rather than
- * an on-demand fetch because the alternative is text reflowing under the
- * caret the first time somebody ticks Bold.
+ * Four styles across five families is ~1.6MB, which is why this is not
+ * called anywhere: faces load on demand through `loadFont`. Kept because
+ * the alternative when it IS wanted is text reflowing under the caret the
+ * first time somebody ticks Italic, and because a helper that enumerates
+ * the set is the thing a preload would need.
  */
 export function preloadFonts(): Promise<void[]> {
-  return Promise.all(FONTS.flatMap((f) => [loadFont(f.family), loadFont(f.family, true)]))
+  return Promise.all(FONTS.flatMap((f) => ALL_STYLES.map((s) => loadFont(f.family, s))))
 }
 
 /** The script faces, loaded on demand when the signature modal opens. */
@@ -171,25 +229,31 @@ let ctx: CanvasRenderingContext2D | null | undefined
  * a missing measurement degrades alignment, and throwing would take the
  * whole overlay down with it.
  *
- * The weight is part of the measurement, not decoration on it: bold glyphs
- * are wider, so measuring a bold line as regular puts every centred and
- * right-aligned line off by a few points.
+ * The style is part of the measurement, not decoration on it: bold glyphs
+ * are wider and italic ones are usually narrower, so measuring a line in
+ * the wrong face puts every centred and right-aligned line off by a few
+ * points.
+ *
+ * The shorthand's order is fixed by CSS -- style, then weight, then size --
+ * and a font shorthand the browser cannot parse is silently ignored, which
+ * would leave the canvas measuring in its default face and report nothing.
  */
 export function measureText(
   text: string,
   family: string,
   size: number,
-  bold?: boolean,
+  style?: FaceStyle,
 ): number {
   if (ctx === undefined) ctx = document.createElement('canvas').getContext('2d')
   if (!ctx) return 0
-  ctx.font = `${cssWeight(bold)} ${size}px ${cssFamily(family)}`
+  ctx.font =
+    `${cssStyle(style?.italic)} ${cssWeight(style?.bold)} ${size}px ${cssFamily(family)}`
   return ctx.measureText(text).width
 }
 
 /** The raw file, for the worker to embed. Same bytes the browser rendered. */
-export async function fontBytes(family: string, bold?: boolean): Promise<Uint8Array> {
-  const res = await fetch(fontUrl(family, bold))
+export async function fontBytes(family: string, style?: FaceStyle): Promise<Uint8Array> {
+  const res = await fetch(fontUrl(family, style))
   if (!res.ok) throw new Error(`could not load the font "${family}" (${res.status})`)
   return new Uint8Array(await res.arrayBuffer())
 }
@@ -208,25 +272,27 @@ export async function fontBytes(family: string, bold?: boolean): Promise<Uint8Ar
  * A kind added later has to be added here, once, rather than in five
  * places nobody will remember to visit.
  *
- * Returns FACE keys and not families, for the same reason: a bold heading
- * needs Inter Bold embedded, and a collector that only knew about families
- * would hand the writer the regular and let it throw at Download time --
- * which is exactly the failure this function was written to end.
+ * Returns FACE keys and not families, for the same reason: a bold italic
+ * heading needs Inter Bold Italic embedded, and a collector that only knew
+ * about families would hand the writer the regular and let it throw at
+ * Download time -- which is exactly the failure this function was written
+ * to end. The object is passed to `faceKey` whole, so a style axis added to
+ * the format is collected here without this function changing.
  */
 export function facesUsed(objects: Iterable<EditObject>): string[] {
   const faces = new Set<string>()
   for (const object of objects) {
     const family = (object as { fontFamily?: unknown }).fontFamily
     if (typeof family !== 'string' || family === '') continue
-    faces.add(faceKey(family, (object as { bold?: unknown }).bold === true))
+    faces.add(faceKey(family, object as FaceStyle))
   }
   return [...faces]
 }
 
 /**
  * Font bytes for every face the edit document actually uses, keyed the way
- * the writer looks them up. Loading all ten on every export would add
- * ~680KB of fetches for a document that uses one of them.
+ * the writer looks them up. Loading all twenty on every export would add
+ * ~1.6MB of fetches for a document that uses one of them.
  */
 export async function fontsForExport(
   faces: Iterable<string>,
@@ -235,16 +301,17 @@ export async function fontsForExport(
   // TEXT object had been given one, which the picker cannot produce -- and
   // embedding it would silently add ~60KB to a document for a face the
   // writer was never meant to see.
-  const embeddable = new Map<string, { family: string; bold: boolean }>()
+  const embeddable = new Map<string, { family: string; style: FaceStyle }>()
   for (const f of FONTS) {
-    embeddable.set(faceKey(f.family), { family: f.family, bold: false })
-    embeddable.set(faceKey(f.family, true), { family: f.family, bold: true })
+    for (const style of ALL_STYLES) {
+      embeddable.set(faceKey(f.family, style), { family: f.family, style })
+    }
   }
   const unique = [...new Set(faces)].filter((f) => embeddable.has(f))
   const loaded = await Promise.all(
     unique.map(async (face) => {
-      const { family, bold } = embeddable.get(face)!
-      return [face, await fontBytes(family, bold)] as const
+      const { family, style } = embeddable.get(face)!
+      return [face, await fontBytes(family, style)] as const
     }),
   )
   return new Map(loaded)

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { TextObject } from '@margin/pdf-core'
-import { cssFamily, cssWeight, measureText, ASCENT_RATIO, LINE_HEIGHT } from '@/lib/fonts'
+import { cssFamily, cssWeight, cssStyle, measureText, ASCENT_RATIO, LINE_HEIGHT } from '@/lib/fonts'
 import { rgb } from './svgPaint'
 
 const props = defineProps<{ object: TextObject }>()
@@ -17,7 +17,7 @@ const lines = computed(() => {
   const { x, y, w, h } = o.rect
   return o.text.split('\n').map((text, i) => {
     const baseline = y + h - o.fontSize * ASCENT_RATIO - i * o.fontSize * LINE_HEIGHT
-    const advance = measureText(text, o.fontFamily, o.fontSize, o.bold)
+    const advance = measureText(text, o.fontFamily, o.fontSize, o)
     const offset =
       o.align === 'center' ? (w - advance) / 2 : o.align === 'right' ? w - advance : 0
     return { text, x: x + offset, baseline }
@@ -27,12 +27,13 @@ const lines = computed(() => {
 const fill = computed(() => rgb(props.object.color))
 const family = computed(() => cssFamily(props.object.fontFamily))
 /**
- * The real weight-700 file is registered under this family at 700, so
- * asking for it here picks up those outlines rather than the browser's
- * synthesised bold -- which would be a different shape and, worse, a
- * different width from the one `measureText` just returned.
+ * The real files are registered under this family at these descriptors, so
+ * asking for them here picks up those outlines rather than the browser's
+ * synthesised bold or oblique -- which would be a different shape and,
+ * worse, a different width from the one `measureText` just returned.
  */
 const weight = computed(() => cssWeight(props.object.bold))
+const slope = computed(() => cssStyle(props.object.italic))
 </script>
 
 <template>
@@ -51,6 +52,7 @@ const weight = computed(() => cssWeight(props.object.bold))
     :fill="fill"
     :font-family="family"
     :font-weight="weight"
+    :font-style="slope"
     :font-size="props.object.fontSize"
     style="white-space: pre"
   >{{ l.text }}</text>

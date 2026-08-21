@@ -6,22 +6,39 @@ import * as mupdf from 'mupdf'
 export type FontProvider = Map<string, Uint8Array>
 
 /**
- * The key a family-and-weight pair is stored and looked up under.
+ * What distinguishes one face of a family from another.
  *
- * Weight is not a property of a font program -- Inter Bold is a different
- * FILE from Inter, with its own outlines and its own advance widths -- so
- * everything downstream of this point (the provider map, the registry
- * cache, the measurer's cache, the /Font resource) has to address a FACE
- * rather than a family. One function so the writer and the browser cannot
- * disagree about what that address is; `apps/web/src/lib/fonts.ts` maps the
- * same keys onto files.
- *
- * Deliberately a string rather than a `{family, bold}` pair: the three
- * caches below are all `Map<string, _>` keyed by exactly this, and a tuple
- * key would need a comparator in each of them.
+ * An OBJECT rather than positional flags, and taken as a whole: every
+ * caller has an edit object with exactly these two properties on it, so it
+ * passes the object itself and cannot get the argument order wrong.
+ * `faceKey(family, false, true)` is a line nobody can read; two booleans
+ * that mean opposite things when transposed is a bug waiting for the third
+ * axis to be added.
  */
-export function faceKey(family: string, bold?: boolean): string {
-  return bold ? `${family} Bold` : family
+export type FaceStyle = { bold?: boolean; italic?: boolean }
+
+/**
+ * The key a family-and-style combination is stored and looked up under.
+ *
+ * Neither weight nor slope is a property of a font program -- Inter Bold
+ * Italic is a different FILE from Inter, with its own outlines and its own
+ * advance widths -- so everything downstream of this point (the provider
+ * map, the registry cache, the measurer's cache, the /Font resource) has to
+ * address a FACE rather than a family. One function so the writer and the
+ * browser cannot disagree about what that address is;
+ * `apps/web/src/lib/fonts.ts` maps the same keys onto files.
+ *
+ * Deliberately a string rather than a tuple: the three caches below are all
+ * `Map<string, _>` keyed by exactly this, and a tuple key would need a
+ * comparator in each of them.
+ *
+ * The suffixes append in a fixed order -- "Bold Italic", never "Italic
+ * Bold" -- because the key IS the identity. Two spellings of one face would
+ * embed the same font program twice under two resource names.
+ */
+export function faceKey(family: string, style?: FaceStyle): string {
+  const suffix = `${style?.bold ? ' Bold' : ''}${style?.italic ? ' Italic' : ''}`
+  return `${family}${suffix}`
 }
 
 /**
@@ -42,8 +59,8 @@ export function faceKey(family: string, bold?: boolean): string {
  * That is a known, stated limitation, not an oversight.
  *
  * Keyed by FACE, so a document with a bold heading over regular body copy
- * registers two font programs and two resource names. It has to: bold is a
- * separate file, not a flag on this one.
+ * registers two font programs and two resource names. It has to: bold and
+ * italic are separate files, not flags on this one.
  */
 export class FontRegistry {
   #cache = new Map<string, { name: string; obj: mupdf.PDFObject }>()
@@ -63,9 +80,9 @@ export class FontRegistry {
     if (!bytes) {
       // Never substitute silently: text drawn in an unexpected face looks
       // subtly wrong and nobody notices until it is printed. That covers
-      // weight too -- falling back to the regular when the bold was not
-      // supplied would export a heading that is not the heading the user
-      // laid out, and nothing would report it.
+      // weight and slope too -- falling back to the regular when the bold
+      // italic was not supplied would export a heading that is not the
+      // heading the user laid out, and nothing would report it.
       throw new Error(
         `font "${face}" was not provided to the export. Load it before exporting.`,
       )
@@ -88,9 +105,10 @@ export class FontRegistry {
  * the whole font program.
  *
  * Measured per FACE. Bold glyphs are wider -- measurably so, "Hello margin"
- * is 6.16 em in Inter Bold against 5.95 in Inter -- so measuring a bold line
- * against the regular would put every centred and right-aligned line
- * slightly off, in the exported file, with nothing to show it had happened.
+ * is 6.16 em in Inter Bold against 5.95 in Inter -- and an italic's are
+ * narrower again, so measuring one face against another would put every
+ * centred and right-aligned line slightly off, in the exported file, with
+ * nothing to show it had happened.
  */
 export function createMeasurer(
   provider: FontProvider,

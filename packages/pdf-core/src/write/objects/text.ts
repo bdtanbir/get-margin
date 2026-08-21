@@ -17,9 +17,11 @@ export const LINE_HEIGHT = 1.2
 export const writeText: ObjectWriter = (ctx, object) => {
   const o = object as TextObject
   const { x, y, w, h } = toContentSpace(o.rect)
-  // The FACE, not the family: bold is a separate font program with its own
-  // advance widths, and the alignment maths below reads them.
-  const face = faceKey(o.fontFamily, o.bold)
+  // The FACE, not the family: each weight and slope is a separate font
+  // program with its own advance widths, and the alignment maths below
+  // reads them. Passing the object rather than its flags is deliberate --
+  // see FaceStyle.
+  const face = faceKey(o.fontFamily, o)
   const font = ctx.fonts.resolve(face)
   addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
 

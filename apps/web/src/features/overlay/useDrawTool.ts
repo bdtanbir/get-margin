@@ -43,12 +43,13 @@ export const TEXT_DEFAULTS = {
   text: '',
   fontFamily: DEFAULT_FAMILY,
   /**
-   * Regular. Stated rather than left absent so a new object carries the
-   * property the inspector's Bold checkbox writes to -- the format treats
+   * Upright regular. Stated rather than left absent so a new object carries
+   * the properties the inspector's checkboxes write to -- the format treats
    * absent and false the same, but a key that appears the first time it is
    * ticked is one more shape an object can be in.
    */
   bold: false,
+  italic: false,
   fontSize: 14,
   color: [0, 0, 0] as [number, number, number],
   align: 'left' as const,

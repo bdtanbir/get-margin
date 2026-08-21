@@ -30,7 +30,7 @@ const CHAR_QUADS = [
 const INDEX = {
   lines: [{
     bbox: [100, 100, 220, 120] as [number, number, number, number],
-    text: 'ab', font: 'Helvetica', bold: false, color: [0, 0, 0] as Color, size: 12, baseline: 116,
+    text: 'ab', font: 'Helvetica', bold: false, italic: false, color: [0, 0, 0] as Color, size: 12, baseline: 116,
     chars: [
       { char: 'a', quad: CHAR_QUADS[0] as never },
       { char: 'b', quad: CHAR_QUADS[1] as never },

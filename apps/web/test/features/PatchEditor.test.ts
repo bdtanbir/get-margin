@@ -25,13 +25,19 @@ const page: PageState = {
 }
 
 /** One line of text at y = 100..118, x = 40..160. */
-function indexOf(text: string, bold = false, color: Color = [0, 0, 0]): PageQuadIndex {
+function indexOf(
+  text: string,
+  bold = false,
+  color: Color = [0, 0, 0],
+  italic = false,
+): PageQuadIndex {
   return {
     lines: [{
       bbox: [40, 100, 160, 118],
       text,
       font: 'Test',
       bold,
+      italic,
       color,
       size: 12,
       // Baseline sits above the box bottom by the font's descender.
@@ -606,5 +612,69 @@ describe('colour', () => {
     await commit(mountEditor(indexOf('Issue Date', false, GREY)), 'Second edit')
     expect(patches(edits)).toHaveLength(1)
     expect(patches(edits)[0]!.color).toEqual([1, 0, 0])
+  })
+})
+
+/**
+ * Slope.
+ *
+ * The last of the four axes a patch inherits. Same shape as the others:
+ * MuPDF reports `isItalic()` per run, the patch seeds from it, and the
+ * inspector overrides it afterwards.
+ */
+describe('slope', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    missingGlyphs.mockResolvedValue([])
+    seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+  })
+
+  const italicIndex = (text: string) => indexOf(text, false, [0, 0, 0], true)
+
+  const commit = async (w: ReturnType<typeof mountEditor>, text: string) => {
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').setValue(text)
+    await w.get('[data-patch-input]').trigger('blur')
+    await flushPromises()
+  }
+
+  it('keeps an italic line italic when it is edited', async () => {
+    const edits = useEditsStore()
+    await commit(mountEditor(italicIndex('Emphasised')), 'Still emphasised')
+    expect(patches(edits)[0]!.italic).toBe(true)
+  })
+
+  it('leaves an upright line upright', async () => {
+    const edits = useEditsStore()
+    await commit(mountEditor(indexOf('Body text')), 'New body text')
+    expect(patches(edits)[0]!.italic).toBe(false)
+  })
+
+  it('types on the slant it will commit', async () => {
+    const w = mountEditor(italicIndex('Emphasised'))
+    await w.get('[data-patch-target="0"]').trigger('click')
+    expect(w.get('[data-patch-input]').attributes('style')).toContain('font-style: italic')
+  })
+
+  it('lets Ctrl+I override the inherited slope', async () => {
+    const edits = useEditsStore()
+    const w = mountEditor(italicIndex('Emphasised'))
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').setValue('Not emphasised')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'i', ctrlKey: true })
+    await w.get('[data-patch-input]').trigger('blur')
+    await flushPromises()
+    expect(patches(edits)[0]!.italic).toBe(false)
+  })
+
+  it('carries bold and italic together, not one instead of the other', async () => {
+    // A bold-italic face is a fourth file, and a patch that inherited only
+    // one axis would ask for a face the line was not set in.
+    const edits = useEditsStore()
+    await commit(mountEditor(indexOf('Bold emphasis', true, [0, 0, 0], true)), 'Rewritten')
+    expect(patches(edits)[0]!.bold).toBe(true)
+    expect(patches(edits)[0]!.italic).toBe(true)
   })
 })

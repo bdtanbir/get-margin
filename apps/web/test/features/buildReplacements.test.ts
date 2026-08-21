@@ -17,6 +17,7 @@ function match(over: Partial<PageMatch> = {}): PageMatch {
     text: lineText.slice(start, end),
     lineText,
     bold: false,
+    italic: false,
     size: 12,
     baseline: 14,
     color: [0, 0, 0],
@@ -176,15 +177,18 @@ describe('buildReplacements', () => {
    * it changed -- and unlike the patch editor, where the user is looking at
    * one line, it happens to dozens at once and out of view.
    */
-  it('keeps each line’s own colour, weight, and size', () => {
+  it('keeps each line’s own colour, weight, slope, and size', () => {
     const plan = buildReplacements(
-      [match({ color: [0.42, 0.45, 0.5], bold: true, size: 9, baseline: 20 })],
+      [match({
+        color: [0.42, 0.45, 0.5], bold: true, italic: true, size: 9, baseline: 20,
+      })],
       'a',
       ctx(),
     )
     const patch = plan.patches[0]!
     expect(patch.color).toEqual([0.42, 0.45, 0.5])
     expect(patch.bold).toBe(true)
+    expect(patch.italic).toBe(true)
     expect(patch.fontSize).toBe(9)
     expect(patch.baseline).toBe(20)
   })

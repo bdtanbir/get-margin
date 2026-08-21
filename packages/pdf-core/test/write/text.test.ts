@@ -19,6 +19,12 @@ const fontFile = (f: string): Uint8Array =>
 const FONTS = new Map([
   ['Inter', fontFile('Inter.ttf')],
   ['Inter Bold', fontFile('Inter-Bold.ttf')],
+  ['Inter Italic', fontFile('Inter-Italic.ttf')],
+  ['Inter Bold Italic', fontFile('Inter-BoldItalic.ttf')],
+  // A serif whose italic is a genuinely different alphabet rather than a
+  // metrically-matched companion. See the measurement test below.
+  ['Source Serif 4', fontFile('SourceSerif4.ttf')],
+  ['Source Serif 4 Italic', fontFile('SourceSerif4-Italic.ttf')],
 ])
 
 function docWith(objects: EditObject[]): EditDocument {
@@ -35,39 +41,43 @@ function textObject(
   align: 'left' | 'center' | 'right' = 'left',
   y = 600,
   bold?: boolean,
+  italic?: boolean,
 ): EditObject {
   return {
     id: `t${n++}`, pageId: 'p0', kind: 'text', text,
     // Clear of the fixture's own text, which sits in the top ~130pt.
     rect: { x: 60, y, w: 400, h: 30 },
     rotation: 0, z: 1, locked: false, opacity: 1,
-    fontFamily: 'Inter', bold, fontSize: 18, color: [0, 0, 0], align,
+    fontFamily: 'Inter', bold, italic, fontSize: 18, color: [0, 0, 0], align,
   } as EditObject
 }
 
 /**
- * Whether the line containing `needle` is drawn in a bold face, asked of
- * the EXPORTED file rather than of the object that produced it.
+ * The style the line containing `needle` is drawn in, asked of the EXPORTED
+ * file rather than of the object that produced it.
  *
  * Goes through MuPDF's own `isBold()` -- the same call the patch editor
  * relies on to inherit weight from a document it did not write. If this
  * agrees, so does that.
  */
-function boldnessOf(pdf: Uint8Array, needle: string): boolean | undefined {
+function styleOf(
+  pdf: Uint8Array,
+  needle: string,
+): { bold: boolean; italic: boolean } | undefined {
   const doc = PdfDocument.open(pdf)
   try {
     const page = doc._raw().loadPage(0)
     try {
-      let found: boolean | undefined
+      let found: { bold: boolean; italic: boolean } | undefined
       let text = ''
-      let bold = false
+      let style = { bold: false, italic: false }
       page.toStructuredText('').walk({
-        beginLine: () => { text = ''; bold = false },
-        onChar: (c: string, _o: number[], font: { isBold(): boolean }) => {
-          if (text === '') bold = font.isBold()
+        beginLine: () => { text = ''; style = { bold: false, italic: false } },
+        onChar: (c: string, _o: number[], font: { isBold(): boolean; isItalic(): boolean }) => {
+          if (text === '') style = { bold: font.isBold(), italic: font.isItalic() }
           text += c
         },
-        endLine: () => { if (found === undefined && text.includes(needle)) found = bold },
+        endLine: () => { if (found === undefined && text.includes(needle)) found = style },
       } as never)
       return found
     } finally { page.destroy() }
@@ -215,7 +225,7 @@ describe('text writer', () => {
       const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
         textObject('Heading', 'left', 600, true),
       ]), { fonts: FONTS })
-      expect(boldnessOf(out, 'Heading')).toBe(true)
+      expect(styleOf(out, 'Heading')?.bold).toBe(true)
     })
 
     it('leaves an object with no bold set drawn regular', () => {
@@ -224,7 +234,97 @@ describe('text writer', () => {
       const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
         textObject('Heading'),
       ]), { fonts: FONTS })
-      expect(boldnessOf(out, 'Heading')).toBe(false)
+      expect(styleOf(out, 'Heading')?.bold).toBe(false)
+    })
+  })
+
+  /**
+   * Slope.
+   *
+   * The same property as weight and asserted the same way: what matters is
+   * that the ITALIC FILE reached the document. A synthesised oblique would
+   * satisfy the eye, embed no second font program, and measure at the
+   * upright's advance widths.
+   */
+  describe('italic', () => {
+    it('reads back as italic from the exported file', () => {
+      const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
+        textObject('Slanted', 'left', 600, false, true),
+      ]), { fonts: FONTS })
+      expect(styleOf(out, 'Slanted')).toEqual({ bold: false, italic: true })
+    })
+
+    it('combines with bold as a fourth face, not bold on a slant', () => {
+      const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
+        textObject('Emphatic', 'left', 600, true, true),
+      ]), { fonts: FONTS })
+      expect(styleOf(out, 'Emphatic')).toEqual({ bold: true, italic: true })
+    })
+
+    it('embeds a font program per face, so four styles are four programs', () => {
+      const one = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
+        textObject('One', 'left', 600),
+      ]), { fonts: FONTS })
+      const four = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
+        textObject('One', 'left', 600),
+        textObject('Two', 'left', 560, true),
+        textObject('Three', 'left', 520, false, true),
+        textObject('Four', 'left', 480, true, true),
+      ]), { fonts: FONTS })
+      // Three more font programs at ~66KB each, with no subsetting.
+      expect(four.byteLength).toBeGreaterThan(one.byteLength + 60_000)
+    })
+
+    it('refuses to fall back when the bold italic was not supplied', () => {
+      expect(() => replay(
+        new Map([['src-0', bytes('simple-text')]]),
+        docWith([textObject('Emphatic', 'left', 600, true, true)]),
+        { fonts: new Map([['Inter', fontFile('Inter.ttf')]]) },
+      )).toThrow(/Inter Bold Italic/)
+    })
+
+    /**
+     * SOURCE SERIF 4, not Inter, and the choice IS the test.
+     *
+     * How much an italic differs in width from its upright is a decision
+     * the type designer made, not a property of italics. Inter's italic is
+     * metrically close to its roman -- 0.05 em over a nineteen-character
+     * string, a third of a point at 18pt, which rounds away in the
+     * extraction. JetBrains Mono's is identical by definition, being
+     * monospaced. A serif italic is a different alphabet, and Source Serif
+     * 4's is 0.78 em narrower over the same string, which is a difference
+     * this can actually see.
+     *
+     * Written against Inter first, where it passed whether or not the
+     * writer measured the right face.
+     */
+    it('measures italic text at the italic face’s own advances', () => {
+      const line = 'Widths of a serif italic'
+      const serif = (y: number, italic: boolean): EditObject => ({
+        id: `s${n++}`, pageId: 'p0', kind: 'text', text: line,
+        rect: { x: 60, y, w: 400, h: 30 },
+        rotation: 0, z: 1, locked: false, opacity: 1,
+        fontFamily: 'Source Serif 4', italic, fontSize: 18,
+        color: [0, 0, 0], align: 'center',
+      } as EditObject)
+
+      const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
+        serif(600, true),
+        serif(560, false),
+      ]), { fonts: FONTS })
+      const blocks = JSON.parse(extract(out)).blocks as Array<{
+        lines: Array<{ text: string; bbox: { x: number; w: number } }>
+      }>
+      const lines = blocks.flatMap((b) => b.lines).filter((l) => l.text.includes('Widths of'))
+      expect(lines).toHaveLength(2)
+      const [italicLine, uprightLine] = lines as [typeof lines[0], typeof lines[0]]
+
+      // The italic really is narrower here, by enough to see.
+      expect(uprightLine.bbox.w - italicLine.bbox.w).toBeGreaterThan(4)
+      // And it is still centred on the box's centre, 260, at ITS OWN width.
+      // Measuring the upright and drawing the italic would put it off by
+      // half the difference above.
+      expect(Math.abs(italicLine.bbox.x + italicLine.bbox.w / 2 - 260)).toBeLessThan(1.5)
     })
   })
 

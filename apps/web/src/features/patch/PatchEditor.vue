@@ -9,7 +9,8 @@ import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
 import { getPdfClient } from '@/workers/pdfClient'
 import {
-  fontsForExport, measureText, cssFamily, cssWeight, faceKey, loadFont, DEFAULT_FAMILY,
+  fontsForExport, measureText, cssFamily, cssWeight, cssStyle, faceKey, loadFont,
+  DEFAULT_FAMILY,
 } from '@/lib/fonts'
 import { rgb } from '@/features/overlay/objects/svgPaint'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
@@ -79,6 +80,13 @@ const size = ref(0)
  * like.
  */
 const color = ref<Color>([0, 0, 0])
+/**
+ * Whether the replacement is set on a slant, inherited the same way the
+ * weight is. `isItalic()` is reliable on embedded TrueType, which is what
+ * real documents contain -- unlike `isSerif()`, which is not, and which is
+ * why the FAMILY is still the user's choice rather than a guess.
+ */
+const italic = ref(false)
 /**
  * What happens when the replacement is wider than the line it replaces.
  *
@@ -169,10 +177,13 @@ const editSize = computed(() =>
  * Capped at the page's right edge: past that the input would hang off the
  * paper, and horizontal scrolling inside the field is the lesser evil.
  */
+/** The face being typed in, as the one object every consumer below reads. */
+const face = computed(() => ({ bold: bold.value, italic: italic.value }))
+
 const inputWidth = computed(() => {
   const b = box.value
   if (!b) return 0
-  const measured = measureText(draft.value || ' ', DEFAULT_FAMILY, editSize.value, bold.value)
+  const measured = measureText(draft.value || ' ', DEFAULT_FAMILY, editSize.value, face.value)
   // A little slack so the caret at the end of the text is never against the
   // border, and a floor so an emptied field stays clickable.
   const wanted = Math.max(b.w, measured + editSize.value, 40)
@@ -195,6 +206,7 @@ const style = computed(() => {
     // bold on commit would move the text you were just looking at.
     fontFamily: cssFamily(DEFAULT_FAMILY),
     fontWeight: cssWeight(bold.value),
+    fontStyle: cssStyle(italic.value),
     // The line's own colour, not the UI's text colour. What is being typed
     // has to look like what will be committed, and the page underneath is
     // rendered as-is -- so a grey label is typed in grey even in dark mode.
@@ -222,7 +234,7 @@ function targetWidth(lineIndex: number, lineWidth: number, lineHeight: number): 
   // 'shrink' and 'truncate' both keep the text inside the original line, so
   // only 'overflow' can make the target wider than the extraction says.
   if (patch.fit !== 'overflow') return lineWidth
-  return Math.max(lineWidth, measureText(patch.text, patch.fontFamily, size, patch.bold))
+  return Math.max(lineWidth, measureText(patch.text, patch.fontFamily, size, patch))
 }
 
 async function begin(lineIndex: number): Promise<void> {
@@ -238,6 +250,7 @@ async function begin(lineIndex: number): Promise<void> {
   // An existing patch's own weight, otherwise the weight the DOCUMENT set
   // this line in.
   bold.value = existing ? existing.bold === true : line?.bold === true
+  italic.value = existing ? existing.italic === true : line?.italic === true
   // The patch's own colour once it has one, otherwise the line's.
   color.value = existing ? existing.color : line?.color ?? [0, 0, 0]
   // Likewise the size -- and a patch stored by an older build carries 0,
@@ -252,7 +265,7 @@ async function begin(lineIndex: number): Promise<void> {
   // the file the browser fakes the weight by stroking whatever it does
   // have, and the fake is a different width from the one that will be
   // exported.
-  await loadFont(DEFAULT_FAMILY, bold.value)
+  await loadFont(DEFAULT_FAMILY, face.value)
   await nextTick()
   input.value?.focus()
   input.value?.select()
@@ -263,6 +276,7 @@ function cancel(): void {
   editingId.value = undefined
   draft.value = ''
   bold.value = false
+  italic.value = false
   size.value = 0
   color.value = [0, 0, 0]
   missing.value = []
@@ -276,16 +290,16 @@ function cancel(): void {
  * .notdef rather than failing, so without this a patch silently becomes a
  * row of empty boxes.
  */
-watch([draft, bold], async ([text]) => {
+watch([draft, bold, italic], async ([text]) => {
   if (text === '') { missing.value = []; return }
   try {
     // The FACE that will actually be drawn: a bold file is a different font
     // program with its own coverage, so checking the regular would answer a
     // question nobody asked.
-    const face = faceKey(DEFAULT_FAMILY, bold.value)
-    const bytes = (await fontsForExport([face])).get(face)
+    const key = faceKey(DEFAULT_FAMILY, face.value)
+    const bytes = (await fontsForExport([key])).get(key)
     if (!bytes) { missing.value = []; return }
-    missing.value = await getPdfClient().missingGlyphs(bytes, face, text)
+    missing.value = await getPdfClient().missingGlyphs(bytes, key, text)
   } catch {
     // A font that cannot be checked is not a reason to block an edit.
     missing.value = []
@@ -328,8 +342,8 @@ function commit(): void {
         type: 'updateObject',
         id: existing,
         patch: {
-          text: draft.value, fit: fit.value, bold: bold.value, fontSize: size.value,
-          color: color.value,
+          text: draft.value, fit: fit.value, fontSize: size.value,
+          bold: bold.value, italic: italic.value, color: color.value,
         },
       },
       'Edit text',
@@ -351,6 +365,7 @@ function commit(): void {
     text: draft.value,
     fontFamily: DEFAULT_FAMILY,
     bold: bold.value,
+    italic: italic.value,
     fontSize: size.value,
     // The pen position on the line being replaced, so the overlay draws the
     // replacement where the export will put it. See TextPatchObject.baseline.
@@ -430,14 +445,15 @@ defineExpose({ begin })
       />
 
       <!--
-        Ctrl/Cmd+B while typing, and nothing on screen for it.
+        Ctrl/Cmd+B and Ctrl/Cmd+I while typing, and nothing on screen for
+        either.
         
-        The weight is already correct on entry -- it is inherited from the
-        line being replaced -- so a visible toggle would be chrome in front
+        Both are already correct on entry -- they are inherited from the
+        line being replaced -- so visible toggles would be chrome in front
         of someone who asked to type a word, which is exactly the panel this
-        editor deliberately does not have. The shortcut is there for the
-        rarer case of wanting a different weight from the original, and the
-        inspector shows a Bold checkbox once the patch exists.
+        editor deliberately does not have. The shortcuts are there for the
+        rarer case of wanting a different style from the original, and the
+        inspector shows both checkboxes once the patch exists.
       -->
       <input
         ref="input"
@@ -452,6 +468,8 @@ defineExpose({ begin })
         @keydown.esc.prevent="cancel()"
         @keydown.ctrl.b.prevent="bold = !bold"
         @keydown.meta.b.prevent="bold = !bold"
+        @keydown.ctrl.i.prevent="italic = !italic"
+        @keydown.meta.i.prevent="italic = !italic"
         @blur="commit()"
       >
 

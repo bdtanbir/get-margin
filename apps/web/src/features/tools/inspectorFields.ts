@@ -89,9 +89,19 @@ const FONT_FAMILY: Field = {
  */
 const BOLD: Field = { key: 'bold', label: 'Bold', type: 'boolean' }
 
+/**
+ * Its own file, not the regular sheared over.
+ *
+ * A checkbox for the same reason as BOLD, and beside it rather than folded
+ * into a single "Style" picker: the two combine, so a four-option list
+ * would be spelling out a product of two independent switches.
+ */
+const ITALIC: Field = { key: 'italic', label: 'Italic', type: 'boolean' }
+
 const TEXT: Field[] = [
   FONT_FAMILY,
   BOLD,
+  ITALIC,
   { key: 'fontSize', label: 'Size', type: 'number', min: 4, max: 144, step: 1 },
   { key: 'color', label: 'Colour', type: 'color' },
   {
@@ -195,11 +205,13 @@ const REGISTRY: Partial<Record<EditObject['kind'], Field[]>> = {
    * three choices that all did the same thing.
    *
    * Everything else here is INHERITED from the line being replaced and then
-   * made correctable. That is the shape of the whole feature: font, weight,
-   * and size all used to be decided for the user, and weight and size were
-   * decided wrongly -- every patch was drawn regular, and every patch
-   * stored a 0 meaning "work the size out at export", which is not a number
-   * anybody can edit.
+   * made correctable. That is the shape of the whole feature: weight,
+   * slope, size, and colour are all read off the line MuPDF extracted, and
+   * every one of them used to be decided for the user and decided wrongly
+   * -- patches were drawn upright, regular, and black, at a size stored as
+   * 0 meaning "work it out at export", which is not a number anybody can
+   * edit. The FAMILY is still the user's choice, because `isSerif()` is the
+   * one flag MuPDF reports that cannot be trusted on an embedded font.
    *
    * Size steps in halves and reaches down to 1pt rather than the text
    * tool's 4pt floor: document text is routinely smaller than anything
@@ -209,6 +221,7 @@ const REGISTRY: Partial<Record<EditObject['kind'], Field[]>> = {
   textPatch: [
     FONT_FAMILY,
     BOLD,
+    ITALIC,
     { key: 'fontSize', label: 'Size', type: 'number', min: 1, max: 144, step: 0.5 },
     { key: 'color', label: 'Colour', type: 'color' },
   ],

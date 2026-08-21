@@ -95,10 +95,11 @@ export function buildReplacements(
       originalText: original,
       text,
       fontFamily: ctx.fontFamily,
-      // The weight the line is already set in, so Replace All does not
-      // un-bold every heading it touches. The match carries it out of the
-      // extraction for exactly this -- see Match.bold.
+      // The weight and slope the line is already set in, so Replace All
+      // does not un-bold or straighten every heading it touches. The match
+      // carries them out of the extraction for exactly this.
       bold: first.bold,
+      italic: first.italic,
       // The line's own size and pen position, for the same reason as the
       // weight: a patch built without them shows a zero in the inspector
       // and previews at the wrong height.

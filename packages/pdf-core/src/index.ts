@@ -37,11 +37,11 @@ export type { SourceField, SourceFieldType } from './write/fields.js'
 export { migrateEditDocument, LEGACY_SOURCE_ID } from './write/migrate.js'
 export { replay, WRITERS, type ObjectWriter, type WriteContext } from './write/index.js'
 /**
- * The family-and-weight addressing the writer and the browser share. The
+ * The family-and-style addressing the writer and the browser share. The
  * app builds its provider map with these keys; the writers look faces up by
  * them. See write/fonts.ts.
  */
-export { faceKey, type FontProvider } from './write/fonts.js'
+export { faceKey, type FaceStyle, type FontProvider } from './write/fonts.js'
 export {
   stripActiveContent, anythingStripped, nothingStripped, type StrippedContent,
 } from './write/sanitize.js'

@@ -394,14 +394,16 @@ describe('Inspector weight controls', () => {
     id: 't1', pageId: 'p1', kind: 'text', text: 'Hello',
     rect: { x: 10, y: 20, w: 100, h: 20 },
     rotation: 0, z: 1, locked: false, opacity: 1,
-    fontFamily: 'Inter', bold: false, fontSize: 14, color: [0, 0, 0], align: 'left',
+    fontFamily: 'Inter', bold: false, italic: false, fontSize: 14,
+    color: [0, 0, 0], align: 'left',
   }
 
   const patchObject: EditObject = {
     id: 'x1', pageId: 'p1', kind: 'textPatch',
     lineIndex: 0, originalHash: 'abcd1234', originalText: 'Was bold',
     text: 'Now says this',
-    fontFamily: 'Inter', bold: true, fontSize: 11, baseline: 118, color: [0, 0, 0],
+    fontFamily: 'Inter', bold: true, italic: true, fontSize: 11, baseline: 118,
+    color: [0, 0, 0],
     background: [1, 1, 1], backgroundConfidence: 1, fit: 'overflow',
     rect: { x: 10, y: 20, w: 100, h: 20 },
     rotation: 0, z: 1, locked: false, opacity: 1,
@@ -416,6 +418,9 @@ describe('Inspector weight controls', () => {
 
   const boldBox = (w: ReturnType<typeof mount>) =>
     w.get('[data-field="bold"]').get('input')
+
+  const italicBox = (w: ReturnType<typeof mount>) =>
+    w.get('[data-field="italic"]').get('input')
 
   it('offers Bold on a text object', () => {
     edits.applyOp({ type: 'addObject', object: textObject }, 'add')
@@ -457,6 +462,31 @@ describe('Inspector weight controls', () => {
     edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
     edits.select(['x1'])
     expect(mount(Inspector).find('[data-field="align"]').exists()).toBe(false)
+  })
+
+  it('offers Italic on a text object, and writes it', async () => {
+    edits.applyOp({ type: 'addObject', object: textObject }, 'add')
+    edits.select(['t1'])
+    const w = mount(Inspector)
+    await italicBox(w).setValue(true)
+    expect((edits.doc.objects.t1 as { italic?: boolean }).italic).toBe(true)
+  })
+
+  it('offers Italic on an edited line, ticked from what the line was', () => {
+    edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
+    edits.select(['x1'])
+    expect((italicBox(mount(Inspector)).element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('keeps bold and italic as separate switches, not one Style picker', async () => {
+    // They combine -- bold italic is a fourth face -- so a four-option list
+    // would be spelling out the product of two independent switches.
+    edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
+    edits.select(['x1'])
+    const w = mount(Inspector)
+    await italicBox(w).setValue(false)
+    expect((edits.doc.objects.x1 as { italic?: boolean }).italic).toBe(false)
+    expect((edits.doc.objects.x1 as { bold?: boolean }).bold).toBe(true)
   })
 
   it('offers Size on an edited line, showing the size the line was set in', () => {

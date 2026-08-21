@@ -18,6 +18,7 @@ function stubIndex(): PageQuadIndex {
       text,
       font: 'Helvetica',
       bold: false,
+      italic: false,
       color: [0, 0, 0] as Color,
       size: 10,
       baseline: 116,

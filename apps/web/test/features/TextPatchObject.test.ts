@@ -48,6 +48,11 @@ const baselineOf = (o: TextPatchObject): number =>
 const sizeOf = (o: TextPatchObject): number =>
   Number(mount(TextPatchObjectView, { props: { object: o } }).get('text').attributes('font-size'))
 
+const faceOf = (o: TextPatchObject): { weight: string | undefined; style: string | undefined } => {
+  const t = mount(TextPatchObjectView, { props: { object: o } }).get('text')
+  return { weight: t.attributes('font-weight'), style: t.attributes('font-style') }
+}
+
 describe('TextPatchObject', () => {
   it('sits on the line’s own baseline, not one derived from the box', () => {
     // 114, the pen position -- not 100 + 12 * 0.8 = 109.6.
@@ -77,5 +82,17 @@ describe('TextPatchObject', () => {
     // 0 means "the size of the line", which the overlay approximates from
     // the box because it has no extraction of its own to consult.
     expect(sizeOf(legacyPatch({ fontSize: 0 }))).toBeCloseTo(18 * 0.8, 5)
+  })
+
+  /**
+   * The real files are registered under this family at these descriptors,
+   * so asking for them by name is what picks up the drawn italic rather
+   * than the browser shearing the upright -- which is a different shape and
+   * a different width from the one `measureText` just returned.
+   */
+  it('asks for the face the patch is set in', () => {
+    expect(faceOf(patch({ bold: true, italic: true })))
+      .toEqual({ weight: '700', style: 'italic' })
+    expect(faceOf(patch())).toEqual({ weight: '400', style: 'normal' })
   })
 })

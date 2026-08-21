@@ -32,6 +32,8 @@ export type Match = {
    * replacement for the same line, and this is what makes them.
    */
   bold: boolean
+  /** Whether the line is set on a slant. See `LineRun.italic`. */
+  italic: boolean
   /**
    * The size the line is set in, and where its baseline sits in page space.
    *
@@ -162,6 +164,7 @@ export function findInPage(
           text: source.slice(start, end),
           lineText: source,
           bold: line.bold,
+          italic: line.italic,
           size: line.size,
           baseline: line.baseline,
           color: line.color,

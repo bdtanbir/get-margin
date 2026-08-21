@@ -58,6 +58,15 @@ export type TextObject = BaseObject & {
    * nobody has a file for would be a value the writer could only refuse.
    */
   bold?: boolean
+  /**
+   * Draw in the family's italic face.
+   *
+   * Optional and absent means upright, for the same reason as `bold`: no
+   * stored document needs migrating and no schema version moves. The two
+   * combine -- bold italic is a fourth FILE, not a bold file drawn on a
+   * slant.
+   */
+  italic?: boolean
   fontSize: number
   color: Color
   align: 'left' | 'center' | 'right'
@@ -243,6 +252,12 @@ export type TextPatchObject = BaseObject & {
    * which is what every patch written before this meant.
    */
   bold?: boolean
+  /**
+   * Draw the replacement on a slant, defaulted from the original line the
+   * same way `bold` is -- MuPDF reports `isItalic()` per run, verified
+   * against embedded TrueType and not only the standard 14.
+   */
+  italic?: boolean
   /**
    * The size to set the replacement in.
    *
