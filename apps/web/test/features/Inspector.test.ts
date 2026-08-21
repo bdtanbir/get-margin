@@ -92,10 +92,57 @@ describe('Inspector', () => {
     expect(w.find('[data-field="fontSize"]').exists()).toBe(false)
   })
 
+  /**
+   * Opacity is shown as a percentage and stored as the 0..1 the PDF format
+   * uses (/CA, and every writer and golden test below it). "0.15" in a box
+   * is a number people have to translate; 15 is one they read.
+   */
+  describe('opacity as a percentage', () => {
+    it('shows a stored 0..1 opacity as a percentage', () => {
+      edits.applyOp({ type: 'updateObject', id: 'o1', patch: { opacity: 0.15 } }, 'set')
+      edits.select(['o1'])
+      const input = mount(Inspector).get('[data-field="opacity"] input')
+        .element as HTMLInputElement
+      expect(input.value).toBe('15')
+    })
+
+    it('stores a percentage back as 0..1', async () => {
+      edits.select(['o1'])
+      const w = mount(Inspector)
+      await w.get('[data-field="opacity"] input').setValue('40')
+      expect(edits.doc.objects.o1?.opacity).toBe(0.4)
+    })
+
+    it('offers the whole percentage range', () => {
+      edits.select(['o1'])
+      const input = mount(Inspector).get('[data-field="opacity"] input')
+      expect(input.attributes('min')).toBe('0')
+      expect(input.attributes('max')).toBe('100')
+    })
+
+    // Floating point makes 0.29 * 100 into 28.999999999999996, and a box
+    // reading "28.999999999999996" is worse than the decimal it replaced.
+    it('shows a clean number for an opacity that does not divide evenly', () => {
+      edits.applyOp({ type: 'updateObject', id: 'o1', patch: { opacity: 0.29 } }, 'set')
+      edits.select(['o1'])
+      const input = mount(Inspector).get('[data-field="opacity"] input')
+        .element as HTMLInputElement
+      expect(input.value).toBe('29')
+    })
+
+    // Rotation shares the number field and must not be scaled by it.
+    it('leaves rotation in degrees', async () => {
+      edits.select(['o1'])
+      const w = mount(Inspector)
+      await w.get('[data-field="rotation"] input').setValue('45')
+      expect(edits.doc.objects.o1?.rotation).toBe(45)
+    })
+  })
+
   it('writes changes through applyOp, so they are undoable', async () => {
     edits.select(['o1'])
     const w = mount(Inspector)
-    await w.get('[data-field="opacity"] input').setValue('0.5')
+    await w.get('[data-field="opacity"] input').setValue('50')
     expect(edits.doc.objects.o1?.opacity).toBe(0.5)
     edits.undo()
     expect(edits.doc.objects.o1?.opacity).toBe(1)
@@ -119,7 +166,7 @@ describe('Inspector', () => {
     const w = mount(Inspector)
     const input = w.get('[data-field="opacity"] input')
     const before = edits.historySize
-    for (const v of ['0.9', '0.8', '0.7', '0.6']) await drag(input, v)
+    for (const v of ['90', '80', '70', '60']) await drag(input, v)
     // Still held: nothing committed yet, and the value is already live.
     expect(edits.historySize).toBe(before)
     expect(edits.doc.objects.o1?.opacity).toBe(0.6)
@@ -155,9 +202,9 @@ describe('Inspector', () => {
     const w = mount(Inspector)
     const input = w.get('[data-field="opacity"] input')
     const before = edits.historySize
-    await drag(input, '0.9')
+    await drag(input, '90')
     await input.trigger('change')
-    await drag(input, '0.4')
+    await drag(input, '40')
     await input.trigger('change')
     expect(edits.historySize).toBe(before + 2)
   })

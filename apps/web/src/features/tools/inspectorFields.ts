@@ -3,7 +3,19 @@ import { FONTS } from '@/lib/fonts'
 import { normalizeUri } from '@/lib/linkUrl'
 
 export type Field =
-  | { key: string; label: string; type: 'number'; min: number; max: number; step: number }
+  | {
+      key: string; label: string; type: 'number'; min: number; max: number; step: number
+      /**
+       * How many DISPLAY units one stored unit is worth, when the two differ.
+       * Opacity is the case: the format stores 0..1 (/CA, and every writer
+       * and golden below it), while "0.15" in a box is a number the reader
+       * has to translate and 15 is one they just read.
+       *
+       * Declared on the field rather than special-cased in the Inspector, so
+       * the read and the write can never disagree about the unit.
+       */
+      scale?: number
+    }
   | { key: string; label: string; type: 'color' }
   | {
       key: string; label: string; type: 'text'
@@ -22,7 +34,28 @@ export type Field =
   /** Static text. `key` is unused, but keeps the render loop uniform. */
   | { key: string; label: string; type: 'note'; text: string }
 
-const OPACITY: Field = { key: 'opacity', label: 'Opacity', type: 'number', min: 0, max: 1, step: 0.05 }
+const OPACITY: Field = {
+  key: 'opacity', label: 'Opacity', type: 'number',
+  min: 0, max: 100, step: 5, scale: 100,
+}
+
+/**
+ * A stored value in the units the field SHOWS.
+ *
+ * Rounded to two decimals because floating point turns 0.29 * 100 into
+ * 28.999999999999996, and a box reading that is worse than the decimal it
+ * replaced. Two decimals is finer than any step offered, so nothing a user
+ * can type is lost on the way back.
+ */
+export function toDisplay(field: Field, stored: unknown): unknown {
+  if (field.type !== 'number' || !field.scale || typeof stored !== 'number') return stored
+  return Number((stored * field.scale).toFixed(2))
+}
+
+/** The inverse: what the user typed, in the units the document stores. */
+export function fromDisplay(field: Field, shown: number): number {
+  return field.type === 'number' && field.scale ? shown / field.scale : shown
+}
 const ROTATION: Field = { key: 'rotation', label: 'Rotation', type: 'number', min: -180, max: 180, step: 1 }
 
 const SHAPE: Field[] = [

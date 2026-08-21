@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { ChevronLeft } from 'lucide-vue-next'
-import { fieldsFor, type Field } from './inspectorFields'
+import { fieldsFor, toDisplay, fromDisplay, type Field } from './inspectorFields'
 import { toHex, fromHex } from './colorInput'
 import TabOrderList from './TabOrderList.vue'
 import LayersPanel from '@/features/layers/LayersPanel.vue'
@@ -112,7 +112,7 @@ function onCommit(field?: Field): void {
 }
 
 function readInput(field: Field, target: HTMLInputElement | HTMLSelectElement): unknown {
-  if (field.type === 'number') return Number(target.value)
+  if (field.type === 'number') return fromDisplay(field, Number(target.value))
   if (field.type === 'color') return fromHex(target.value)
   return target.value
 }
@@ -214,7 +214,7 @@ function handleInput(field: Field, e: Event): void {
           :min="f.min"
           :max="f.max"
           :step="f.step"
-          :value="valueOf(f.key)"
+          :value="toDisplay(f, valueOf(f.key))"
           @input="(e) => handleInput(f, e)"
           @change="() => onCommit(f)"
           @blur="() => onCommit(f)"
