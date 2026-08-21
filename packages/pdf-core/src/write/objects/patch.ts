@@ -3,7 +3,7 @@ import type { ObjectWriter } from '../index.js'
 import type { TextPatchObject } from '../types.js'
 import { appendContent, addResource, fillColor } from '../content.js'
 import { num } from '../coords.js'
-import { pdfString } from '../fonts.js'
+import { pdfString, faceKey } from '../fonts.js'
 import { ASCENT_RATIO } from './text.js'
 
 /**
@@ -148,7 +148,8 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
   const w = lx1 - lx0
   const h = ly1 - ly0
 
-  const font = ctx.fonts.resolve(o.fontFamily)
+  const face = faceKey(o.fontFamily, o.bold)
+  const font = ctx.fonts.resolve(face)
   addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
 
   // A little bleed, because glyph quads sit tight against the ink and
@@ -173,7 +174,7 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
      */
     let size = o.fontSize > 0 ? o.fontSize : line.size > 0 ? line.size : h * 0.8
     let text = o.text
-    const advance = () => ctx.measure(text, o.fontFamily, size)
+    const advance = () => ctx.measure(text, face, size)
 
     if (o.fit === 'shrink') {
       // Only ever shrink: growing text to fill a box is not what was asked

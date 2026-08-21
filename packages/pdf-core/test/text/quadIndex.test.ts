@@ -1,8 +1,16 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { PdfDocument } from '../../src/index.js'
 import { buildQuadIndex } from '../../src/text/index.js'
+import { replay } from '../../src/write/index.js'
+import { emptyEditDocument } from '../../src/write/types.js'
 import { generateFixtures, fixturePath } from '../fixtures/index.js'
+
+const ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
+const fontFile = (f: string): Uint8Array =>
+  new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts', f)))
 
 beforeAll(async () => { await generateFixtures() }, 60_000)
 const bytes = (n: Parameters<typeof fixturePath>[0]): Uint8Array =>
@@ -41,6 +49,72 @@ describe('buildQuadIndex', () => {
       const lines = buildQuadIndex(doc, 0).lines
       expect(new Set(lines.map((l) => l.font)).size).toBeGreaterThan(1)
       for (const l of lines) expect(l.size).toBeGreaterThan(0)
+    })
+  })
+
+  /**
+   * Weight, per run.
+   *
+   * This is what the patch editor inherits from, and its absence was the
+   * bug: with nothing here to read, replacing a line defaulted to the
+   * regular face, so retyping a bold heading silently un-bolded it.
+   */
+  describe('bold', () => {
+    it('marks the bold run and only the bold run', () => {
+      withDoc('mixed-fonts', (doc) => {
+        const lines = buildQuadIndex(doc, 0).lines
+        const bold = lines.filter((l) => l.bold).map((l) => l.text)
+        expect(bold).toHaveLength(1)
+        expect(bold[0]).toContain('Helvetica-Bold')
+      })
+    })
+
+    it('does not mistake oblique or serif for bold', () => {
+      withDoc('mixed-fonts', (doc) => {
+        const lines = buildQuadIndex(doc, 0).lines
+        for (const name of ['Helvetica-Oblique', 'Times-Roman', 'Times-Italic', 'Courier']) {
+          expect(lines.find((l) => l.text.includes(name))!.bold).toBe(false)
+        }
+      })
+    })
+
+    /**
+     * The case that actually matters.
+     *
+     * Real documents embed SUBSETS of real font files rather than naming
+     * one of the standard 14, and the standard-14 case above proves nothing
+     * about those -- a different code path inside MuPDF reads a different
+     * source of truth. Writing a bold object and reading it back is the
+     * cheapest way to get a genuine embedded bold TrueType to ask about,
+     * and it also pins the two halves together: what the writer embeds is
+     * what the extractor recognises.
+     */
+    it('recognises an embedded bold TrueType, not just the standard 14', () => {
+      const fonts = new Map([
+        ['Inter', fontFile('Inter.ttf')],
+        ['Inter Bold', fontFile('Inter-Bold.ttf')],
+      ])
+      const out = replay(new Map([['src-0', bytes('simple-text')]]), {
+        ...emptyEditDocument(),
+        sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+        pageOrder: ['p0'],
+        pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
+        objects: {
+          h: {
+            id: 'h', pageId: 'p0', kind: 'text', text: 'Embedded heading',
+            rect: { x: 60, y: 500, w: 400, h: 30 },
+            rotation: 0, z: 1, locked: false, opacity: 1,
+            fontFamily: 'Inter', bold: true, fontSize: 18,
+            color: [0, 0, 0], align: 'left',
+          },
+        },
+      }, { fonts })
+
+      const doc = PdfDocument.open(out)
+      try {
+        const line = buildQuadIndex(doc, 0).lines.find((l) => l.text.includes('Embedded heading'))
+        expect(line?.bold).toBe(true)
+      } finally { doc.close() }
     })
   })
 

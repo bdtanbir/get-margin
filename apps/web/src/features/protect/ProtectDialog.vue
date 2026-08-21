@@ -6,7 +6,7 @@ import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
-import { fontsForExport, familiesUsed } from '@/lib/fonts'
+import { fontsForExport, facesUsed } from '@/lib/fonts'
 import type { PermissionName } from '@margin/pdf-core'
 
 const emit = defineEmits<{ close: [] }>()
@@ -78,8 +78,8 @@ async function removeProtection(): Promise<void> {
   busy.value = true
   error.value = ''
   try {
-    const families = familiesUsed(Object.values(edits.doc.objects))
-    const fonts = await fontsForExport(families)
+    const faces = facesUsed(Object.values(edits.doc.objects))
+    const fonts = await fontsForExport(faces)
     const bytes = await getPdfClient().save(edits.doc, fonts, undefined, undefined, undefined, true)
     downloadBytes(bytes, pdfFileName(doc.fileName))
     emit('close')
@@ -96,8 +96,8 @@ async function apply(): Promise<void> {
   error.value = ''
   doc.error = ''
   try {
-    const families = familiesUsed(Object.values(edits.doc.objects))
-    const fonts = await fontsForExport(families)
+    const faces = facesUsed(Object.values(edits.doc.objects))
+    const fonts = await fontsForExport(faces)
 
     const bytes = await getPdfClient().save(
       edits.doc, fonts, undefined, undefined,

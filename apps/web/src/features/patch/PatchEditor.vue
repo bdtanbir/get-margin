@@ -8,7 +8,9 @@ import { hashText } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
 import { getPdfClient } from '@/workers/pdfClient'
-import { fontsForExport, measureText, cssFamily, DEFAULT_FAMILY } from '@/lib/fonts'
+import {
+  fontsForExport, measureText, cssFamily, cssWeight, faceKey, loadFont, DEFAULT_FAMILY,
+} from '@/lib/fonts'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
 
 const props = defineProps<{
@@ -41,6 +43,20 @@ function patchOn(lineIndex: number): TextPatchObject | undefined {
   )
 }
 const draft = ref('')
+/**
+ * The weight the replacement will be drawn in.
+ *
+ * Seeded from the line's OWN font, not from a default. MuPDF reports
+ * `isBold()` per glyph run and `buildQuadIndex` carries it through, so
+ * retyping a bold heading stays bold. It used to come out regular every
+ * time -- the patch hardcoded the default face -- which read as the editor
+ * having thrown away formatting it could see perfectly well.
+ *
+ * Held here rather than read off `line` at commit time so that re-editing a
+ * patch resumes from the weight the user chose, not from the weight the
+ * document started with.
+ */
+const bold = ref(false)
 /**
  * What happens when the replacement is wider than the line it replaces.
  *
@@ -127,7 +143,7 @@ const editSize = computed(() => (box.value ? box.value.h * 0.8 : 0))
 const inputWidth = computed(() => {
   const b = box.value
   if (!b) return 0
-  const measured = measureText(draft.value || ' ', DEFAULT_FAMILY, editSize.value)
+  const measured = measureText(draft.value || ' ', DEFAULT_FAMILY, editSize.value, bold.value)
   // A little slack so the caret at the end of the text is never against the
   // border, and a floor so an emptied field stays clickable.
   const wanted = Math.max(b.w, measured + editSize.value, 40)
@@ -144,9 +160,12 @@ const style = computed(() => {
     width: `${inputWidth.value * props.zoom}px`,
     height: `${b.h * props.zoom}px`,
     fontSize: `${editSize.value * props.zoom}px`,
-    // The family the export will use, so what is typed is the width it will
-    // be measured at rather than whatever the UI font happens to be.
+    // The family AND weight the export will use, so what is typed is the
+    // width it will be measured at rather than whatever the UI font happens
+    // to be. Bold glyphs are wider; typing into a regular field and getting
+    // bold on commit would move the text you were just looking at.
     fontFamily: cssFamily(DEFAULT_FAMILY),
+    fontWeight: cssWeight(bold.value),
   }
 })
 
@@ -170,7 +189,7 @@ function targetWidth(lineIndex: number, lineWidth: number, lineHeight: number): 
   // 'shrink' and 'truncate' both keep the text inside the original line, so
   // only 'overflow' can make the target wider than the extraction says.
   if (patch.fit !== 'overflow') return lineWidth
-  return Math.max(lineWidth, measureText(patch.text, patch.fontFamily, size))
+  return Math.max(lineWidth, measureText(patch.text, patch.fontFamily, size, patch.bold))
 }
 
 async function begin(lineIndex: number): Promise<void> {
@@ -182,8 +201,18 @@ async function begin(lineIndex: number): Promise<void> {
   const existing = patchOn(lineIndex)
   editingId.value = existing?.id
   draft.value = existing ? existing.text : originalText.value
+  // An existing patch's own weight, otherwise the weight the DOCUMENT set
+  // this line in.
+  bold.value = existing ? existing.bold === true : props.index?.lines[lineIndex]?.bold === true
   fit.value = existing ? existing.fit : 'overflow'
   missing.value = []
+  // The face the field is about to be styled with, so the caret sits
+  // against its real metrics rather than the fallback's -- the same reason
+  // TextEditor loads before focusing. Bold makes this matter more: without
+  // the file the browser fakes the weight by stroking whatever it does
+  // have, and the fake is a different width from the one that will be
+  // exported.
+  await loadFont(DEFAULT_FAMILY, bold.value)
   await nextTick()
   input.value?.focus()
   input.value?.select()
@@ -193,6 +222,7 @@ function cancel(): void {
   editing.value = undefined
   editingId.value = undefined
   draft.value = ''
+  bold.value = false
   missing.value = []
 }
 
@@ -204,12 +234,16 @@ function cancel(): void {
  * .notdef rather than failing, so without this a patch silently becomes a
  * row of empty boxes.
  */
-watch(draft, async (text) => {
+watch([draft, bold], async ([text]) => {
   if (text === '') { missing.value = []; return }
   try {
-    const bytes = (await fontsForExport([DEFAULT_FAMILY])).get(DEFAULT_FAMILY)
+    // The FACE that will actually be drawn: a bold file is a different font
+    // program with its own coverage, so checking the regular would answer a
+    // question nobody asked.
+    const face = faceKey(DEFAULT_FAMILY, bold.value)
+    const bytes = (await fontsForExport([face])).get(face)
     if (!bytes) { missing.value = []; return }
-    missing.value = await getPdfClient().missingGlyphs(bytes, DEFAULT_FAMILY, text)
+    missing.value = await getPdfClient().missingGlyphs(bytes, face, text)
   } catch {
     // A font that cannot be checked is not a reason to block an edit.
     missing.value = []
@@ -248,7 +282,11 @@ function commit(): void {
    */
   if (existing) {
     edits.applyOp(
-      { type: 'updateObject', id: existing, patch: { text: draft.value, fit: fit.value } },
+      {
+        type: 'updateObject',
+        id: existing,
+        patch: { text: draft.value, fit: fit.value, bold: bold.value },
+      },
       'Edit text',
     )
     cancel()
@@ -267,6 +305,7 @@ function commit(): void {
     originalText: originalText.value,
     text: draft.value,
     fontFamily: DEFAULT_FAMILY,
+    bold: bold.value,
     fontSize: 0,
     color: [0, 0, 0],
     background: sample?.color ?? [1, 1, 1],
@@ -342,6 +381,16 @@ defineExpose({ begin })
         }"
       />
 
+      <!--
+        Ctrl/Cmd+B while typing, and nothing on screen for it.
+        
+        The weight is already correct on entry -- it is inherited from the
+        line being replaced -- so a visible toggle would be chrome in front
+        of someone who asked to type a word, which is exactly the panel this
+        editor deliberately does not have. The shortcut is there for the
+        rarer case of wanting a different weight from the original, and the
+        inspector shows a Bold checkbox once the patch exists.
+      -->
       <input
         ref="input"
         v-model="draft"
@@ -353,6 +402,8 @@ defineExpose({ begin })
         :style="style"
         @keydown.enter.prevent="commit()"
         @keydown.esc.prevent="cancel()"
+        @keydown.ctrl.b.prevent="bold = !bold"
+        @keydown.meta.b.prevent="bold = !bold"
         @blur="commit()"
       >
 

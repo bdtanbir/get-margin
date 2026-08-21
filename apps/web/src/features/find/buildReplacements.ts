@@ -95,6 +95,10 @@ export function buildReplacements(
       originalText: original,
       text,
       fontFamily: ctx.fontFamily,
+      // The weight the line is already set in, so Replace All does not
+      // un-bold every heading it touches. The match carries it out of the
+      // extraction for exactly this -- see Match.bold.
+      bold: first.bold,
       fontSize: 0,
       color: [0, 0, 0],
       background: sample?.color ?? [1, 1, 1],

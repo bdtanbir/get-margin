@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { TextPatchObject } from '@margin/pdf-core'
-import { cssFamily, measureText, ASCENT_RATIO } from '@/lib/fonts'
+import { cssFamily, cssWeight, measureText, ASCENT_RATIO } from '@/lib/fonts'
 import { rgb } from './svgPaint'
 
 /**
@@ -53,7 +53,7 @@ const laid = computed(() => {
   const { w, h } = o.rect
   let size = o.fontSize > 0 ? o.fontSize : h * 0.8
   let text = o.text
-  const advance = (): number => measureText(text, o.fontFamily, size)
+  const advance = (): number => measureText(text, o.fontFamily, size, o.bold)
 
   if (o.fit === 'shrink') {
     while (size > 4 && advance() > w) size -= 0.5
@@ -76,6 +76,8 @@ const baseline = computed(() => props.object.rect.y + laid.value.size * ASCENT_R
 const background = computed(() => rgb(props.object.background))
 const fill = computed(() => rgb(props.object.color))
 const family = computed(() => cssFamily(props.object.fontFamily))
+/** The weight the line was already in, unless the user has overridden it. */
+const weight = computed(() => cssWeight(props.object.bold))
 </script>
 
 <template>
@@ -99,6 +101,7 @@ const family = computed(() => cssFamily(props.object.fontFamily))
       :y="baseline"
       :fill="fill"
       :font-family="family"
+      :font-weight="weight"
       :font-size="laid.size"
       style="white-space: pre"
     >{{ laid.text }}</text>

@@ -23,12 +23,13 @@ const page: PageState = {
 }
 
 /** One line of text at y = 100..118, x = 40..160. */
-function indexOf(text: string): PageQuadIndex {
+function indexOf(text: string, bold = false): PageQuadIndex {
   return {
     lines: [{
       bbox: [40, 100, 160, 118],
       text,
       font: 'Test',
+      bold,
       size: 12,
       // Baseline sits above the box bottom by the font's descender.
       baseline: 114,
@@ -387,5 +388,84 @@ describe('warnings before committing', () => {
     expect(w.find('[data-patch-missing]').exists()).toBe(false)
     // Still editable: a font that cannot be checked is not a reason to stop.
     expect(w.find('[data-patch-input]').exists()).toBe(true)
+  })
+})
+
+/**
+ * The reported bug, from the user's end.
+ *
+ * A line the DOCUMENT set in bold came back regular the moment it was
+ * edited: the patch hardcoded the default face, so the one piece of
+ * formatting the editor could plainly see was the one it threw away.
+ * MuPDF reports the weight per run and `buildQuadIndex` carries it, so
+ * there is now something to inherit -- these pin the inheritance.
+ */
+describe('weight', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    missingGlyphs.mockResolvedValue([])
+    seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+  })
+
+  it('keeps a bold line bold when it is edited', async () => {
+    const edits = useEditsStore()
+    const w = mountEditor(indexOf('Bold heading', true))
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').setValue('New heading')
+    await w.get('[data-patch-input]').trigger('blur')
+    await flushPromises()
+    expect(patches(edits)[0]!.bold).toBe(true)
+  })
+
+  it('leaves a regular line regular', async () => {
+    const edits = useEditsStore()
+    const w = mountEditor(indexOf('Body text'))
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').setValue('New body text')
+    await w.get('[data-patch-input]').trigger('blur')
+    await flushPromises()
+    expect(patches(edits)[0]!.bold).toBe(false)
+  })
+
+  it('shows the inherited weight in the field being typed into', async () => {
+    // The field has to look like what will be committed. Typing into a
+    // regular box and getting bold on commit moves the text the user was
+    // just looking at.
+    const w = mountEditor(indexOf('Bold heading', true))
+    await w.get('[data-patch-target="0"]').trigger('click')
+    expect(w.get('[data-patch-input]').attributes('style')).toContain('font-weight: 700')
+  })
+
+  it('lets Ctrl+B override the inherited weight', async () => {
+    const edits = useEditsStore()
+    const w = mountEditor(indexOf('Bold heading', true))
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').setValue('New heading')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'b', ctrlKey: true })
+    await w.get('[data-patch-input]').trigger('blur')
+    await flushPromises()
+    expect(patches(edits)[0]!.bold).toBe(false)
+  })
+
+  it('resumes from the patch’s own weight when a line is edited again', async () => {
+    // Not from the document's. Once the user has overridden the weight,
+    // re-opening the line must not quietly undo that override.
+    const edits = useEditsStore()
+    const w = mountEditor(indexOf('Bold heading', true))
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').setValue('First edit')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'b', ctrlKey: true })
+    await w.get('[data-patch-input]').trigger('blur')
+    await flushPromises()
+
+    await w.get('[data-patch-target="0"]').trigger('click')
+    expect(w.get('[data-patch-input]').attributes('style')).toContain('font-weight: 400')
+    await w.get('[data-patch-input]').setValue('Second edit')
+    await w.get('[data-patch-input]').trigger('blur')
+    await flushPromises()
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.bold).toBe(false)
   })
 })

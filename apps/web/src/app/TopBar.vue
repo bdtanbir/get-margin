@@ -11,7 +11,7 @@ import { useFieldsStore } from '@/stores/fields'
 import { useTheme } from '@/lib/theme'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
-import { fontsForExport, familiesUsed } from '@/lib/fonts'
+import { fontsForExport, facesUsed } from '@/lib/fonts'
 import PrivacyPage from '@/features/document/PrivacyPage.vue'
 import { anythingStripped } from '@margin/pdf-core'
 import type { StrippedContent } from '@margin/pdf-core'
@@ -90,8 +90,8 @@ async function download(): Promise<void> {
     // The worker embeds font bytes it is given; it cannot fetch them
     // itself. Only the families actually in use are sent -- shipping all
     // five would add ~340KB of fetches to a document that uses one.
-    const families = familiesUsed(Object.values(edits.doc.objects))
-    const fonts = await fontsForExport(families)
+    const faces = facesUsed(Object.values(edits.doc.objects))
+    const fonts = await fontsForExport(faces)
     const bytes = await getPdfClient().save(
       edits.doc,
       fonts,

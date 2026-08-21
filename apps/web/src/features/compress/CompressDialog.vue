@@ -6,7 +6,7 @@ import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
-import { fontsForExport, familiesUsed } from '@/lib/fonts'
+import { fontsForExport, facesUsed } from '@/lib/fonts'
 import type { CompressionPreset, CompressionResult } from '@margin/pdf-core'
 
 const emit = defineEmits<{ close: [] }>()
@@ -51,8 +51,8 @@ async function estimate(): Promise<void> {
   error.value = ''
   result.value = undefined
   try {
-    const families = familiesUsed(Object.values(edits.doc.objects))
-    const fonts = await fontsForExport(families)
+    const faces = facesUsed(Object.values(edits.doc.objects))
+    const fonts = await fontsForExport(faces)
     result.value = await getPdfClient().compress(preset.value, edits.doc, fonts)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'This document could not be compressed.'

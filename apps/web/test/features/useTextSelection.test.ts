@@ -17,6 +17,7 @@ function stubIndex(): PageQuadIndex {
       bbox: [0, top, text.length * 10, bottom] as [number, number, number, number],
       text,
       font: 'Helvetica',
+      bold: false,
       size: 10,
       baseline: 116,
       chars: [...text].map((char, i) => ({

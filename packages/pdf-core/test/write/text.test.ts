@@ -16,7 +16,10 @@ const ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 const fontFile = (f: string): Uint8Array =>
   new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts', f)))
 
-const FONTS = new Map([['Inter', fontFile('Inter.ttf')]])
+const FONTS = new Map([
+  ['Inter', fontFile('Inter.ttf')],
+  ['Inter Bold', fontFile('Inter-Bold.ttf')],
+])
 
 function docWith(objects: EditObject[]): EditDocument {
   return {
@@ -31,14 +34,44 @@ function textObject(
   text: string,
   align: 'left' | 'center' | 'right' = 'left',
   y = 600,
+  bold?: boolean,
 ): EditObject {
   return {
     id: `t${n++}`, pageId: 'p0', kind: 'text', text,
     // Clear of the fixture's own text, which sits in the top ~130pt.
     rect: { x: 60, y, w: 400, h: 30 },
     rotation: 0, z: 1, locked: false, opacity: 1,
-    fontFamily: 'Inter', fontSize: 18, color: [0, 0, 0], align,
+    fontFamily: 'Inter', bold, fontSize: 18, color: [0, 0, 0], align,
   } as EditObject
+}
+
+/**
+ * Whether the line containing `needle` is drawn in a bold face, asked of
+ * the EXPORTED file rather than of the object that produced it.
+ *
+ * Goes through MuPDF's own `isBold()` -- the same call the patch editor
+ * relies on to inherit weight from a document it did not write. If this
+ * agrees, so does that.
+ */
+function boldnessOf(pdf: Uint8Array, needle: string): boolean | undefined {
+  const doc = PdfDocument.open(pdf)
+  try {
+    const page = doc._raw().loadPage(0)
+    try {
+      let found: boolean | undefined
+      let text = ''
+      let bold = false
+      page.toStructuredText('').walk({
+        beginLine: () => { text = ''; bold = false },
+        onChar: (c: string, _o: number[], font: { isBold(): boolean }) => {
+          if (text === '') bold = font.isBold()
+          text += c
+        },
+        endLine: () => { if (found === undefined && text.includes(needle)) found = bold },
+      } as never)
+      return found
+    } finally { page.destroy() }
+  } finally { doc.close() }
 }
 
 function extract(pdf: Uint8Array): string {
@@ -124,6 +157,75 @@ describe('text writer', () => {
     // Six objects add six short content fragments, not six copies of a
     // ~66KB font program.
     expect(many.byteLength).toBeLessThan(one.byteLength + 10_000)
+  })
+
+  /**
+   * Weight.
+   *
+   * The property under test is not "does it look heavier" -- it is that the
+   * BOLD FILE reached the document. A synthesised bold would satisfy the
+   * eye and fail every one of these: it would embed no second font program,
+   * measure at the regular's advance widths, and mis-place every centred
+   * and right-aligned line by the difference.
+   */
+  describe('bold', () => {
+    it('embeds the bold face as a font program of its own', () => {
+      const regular = replay(new Map([['src-0', bytes('simple-text')]]), docWith([textObject('Heading')]), { fonts: FONTS })
+      const both = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
+        textObject('Heading', 'left', 600, true),
+        textObject('Body', 'left', 560),
+      ]), { fonts: FONTS })
+      // Two weights are two font programs, and no subsetting means the
+      // second one is unmistakable rather than a rounding difference.
+      expect(both.byteLength).toBeGreaterThan(regular.byteLength + 20_000)
+    })
+
+    it('refuses to fall back to the regular when the bold was not supplied', () => {
+      // Silently substituting would export a heading nobody laid out, and
+      // nothing downstream would report it.
+      expect(() => replay(
+        new Map([['src-0', bytes('simple-text')]]),
+        docWith([textObject('Heading', 'left', 600, true)]),
+        { fonts: new Map([['Inter', fontFile('Inter.ttf')]]) },
+      )).toThrow(/Inter Bold/)
+    })
+
+    it('measures bold text at the bold face’s own advances', () => {
+      // Both centred in the same box. Bold glyphs are wider, so a bold line
+      // must START further left than the same string set regular -- which
+      // it only does if the alignment maths read the bold file.
+      const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
+        textObject('Widths', 'center', 600, true),
+        textObject('Widths', 'center', 560),
+      ]), { fonts: FONTS })
+      const blocks = JSON.parse(extract(out)).blocks as Array<{
+        lines: Array<{ text: string; bbox: { x: number; y: number; w: number } }>
+      }>
+      const lines = blocks.flatMap((b) => b.lines).filter((l) => l.text.includes('Widths'))
+      expect(lines).toHaveLength(2)
+      // Page space is top-down, so the higher object (y 600) extracts first.
+      const [boldLine, regularLine] = lines as [typeof lines[0], typeof lines[0]]
+      expect(boldLine.bbox.w).toBeGreaterThan(regularLine.bbox.w)
+      expect(boldLine.bbox.x).toBeLessThan(regularLine.bbox.x)
+      // Still centred on the box's centre, 260, despite being wider.
+      expect(Math.abs(boldLine.bbox.x + boldLine.bbox.w / 2 - 260)).toBeLessThan(3)
+    })
+
+    it('reads back as bold from the exported file', () => {
+      const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
+        textObject('Heading', 'left', 600, true),
+      ]), { fonts: FONTS })
+      expect(boldnessOf(out, 'Heading')).toBe(true)
+    })
+
+    it('leaves an object with no bold set drawn regular', () => {
+      // Absent means regular. This is what lets every document stored
+      // before weight existed replay unchanged, with no migration.
+      const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
+        textObject('Heading'),
+      ]), { fonts: FONTS })
+      expect(boldnessOf(out, 'Heading')).toBe(false)
+    })
   })
 
   it('matches the reviewed golden', async () => {

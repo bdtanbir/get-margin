@@ -380,3 +380,84 @@ describe('Inspector for form fields', () => {
     expect(open({ fieldType: 'signature' }).wrapper.text()).toContain('does not sign documents')
   })
 })
+
+/**
+ * Weight, from the panel the user actually reaches for it in.
+ *
+ * A text object had no weight control at all, and an edited line of the
+ * document's own text had no properties panel whatsoever -- so a patch that
+ * inherited the wrong weight could not be corrected without deleting it and
+ * starting again.
+ */
+describe('Inspector weight controls', () => {
+  const textObject: EditObject = {
+    id: 't1', pageId: 'p1', kind: 'text', text: 'Hello',
+    rect: { x: 10, y: 20, w: 100, h: 20 },
+    rotation: 0, z: 1, locked: false, opacity: 1,
+    fontFamily: 'Inter', bold: false, fontSize: 14, color: [0, 0, 0], align: 'left',
+  }
+
+  const patchObject: EditObject = {
+    id: 'x1', pageId: 'p1', kind: 'textPatch',
+    lineIndex: 0, originalHash: 'abcd1234', originalText: 'Was bold',
+    text: 'Now says this',
+    fontFamily: 'Inter', bold: true, fontSize: 0, color: [0, 0, 0],
+    background: [1, 1, 1], backgroundConfidence: 1, fit: 'overflow',
+    rect: { x: 10, y: 20, w: 100, h: 20 },
+    rotation: 0, z: 1, locked: false, opacity: 1,
+  }
+
+  let edits: ReturnType<typeof useEditsStore>
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    edits = useEditsStore()
+    seedDocument([{ id: 'p1', sourceIndex: 0 }])
+  })
+
+  const boldBox = (w: ReturnType<typeof mount>) =>
+    w.get('[data-field="bold"]').get('input')
+
+  it('offers Bold on a text object', () => {
+    edits.applyOp({ type: 'addObject', object: textObject }, 'add')
+    edits.select(['t1'])
+    expect(boldBox(mount(Inspector)).attributes('type')).toBe('checkbox')
+  })
+
+  it('writes the weight onto the object when it is ticked', async () => {
+    edits.applyOp({ type: 'addObject', object: textObject }, 'add')
+    edits.select(['t1'])
+    const w = mount(Inspector)
+    await boldBox(w).setValue(true)
+    expect((edits.doc.objects.t1 as { bold?: boolean }).bold).toBe(true)
+  })
+
+  it('offers Bold on an edited line of the document’s own text', () => {
+    edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
+    edits.select(['x1'])
+    const w = mount(Inspector)
+    // Ticked, because the patch inherited the weight of the line it
+    // replaced -- which is the whole fix, shown back to the user.
+    expect((boldBox(w).element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('lets the inherited weight be corrected after the fact', async () => {
+    edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
+    edits.select(['x1'])
+    const w = mount(Inspector)
+    await boldBox(w).setValue(false)
+    expect((edits.doc.objects.x1 as { bold?: boolean }).bold).toBe(false)
+  })
+
+  /**
+   * Size and alignment are inherited from the line being replaced and
+   * re-derived by the writer at export, so offering them here would offer
+   * to override something the user never chose.
+   */
+  it('does not offer size or alignment on a text patch', () => {
+    edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
+    edits.select(['x1'])
+    const w = mount(Inspector)
+    expect(w.find('[data-field="fontSize"]').exists()).toBe(false)
+    expect(w.find('[data-field="align"]').exists()).toBe(false)
+  })
+})

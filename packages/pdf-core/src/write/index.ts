@@ -45,8 +45,14 @@ export type WriteContext = {
    * writer written before Task 31 stays valid unchanged.
    */
   fonts: FontRegistry
-  /** Advance width of `text` in points. See createMeasurer in fonts.ts. */
-  measure: (text: string, family: string, size: number) => number
+  /**
+   * Advance width of `text` in points. See createMeasurer in fonts.ts.
+   *
+   * `face` is a `faceKey(family, bold)`, NOT a bare family -- bold glyphs
+   * are wider, and measuring them against the regular silently mis-places
+   * every centred and right-aligned line.
+   */
+  measure: (text: string, face: string, size: number) => number
   /**
    * Task 32, the third and final widening. Embed-once memo for image
    * XObjects, keyed by payload -- see xobject.ts.

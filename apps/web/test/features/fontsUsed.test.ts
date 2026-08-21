@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { familiesUsed } from '@/lib/fonts'
+import { facesUsed } from '@/lib/fonts'
 import type { EditObject } from '@margin/pdf-core'
 
 const object = (over: Partial<EditObject> & { kind: string }): EditObject => ({
@@ -17,17 +17,17 @@ const object = (over: Partial<EditObject> & { kind: string }): EditObject => ({
  * pressing Download failed with "font Inter was not provided", because
  * the collection did not know stamps had fonts.
  */
-describe('familiesUsed', () => {
+describe('facesUsed', () => {
   it('collects a text object’s font', () => {
-    expect(familiesUsed([object({ kind: 'text', fontFamily: 'Inter' })])).toEqual(['Inter'])
+    expect(facesUsed([object({ kind: 'text', fontFamily: 'Inter' })])).toEqual(['Inter'])
   })
 
   it('collects a stamp’s font — the kind that broke Download', () => {
-    expect(familiesUsed([object({ kind: 'stamp', fontFamily: 'Inter' })])).toEqual(['Inter'])
+    expect(facesUsed([object({ kind: 'stamp', fontFamily: 'Inter' })])).toEqual(['Inter'])
   })
 
   it('collects a text patch’s font', () => {
-    expect(familiesUsed([object({ kind: 'textPatch', fontFamily: 'Roboto' })])).toEqual(['Roboto'])
+    expect(facesUsed([object({ kind: 'textPatch', fontFamily: 'Roboto' })])).toEqual(['Roboto'])
   })
 
   /**
@@ -36,25 +36,25 @@ describe('familiesUsed', () => {
    * nothing here, and that is correct rather than an omission.
    */
   it('asks for nothing on behalf of a form field', () => {
-    expect(familiesUsed([object({ kind: 'field' })])).toEqual([])
+    expect(facesUsed([object({ kind: 'field' })])).toEqual([])
   })
 
   it('reports each family once', () => {
-    expect(familiesUsed([
+    expect(facesUsed([
       object({ kind: 'text', fontFamily: 'Inter' }),
       object({ kind: 'stamp', fontFamily: 'Inter' }),
     ])).toEqual(['Inter'])
   })
 
   it('collects several families', () => {
-    expect(familiesUsed([
+    expect(facesUsed([
       object({ kind: 'text', fontFamily: 'Inter' }),
       object({ kind: 'stamp', fontFamily: 'Merriweather' }),
     ]).sort()).toEqual(['Inter', 'Merriweather'])
   })
 
   it('ignores kinds with no font', () => {
-    expect(familiesUsed([
+    expect(facesUsed([
       object({ kind: 'rect' }),
       object({ kind: 'ink' }),
       object({ kind: 'redaction' }),
@@ -62,10 +62,34 @@ describe('familiesUsed', () => {
   })
 
   it('ignores an empty family rather than asking for a font called ""', () => {
-    expect(familiesUsed([object({ kind: 'text', fontFamily: '' })])).toEqual([])
+    expect(facesUsed([object({ kind: 'text', fontFamily: '' })])).toEqual([])
   })
 
   it('handles no objects', () => {
-    expect(familiesUsed([])).toEqual([])
+    expect(facesUsed([])).toEqual([])
+  })
+
+  /**
+   * Weight is part of the address, not a decoration on it.
+   *
+   * Bold is a SEPARATE font file. A collector that returned bare families
+   * would hand the export the regular for a bold heading, and the writer
+   * would throw "font Inter Bold was not provided" at Download time --
+   * the same class of failure the stamp case above records, one axis over.
+   */
+  it('asks for the bold face when an object is bold', () => {
+    expect(facesUsed([object({ kind: 'text', fontFamily: 'Inter', bold: true })]))
+      .toEqual(['Inter Bold'])
+  })
+
+  it('asks for both faces when a document mixes weights', () => {
+    expect(facesUsed([
+      object({ kind: 'text', fontFamily: 'Inter' }),
+      object({ kind: 'text', fontFamily: 'Inter', bold: true }),
+    ]).sort()).toEqual(['Inter', 'Inter Bold'])
+  })
+
+  it('treats an absent bold as regular, so a stored document needs no migration', () => {
+    expect(facesUsed([object({ kind: 'textPatch', fontFamily: 'Inter' })])).toEqual(['Inter'])
   })
 })

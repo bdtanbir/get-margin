@@ -15,9 +15,12 @@ import { buildQuadIndex } from '../../src/text/index.js'
 beforeAll(async () => { await generateFixtures() }, 60_000)
 
 const ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
-const FONTS = new Map([[
-  'Inter', new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts/Inter.ttf'))),
-]])
+const fontFile = (f: string): Uint8Array =>
+  new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts', f)))
+const FONTS = new Map([
+  ['Inter', fontFile('Inter.ttf')],
+  ['Inter Bold', fontFile('Inter-Bold.ttf')],
+])
 const src = (): Uint8Array => new Uint8Array(readFileSync(fixturePath('simple-text')))
 
 /** A character no Latin subset carries, spelled as an escape. */
@@ -60,6 +63,38 @@ function doc(objects: EditObject[]): EditDocument {
 
 const write = (objects: EditObject[]): Uint8Array =>
   replay(new Map([['src-0', src()]]), doc(objects), { fonts: FONTS })
+
+/**
+ * Whether the exported line containing `needle` is drawn bold, asked of
+ * MuPDF rather than of the object that produced it -- the same call the app
+ * uses to inherit weight from a document it did not write.
+ */
+function boldnessOf(pdf: Uint8Array, needle: string): boolean | undefined {
+  const d = PdfDocument.open(pdf)
+  try {
+    return buildQuadIndex(d, 0).lines.find((l) => l.text.includes(needle))?.bold
+  } finally { d.close() }
+}
+
+/** The full text of the exported line containing `needle`. */
+function textOf(pdf: Uint8Array, needle: string): string {
+  const d = PdfDocument.open(pdf)
+  try {
+    const line = buildQuadIndex(d, 0).lines.find((l) => l.text.includes(needle))
+    if (!line) throw new Error(`no line containing "${needle}"`)
+    return line.text
+  } finally { d.close() }
+}
+
+/** The rendered width of the line containing `needle`, in page units. */
+function widthOf(pdf: Uint8Array, needle: string): number {
+  const d = PdfDocument.open(pdf)
+  try {
+    const line = buildQuadIndex(d, 0).lines.find((l) => l.text.includes(needle))
+    if (!line) throw new Error(`no line containing "${needle}"`)
+    return line.bbox[2] - line.bbox[0]
+  } finally { d.close() }
+}
 
 describe('hashText', () => {
   it('is stable for the same text', () => {
@@ -265,5 +300,71 @@ describe('missingGlyphs', () => {
 
   it('reports each missing character once', () => {
     expect(missingGlyphs(inter(), CJK + CJK + CJK)).toHaveLength(1)
+  })
+})
+
+/**
+ * Weight on a replacement for the DOCUMENT's own text.
+ *
+ * The reported bug: editing a line that was set bold gave back regular. The
+ * writer half of the fix is here -- the patch has to reach for the bold FACE
+ * -- and the inheriting half is in the app, which seeds `bold` from
+ * `LineRun.bold`. Both halves are needed and neither is sufficient.
+ */
+describe('text patch weight', () => {
+  it('draws the replacement in the bold face when the patch says so', () => {
+    const out = write([patch({ text: 'Bold replacement', bold: true }) as EditObject])
+    expect(boldnessOf(out, 'Bold replacement')).toBe(true)
+  })
+
+  it('draws it regular when the patch does not', () => {
+    const out = write([patch({ text: 'Plain replacement' }) as EditObject])
+    expect(boldnessOf(out, 'Plain replacement')).toBe(false)
+  })
+
+  it('refuses rather than quietly substituting the regular', () => {
+    // The same discipline the text writer keeps. A patch that came out at
+    // the wrong weight would look like a formatting bug in the user's
+    // source document rather than a missing file in ours.
+    expect(() => replay(new Map([['src-0', src()]]), doc([
+      patch({ text: 'Bold replacement', bold: true }) as EditObject,
+    ]), { fonts: new Map([['Inter', fontFile('Inter.ttf')]]) })).toThrow(/Inter Bold/)
+  })
+
+  it('draws bold wider than regular for the same string', () => {
+    // The ink itself. Bold outlines are wider, so a patch that ran through
+    // the bold file must occupy more of the line than the same string set
+    // regular. 'overflow' so nothing rescales it on the way.
+    const same = 'Identical replacement string'
+    const regular = write([patch({ id: 'r', text: same, fit: 'overflow' }) as EditObject])
+    const bold = write([patch({ id: 'b', text: same, fit: 'overflow', bold: true }) as EditObject])
+    expect(widthOf(bold, 'Identical')).toBeGreaterThan(widthOf(regular, 'Identical'))
+  })
+
+  it('truncates bold sooner, because it measured the bold advances', () => {
+    // The MEASUREMENT path, isolated. 'truncate' drops characters until the
+    // line fits, so a wider face must lose more of them. If the fit loop
+    // measured the regular while the writer drew the bold, this comes back
+    // equal -- text drawn past the edge of the box it was told to stay in.
+    //
+    // Line 1 rather than line 0 on purpose: bold is only a few percent
+    // wider, so the cut point moves by a fraction of a character. The
+    // fixture's second line is long and set small, which is enough
+    // characters for that fraction to be a whole one.
+    const long = 'A replacement long enough that it will certainly not fit on this line at all'
+    const on1 = (over: Partial<TextPatchObject>): EditObject => {
+      const original = linesOf(src())[1]!
+      return patch({
+        lineIndex: 1,
+        originalHash: hashText(original),
+        originalText: original,
+        fit: 'truncate',
+        text: long,
+        ...over,
+      }) as EditObject
+    }
+    const regular = write([on1({ id: 'r' })])
+    const bold = write([on1({ id: 'b', bold: true })])
+    expect(textOf(bold, 'A rep').length).toBeLessThan(textOf(regular, 'A rep').length)
   })
 })

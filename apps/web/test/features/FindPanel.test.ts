@@ -22,6 +22,7 @@ const quad = (i: number): Quad => [i * 10, 0, i * 10 + 10, 0, i * 10, 18, i * 10
 const match = (page: number, text = 'hit'): PageMatch => ({
   page, lineIndex: 0, start: 0, end: text.length, text,
   lineText: text,
+  bold: false,
   quads: [...text].map((_, i) => quad(i)),
 })
 

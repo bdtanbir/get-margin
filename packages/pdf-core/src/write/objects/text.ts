@@ -2,7 +2,7 @@ import type { ObjectWriter } from '../index.js'
 import type { TextObject } from '../types.js'
 import { appendContent, addResource, fillColor, alphaState } from '../content.js'
 import { toContentSpace, num } from '../coords.js'
-import { pdfString } from '../fonts.js'
+import { pdfString, faceKey } from '../fonts.js'
 
 /**
  * Baseline sits this fraction of the font size below the line's top, and
@@ -17,7 +17,10 @@ export const LINE_HEIGHT = 1.2
 export const writeText: ObjectWriter = (ctx, object) => {
   const o = object as TextObject
   const { x, y, w, h } = toContentSpace(o.rect)
-  const font = ctx.fonts.resolve(o.fontFamily)
+  // The FACE, not the family: bold is a separate font program with its own
+  // advance widths, and the alignment maths below reads them.
+  const face = faceKey(o.fontFamily, o.bold)
+  const font = ctx.fonts.resolve(face)
   addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
 
   const lines = o.text.split('\n')
@@ -29,7 +32,7 @@ export const writeText: ObjectWriter = (ctx, object) => {
     // PDF text origin is the BASELINE, and the box's y is its bottom edge,
     // so lines are laid out downward from the box top.
     const baseline = y + h - o.fontSize * ASCENT_RATIO - i * o.fontSize * LINE_HEIGHT
-    const advance = ctx.measure(line, o.fontFamily, o.fontSize)
+    const advance = ctx.measure(line, face, o.fontSize)
     const offset = o.align === 'center' ? (w - advance) / 2 : o.align === 'right' ? w - advance : 0
     ops.push(`1 0 0 1 ${num(x + offset)} ${num(baseline)} Tm`, `${pdfString(line)} Tj`)
   })

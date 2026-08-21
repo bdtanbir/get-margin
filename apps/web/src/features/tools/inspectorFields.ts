@@ -65,14 +65,33 @@ const SHAPE: Field[] = [
   OPACITY, ROTATION,
 ]
 
+/**
+ * The font picker, shared by the text tool and the document-text editor.
+ *
+ * Built from the curated set rather than hardcoded: a font added to
+ * lib/fonts.ts must appear in the picker, or it exists only to whoever
+ * reads the source.
+ */
+const FONT_FAMILY: Field = {
+  key: 'fontFamily', label: 'Font', type: 'select',
+  options: FONTS.map((f) => ({ value: f.family, label: f.family })),
+}
+
+/**
+ * A checkbox, not a weight dropdown.
+ *
+ * Two weights are bundled -- 400 and 700 -- so a "Weight" select would be a
+ * list of two, and a list of two that maps onto on/off is a checkbox
+ * wearing a costume. If more weights are ever bundled this becomes a
+ * select, and the stored `bold: boolean` becomes the numeric weight it
+ * always wanted to be; until the files exist, offering the choice would be
+ * offering something the writer can only refuse.
+ */
+const BOLD: Field = { key: 'bold', label: 'Bold', type: 'boolean' }
+
 const TEXT: Field[] = [
-  {
-    key: 'fontFamily', label: 'Font', type: 'select',
-    // Built from the curated set rather than hardcoded: a font added to
-    // lib/fonts.ts must appear in the picker, or it exists only to whoever
-    // reads the source.
-    options: FONTS.map((f) => ({ value: f.family, label: f.family })),
-  },
+  FONT_FAMILY,
+  BOLD,
   { key: 'fontSize', label: 'Size', type: 'number', min: 4, max: 144, step: 1 },
   { key: 'color', label: 'Colour', type: 'color' },
   {
@@ -166,6 +185,21 @@ function formField(o: FieldObject): Field[] {
 const REGISTRY: Partial<Record<EditObject['kind'], Field[]>> = {
   rect: SHAPE, ellipse: SHAPE, line: SHAPE, arrow: SHAPE,
   text: TEXT,
+
+  /**
+   * A replacement for a line of the DOCUMENT's own text.
+   *
+   * Deliberately a SHORT list, and deliberately not `TEXT`. Size and
+   * alignment are inherited from the line being replaced -- the writer
+   * reads both back out of the page at export -- so offering them here
+   * would offer to override things the user did not choose in the first
+   * place. Font, weight, and colour are the three the substitution can get
+   * visibly wrong, and weight is the one it used to get wrong every time:
+   * every patch was drawn regular, so retyping a bold heading quietly
+   * un-bolded it. It now inherits the line's own weight and this is where
+   * that inheritance can be corrected.
+   */
+  textPatch: [FONT_FAMILY, BOLD, { key: 'color', label: 'Colour', type: 'color' }],
   whiteout: [{ key: 'fill', label: 'Colour', type: 'color' }, OPACITY],
   ink: [
     { key: 'color', label: 'Colour', type: 'color' },

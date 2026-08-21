@@ -99,7 +99,7 @@ describe('SelectionToolbar markup actions', () => {
   const index = {
     lines: [{
       bbox: [10, 100, 30, 120] as [number, number, number, number],
-      text: 'ab', font: 'Helvetica', size: 10, baseline: 116,
+      text: 'ab', font: 'Helvetica', bold: false, size: 10, baseline: 116,
       chars: [
         { char: 'a', quad: [10, 100, 20, 100, 10, 120, 20, 120] as never },
         { char: 'b', quad: [20, 100, 30, 100, 20, 120, 30, 120] as never },

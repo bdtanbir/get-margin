@@ -45,6 +45,19 @@ export type TextObject = BaseObject & {
   kind: 'text'
   text: string
   fontFamily: string
+  /**
+   * Draw in the family's weight-700 face.
+   *
+   * OPTIONAL, and absent means regular -- which is what every text object
+   * written before this existed meant, so no stored document needs
+   * migrating and no schema version had to move. Same reasoning as
+   * `PageEntry.tabOrder`.
+   *
+   * A boolean rather than a numeric weight because two weights are what is
+   * bundled (see apps/web/public/fonts/LICENSES.md). A `fontWeight: 500`
+   * nobody has a file for would be a value the writer could only refuse.
+   */
+  bold?: boolean
   fontSize: number
   color: Color
   align: 'left' | 'center' | 'right'
@@ -217,6 +230,19 @@ export type TextPatchObject = BaseObject & {
   originalText: string
   text: string
   fontFamily: string
+  /**
+   * Draw the replacement in the bold face.
+   *
+   * Defaulted from the ORIGINAL line's own font when the patch is created:
+   * MuPDF's extraction reports `isBold()` per glyph run, so replacing a
+   * bold heading no longer quietly demotes it to regular. Still stored
+   * rather than re-derived at export, because the user can override it and
+   * an override has to survive.
+   *
+   * Optional for the same reason as TextObject.bold: absent means regular,
+   * which is what every patch written before this meant.
+   */
+  bold?: boolean
   /** 0 means "derive from the line's height". */
   fontSize: number
   color: Color

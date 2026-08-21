@@ -5,7 +5,7 @@ import type { TextObject } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
-import { cssFamily, loadFont, LINE_HEIGHT } from '@/lib/fonts'
+import { cssFamily, cssWeight, loadFont, LINE_HEIGHT } from '@/lib/fonts'
 import { rgb } from './objects/svgPaint'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
@@ -43,6 +43,7 @@ const style = computed(() => {
     fontSize: `${o.fontSize * props.zoom}px`,
     lineHeight: String(LINE_HEIGHT),
     fontFamily: cssFamily(o.fontFamily),
+    fontWeight: cssWeight(o.bold),
     color: rgb(o.color),
     textAlign: o.align,
   }
@@ -94,7 +95,7 @@ function stop(): void {
 // rather than the fallback's.
 watch(target, async (o) => {
   if (!o) return
-  await loadFont(o.fontFamily)
+  await loadFont(o.fontFamily, o.bold)
   await nextTick()
   const node = el.value
   if (!node) return

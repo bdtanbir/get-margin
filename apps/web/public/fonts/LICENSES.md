@@ -5,13 +5,36 @@ full text is in [`OFL.txt`](./OFL.txt) beside this file. The OFL requires the
 licence to travel with the font, which is why it is vendored here rather than
 linked.
 
-| File | Family | Copyright | Upstream |
-|---|---|---|---|
-| `Inter.ttf` | Inter | Copyright 2020 The Inter Project Authors | https://github.com/rsms/inter |
-| `Roboto.ttf` | Roboto | Copyright 2011 The Roboto Project Authors | https://github.com/googlefonts/roboto-classic |
-| `SourceSerif4.ttf` | Source Serif 4 | Copyright 2014 The Source Serif 4 Project Authors | https://github.com/adobe-fonts/source-serif |
-| `Merriweather.ttf` | Merriweather | Copyright 2020 The Merriweather Project Authors, with Reserved Font Name "Merriweather" | https://github.com/EbenSorkin/Merriweather4 |
-| `JetBrainsMono.ttf` | JetBrains Mono | Copyright 2020 The JetBrains Mono Project Authors | https://github.com/JetBrains/JetBrainsMono |
+| File | Family | Weight | Copyright | Upstream |
+|---|---|---|---|---|
+| `Inter.ttf` | Inter | 400 | Copyright 2020 The Inter Project Authors | https://github.com/rsms/inter |
+| `Inter-Bold.ttf` | Inter | 700 | Copyright 2020 The Inter Project Authors | https://github.com/rsms/inter |
+| `Roboto.ttf` | Roboto | 400 | Copyright 2011 The Roboto Project Authors | https://github.com/googlefonts/roboto-classic |
+| `Roboto-Bold.ttf` | Roboto | 700 | Copyright 2011 The Roboto Project Authors | https://github.com/googlefonts/roboto-classic |
+| `SourceSerif4.ttf` | Source Serif 4 | 400 | Copyright 2014 The Source Serif 4 Project Authors | https://github.com/adobe-fonts/source-serif |
+| `SourceSerif4-Bold.ttf` | Source Serif 4 | 700 | Copyright 2014 The Source Serif 4 Project Authors | https://github.com/adobe-fonts/source-serif |
+| `Merriweather.ttf` | Merriweather | 400 | Copyright 2020 The Merriweather Project Authors, with Reserved Font Name "Merriweather" | https://github.com/EbenSorkin/Merriweather4 |
+| `Merriweather-Bold.ttf` | Merriweather | 700 | Copyright 2020 The Merriweather Project Authors, with Reserved Font Name "Merriweather" | https://github.com/EbenSorkin/Merriweather4 |
+| `JetBrainsMono.ttf` | JetBrains Mono | 400 | Copyright 2020 The JetBrains Mono Project Authors | https://github.com/JetBrains/JetBrainsMono |
+| `JetBrainsMono-Bold.ttf` | JetBrains Mono | 700 | Copyright 2020 The JetBrains Mono Project Authors | https://github.com/JetBrains/JetBrainsMono |
+
+### Why a real bold file and not a synthesised one
+
+A viewer asked for bold with only a regular face loaded draws *faux* bold —
+it strokes the regular outlines. That is cheap and it is wrong here for a
+reason that is not aesthetic: faux bold keeps the **regular's advance
+widths**, so a centred or right-aligned line would be positioned by the
+writer's `measure()` against metrics that do not describe the ink on the
+page. The preview would agree with the export and both would be visibly
+off-centre. A real weight-700 instance costs one more file per family
+(~33–130 KB, fetched only when a document actually uses it) and makes the
+measurement true.
+
+Fetched at `:700` from the **v1** CSS endpoint. `:wght@700` is css2 syntax
+and the v1 endpoint ignores it and serves weight 400 instead — silently,
+because what comes back is still a perfectly valid TrueType. `fonts.test.ts`
+asserts each bold measures wider than its regular so that mistake cannot be
+committed twice.
 
 ### Signature script faces (browser-only)
 
@@ -42,10 +65,12 @@ measured 57–65% of raw size, and `subsetFonts()` makes no difference for a
 freshly registered font). Variable Merriweather is 4.6 MB, so a document with
 one line of text in it would carry roughly 3 MB of font.
 
-These files are therefore the static weight-400 instances Google Fonts serves
-to legacy user agents, refetchable with `pnpm --filter @margin/web fonts:fetch`
+These files are therefore the static weight-400 and weight-700 instances
+Google Fonts serves to legacy user agents, refetchable with
+`pnpm --filter @margin/web fonts:fetch`
 (see `apps/web/scripts/fetch-fonts.mjs`, which records the exact request).
-Combined they are ~340 KB, and a typical document embeds one of them.
+Combined they are ~680 KB across both weights, and a typical document embeds
+one or two of them.
 
 Subsetting — which would cut even that to a few KB — needs `pdf-lib` +
 `@pdf-lib/fontkit` and is deliberately deferred to Phase 4

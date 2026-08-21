@@ -22,6 +22,15 @@ export type Match = {
    * work the search has already done.
    */
   lineText: string
+  /**
+   * Whether the line is set in a bold face.
+   *
+   * Carried for the same reason as `lineText`: Replace All turns a match
+   * into a text patch, and a patch that does not know the line was bold
+   * redraws it regular. Find and the patch editor must produce the same
+   * replacement for the same line, and this is what makes them.
+   */
+  bold: boolean
   /** One quad per matched character, for highlighting. */
   quads: Quad[]
 }
@@ -140,6 +149,7 @@ export function findInPage(
           end,
           text: source.slice(start, end),
           lineText: source,
+          bold: line.bold,
           quads: line.chars.slice(start, end).map((c) => c.quad),
         })
       }

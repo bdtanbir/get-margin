@@ -10,6 +10,26 @@ export type LineRun = {
   bbox: [number, number, number, number]
   text: string
   font: string
+  /**
+   * Whether the run is set in a BOLD face.
+   *
+   * Carried because editing a line has to be able to redraw it at the
+   * weight it was already in. Without this the patch editor had nothing to
+   * inherit from and defaulted every replacement to regular, so retyping a
+   * bold heading silently demoted it -- the one thing about the original
+   * the user could see and the edit could not preserve.
+   *
+   * `isBold()` is the authority and it is reliable for both the standard 14
+   * (`Helvetica-Bold` -> true) and embedded TrueType subsets, which is the
+   * real-world case. The name check behind it is for generators that embed
+   * a bold face without setting the OS/2 macStyle bit -- the flag is then
+   * false and the name is the only remaining evidence.
+   *
+   * Note that `isSerif()` is NOT carried, deliberately: it returns true for
+   * every embedded TTF this was tested against, Inter included, so it would
+   * be a coin flip dressed up as a fact.
+   */
+  bold: boolean
   size: number
   /**
    * The line's baseline in page space -- where the glyphs actually sit.
@@ -45,6 +65,21 @@ export type PageQuadIndex = { lines: LineRun[] }
  * containment is a heuristic that mis-assigns characters wherever two lines'
  * boxes overlap -- superscripts, tight leading, and rotated runs.
  */
+/**
+ * Names that mean bold even when the font's own weight flag does not say so.
+ *
+ * Not a substitute for `isBold()` -- a supplement to it. Some generators
+ * embed a subset of a bold face and leave the OS/2 macStyle bit clear, and
+ * for those the PostScript name is the only thing left that knows. Kept
+ * narrow on purpose: "Semibold" and "Demibold" are here because they read
+ * as bold on the page, while "Medium" is not, because it does not.
+ */
+const BOLD_IN_NAME = /bold|black|heavy|semibold|demibold|-bd\b/i
+
+function isBoldFace(font: { isBold(): boolean; getName(): string }): boolean {
+  return font.isBold() || BOLD_IN_NAME.test(font.getName())
+}
+
 export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadIndex {
   // Validates the index and range before a page is ever loaded, matching
   // renderPage's discipline.
@@ -57,6 +92,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
     let chars: CharQuad[] = []
     let bbox: [number, number, number, number] | undefined
     let font = ''
+    let bold = false
     let size = 0
     let baseline = 0
 
@@ -65,6 +101,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         bbox = [lineBox[0], lineBox[1], lineBox[2], lineBox[3]]
         chars = []
         font = ''
+        bold = false
         size = 0
         baseline = 0
       },
@@ -75,6 +112,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         // line that ends with whitespace carrying no font.
         if (!font) {
           font = charFont.getName()
+          bold = isBoldFace(charFont)
           size = charSize
           // The pen position, which IS the baseline. Taken from the first
           // character for the same reason as the font and size.
@@ -90,6 +128,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
             bbox,
             text: chars.map((c) => c.char).join(''),
             font,
+            bold,
             size,
             baseline,
             chars,
