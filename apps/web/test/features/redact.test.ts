@@ -9,7 +9,7 @@ import { useSelectionStore } from '@/stores/selection'
 import { useToolsStore } from '@/stores/tools'
 import { TOOLS } from '@/features/tools/toolList'
 import type { PageState } from '@/stores/document'
-import type { RedactionObject, EditObject } from '@margin/pdf-core'
+import type { Color, RedactionObject, EditObject } from '@margin/pdf-core'
 
 vi.mock('@/workers/pdfClient', () => ({
   getPdfClient: () => ({ listFields: vi.fn(async () => []), quadIndex: vi.fn(async () => ({ lines: [] })) }),
@@ -30,7 +30,7 @@ const CHAR_QUADS = [
 const INDEX = {
   lines: [{
     bbox: [100, 100, 220, 120] as [number, number, number, number],
-    text: 'ab', font: 'Helvetica', bold: false, size: 12, baseline: 116,
+    text: 'ab', font: 'Helvetica', bold: false, color: [0, 0, 0] as Color, size: 12, baseline: 116,
     chars: [
       { char: 'a', quad: CHAR_QUADS[0] as never },
       { char: 'b', quad: CHAR_QUADS[1] as never },

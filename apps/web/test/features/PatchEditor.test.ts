@@ -4,7 +4,9 @@ import { setActivePinia, createPinia } from 'pinia'
 import PatchEditor from '@/features/patch/PatchEditor.vue'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
-import { hashText, type PageQuadIndex, type Quad, type TextPatchObject } from '@margin/pdf-core'
+import {
+  hashText, type Color, type PageQuadIndex, type Quad, type TextPatchObject,
+} from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 
 const missingGlyphs = vi.fn<() => Promise<string[]>>()
@@ -23,13 +25,14 @@ const page: PageState = {
 }
 
 /** One line of text at y = 100..118, x = 40..160. */
-function indexOf(text: string, bold = false): PageQuadIndex {
+function indexOf(text: string, bold = false, color: Color = [0, 0, 0]): PageQuadIndex {
   return {
     lines: [{
       bbox: [40, 100, 160, 118],
       text,
       font: 'Test',
       bold,
+      color,
       size: 12,
       // Baseline sits above the box bottom by the font's descender.
       baseline: 114,
@@ -539,5 +542,69 @@ describe('size', () => {
     )
     await commit(mountEditor(INDEX), 'Second edit')
     expect(patches(edits)[0]!.fontSize).toBe(20)
+  })
+})
+
+/**
+ * Colour.
+ *
+ * The reported bug: a grey label turned black the moment it was edited,
+ * because the patch hardcoded `[0, 0, 0]`. MuPDF reports the fill per run
+ * -- already converted to three channels whatever the page's own colour
+ * space was -- so there is now something to inherit.
+ */
+describe('colour', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    missingGlyphs.mockResolvedValue([])
+    seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+  })
+
+  /** The grey the fixture PDF sets its label column in. */
+  const GREY: Color = [0.42, 0.45, 0.5]
+
+  const commit = async (w: ReturnType<typeof mountEditor>, text: string) => {
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').setValue(text)
+    await w.get('[data-patch-input]').trigger('blur')
+    await flushPromises()
+  }
+
+  it('keeps a grey line grey when it is edited', async () => {
+    const edits = useEditsStore()
+    await commit(mountEditor(indexOf('Issue Date', false, GREY)), 'Issue Date nice')
+    expect(patches(edits)[0]!.color).toEqual(GREY)
+  })
+
+  it('keeps a black line black', async () => {
+    const edits = useEditsStore()
+    await commit(mountEditor(indexOf('Body text')), 'New body text')
+    expect(patches(edits)[0]!.color).toEqual([0, 0, 0])
+  })
+
+  it('types in the line’s colour rather than the theme’s', async () => {
+    // The page underneath is rendered as-is, so the field has to show the
+    // document's colour -- not the UI text colour, which in dark mode is
+    // close to white and would misrepresent every edit.
+    const w = mountEditor(indexOf('Issue Date', false, GREY))
+    await w.get('[data-patch-target="0"]').trigger('click')
+    expect(w.get('[data-patch-input]').attributes('style')).toContain('color: rgb(107, 115, 128)')
+  })
+
+  it('keeps a colour the user chose when the line is edited again', async () => {
+    // Inheritance is the DEFAULT, not a rule. Once the colour has been
+    // overridden in the inspector, re-opening the line must not quietly
+    // reset it to the document's.
+    const edits = useEditsStore()
+    await commit(mountEditor(indexOf('Issue Date', false, GREY)), 'First edit')
+    edits.applyOp(
+      { type: 'updateObject', id: patches(edits)[0]!.id, patch: { color: [1, 0, 0] } },
+      'recolour',
+    )
+    await commit(mountEditor(indexOf('Issue Date', false, GREY)), 'Second edit')
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.color).toEqual([1, 0, 0])
   })
 })

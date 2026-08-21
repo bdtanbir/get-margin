@@ -19,6 +19,7 @@ function match(over: Partial<PageMatch> = {}): PageMatch {
     bold: false,
     size: 12,
     baseline: 14,
+    color: [0, 0, 0],
     quads: Array.from({ length: end - start }, (_, i) => quad(start + i)),
     ...over,
   }
@@ -167,5 +168,24 @@ describe('buildReplacements', () => {
       match({ lineIndex: 1, lineText: 'the b' }),
     ], 'x', ctx())
     expect(new Set(plan.patches.map((p) => p.id)).size).toBe(2)
+  })
+
+  /**
+   * Replace All used to blacken every match it touched. On any document
+   * with grey or coloured text that is an unasked-for change on every row
+   * it changed -- and unlike the patch editor, where the user is looking at
+   * one line, it happens to dozens at once and out of view.
+   */
+  it('keeps each line’s own colour, weight, and size', () => {
+    const plan = buildReplacements(
+      [match({ color: [0.42, 0.45, 0.5], bold: true, size: 9, baseline: 20 })],
+      'a',
+      ctx(),
+    )
+    const patch = plan.patches[0]!
+    expect(patch.color).toEqual([0.42, 0.45, 0.5])
+    expect(patch.bold).toBe(true)
+    expect(patch.fontSize).toBe(9)
+    expect(patch.baseline).toBe(20)
   })
 })

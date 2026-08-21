@@ -18,6 +18,7 @@ function pageOf(...lines: string[]): PageQuadIndex {
         text,
         font: 'Test',
         bold,
+        color: [0, 0, 0],
         size: 12,
         baseline: li * 20 + 14,
         chars: [...text].map((char, i) => ({

@@ -25,6 +25,7 @@ const match = (page: number, text = 'hit'): PageMatch => ({
   bold: false,
   size: 12,
   baseline: 14,
+  color: [0, 0, 0],
   quads: [...text].map((_, i) => quad(i)),
 })
 

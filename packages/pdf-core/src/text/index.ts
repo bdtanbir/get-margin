@@ -1,4 +1,5 @@
 import type { PdfDocument } from '../engine.js'
+import type { Color } from '../write/types.js'
 
 /** 8 numbers: the four corners of one character's box, in MuPDF page space. */
 export type Quad = [number, number, number, number, number, number, number, number]
@@ -30,6 +31,19 @@ export type LineRun = {
    * be a coin flip dressed up as a fact.
    */
   bold: boolean
+  /**
+   * The colour the run is FILLED with, sRGB 0..1 -- the same range and the
+   * same type every object in the format stores.
+   *
+   * MuPDF hands this to `onChar` already converted to three components
+   * whatever the page's own colour space was: a grey fill and a CMYK fill
+   * both arrive as RGB, verified against a fixture drawn in all three.
+   *
+   * Carried because editing a line used to hardcode black, so replacing a
+   * word in a grey label turned it black -- the edit announced itself by
+   * being the only thing on the row in the wrong colour.
+   */
+  color: Color
   size: number
   /**
    * The line's baseline in page space -- where the glyphs actually sit.
@@ -80,6 +94,21 @@ function isBoldFace(font: { isBold(): boolean; getName(): string }): boolean {
   return font.isBold() || BOLD_IN_NAME.test(font.getName())
 }
 
+/**
+ * A glyph's fill colour as an sRGB triple.
+ *
+ * MuPDF converts to three components before it gets here -- grey and CMYK
+ * fills both arrive as RGB, which a fixture drawn in all three confirms --
+ * so the guard is for the case where a future version does not, and black
+ * is the only honest answer to a colour this cannot read. Guessing from a
+ * one- or four-component array would be inventing a colour and presenting
+ * it as the document's.
+ */
+function toRgb(color: readonly number[] | undefined): Color {
+  if (!color || color.length !== 3) return [0, 0, 0]
+  return [color[0]!, color[1]!, color[2]!]
+}
+
 export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadIndex {
   // Validates the index and range before a page is ever loaded, matching
   // renderPage's discipline.
@@ -93,6 +122,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
     let bbox: [number, number, number, number] | undefined
     let font = ''
     let bold = false
+    let color: Color = [0, 0, 0]
     let size = 0
     let baseline = 0
 
@@ -102,10 +132,11 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         chars = []
         font = ''
         bold = false
+        color = [0, 0, 0]
         size = 0
         baseline = 0
       },
-      onChar(c, origin, charFont, charSize, quad) {
+      onChar(c, origin, charFont, charSize, quad, charColor) {
         // The run's font and size come from its first character. A line is
         // already a homogeneous style run in MuPDF's model, so later
         // characters agree; taking the first avoids an empty string on a
@@ -113,6 +144,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         if (!font) {
           font = charFont.getName()
           bold = isBoldFace(charFont)
+          color = toRgb(charColor)
           size = charSize
           // The pen position, which IS the baseline. Taken from the first
           // character for the same reason as the font and size.
@@ -129,6 +161,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
             text: chars.map((c) => c.char).join(''),
             font,
             bold,
+            color,
             size,
             baseline,
             chars,

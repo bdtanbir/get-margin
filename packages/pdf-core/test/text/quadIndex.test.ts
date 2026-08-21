@@ -118,6 +118,46 @@ describe('buildQuadIndex', () => {
     })
   })
 
+  /**
+   * Colour, per run.
+   *
+   * What the patch editor inherits so an edit does not repaint the line it
+   * replaces. Its absence was visible on any document with grey or coloured
+   * text: replacing a word in a grey label turned that row black, and the
+   * edit announced itself by being the only thing on the line in the wrong
+   * colour.
+   */
+  describe('colour', () => {
+    it('reads each run’s own fill, not a default', () => {
+      withDoc('simple-text', (doc) => {
+        const lines = buildQuadIndex(doc, 0).lines
+        // The fixture draws its heading in black and its body in 0.2 grey.
+        const heading = lines.find((l) => l.text.includes('Hello margin'))!
+        const body = lines.find((l) => l.text.includes('Second line'))!
+        expect(heading.color).toEqual([0, 0, 0])
+        expect(body.color[0]).toBeCloseTo(0.2, 2)
+        expect(body.color[1]).toBeCloseTo(0.2, 2)
+        expect(body.color[2]).toBeCloseTo(0.2, 2)
+      })
+    })
+
+    it('always reports three channels, whatever the page’s colour space', () => {
+      // MuPDF converts before it reaches the walker -- a grey fill and a
+      // CMYK fill both arrive as RGB. The format stores an sRGB triple and
+      // has nowhere to put a fourth channel, so this is the property the
+      // rest of the pipeline depends on rather than an incidental one.
+      withDoc('mixed-fonts', (doc) => {
+        for (const line of buildQuadIndex(doc, 0).lines) {
+          expect(line.color).toHaveLength(3)
+          for (const channel of line.color) {
+            expect(channel).toBeGreaterThanOrEqual(0)
+            expect(channel).toBeLessThanOrEqual(1)
+          }
+        }
+      })
+    })
+  })
+
   // Page space is top-down with the CropBox origin normalised, so every quad
   // must land inside [0, w] x [0, h] -- the same box toPixmap renders into.
   it('produces quads inside the page bounds', () => {

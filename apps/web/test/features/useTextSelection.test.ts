@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { charAt, useTextSelection } from '@/features/overlay/useTextSelection'
 import { useSelectionStore, mergeQuads } from '@/stores/selection'
-import type { PageQuadIndex, Quad } from '@margin/pdf-core'
+import type { Color, PageQuadIndex, Quad } from '@margin/pdf-core'
 
 /**
  * Three lines of four characters, 10pt tall, stacked top-down in MuPDF page
@@ -18,6 +18,7 @@ function stubIndex(): PageQuadIndex {
       text,
       font: 'Helvetica',
       bold: false,
+      color: [0, 0, 0] as Color,
       size: 10,
       baseline: 116,
       chars: [...text].map((char, i) => ({

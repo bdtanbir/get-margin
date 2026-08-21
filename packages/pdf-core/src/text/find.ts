@@ -1,4 +1,5 @@
 import type { PageQuadIndex, Quad } from './index.js'
+import type { Color } from '../write/types.js'
 
 export type FindOptions = {
   caseSensitive?: boolean
@@ -40,6 +41,8 @@ export type Match = {
    */
   size: number
   baseline: number
+  /** The colour the line is filled with. See `LineRun.color`. */
+  color: Color
   /** One quad per matched character, for highlighting. */
   quads: Quad[]
 }
@@ -161,6 +164,7 @@ export function findInPage(
           bold: line.bold,
           size: line.size,
           baseline: line.baseline,
+          color: line.color,
           quads: line.chars.slice(start, end).map((c) => c.quad),
         })
       }

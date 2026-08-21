@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { nanoid } from 'nanoid'
 import { pageViewSize } from '@margin/transform'
 import type { PageState } from '@/stores/document'
-import type { EditObject, PageQuadIndex, TextPatchObject } from '@margin/pdf-core'
+import type { Color, EditObject, PageQuadIndex, TextPatchObject } from '@margin/pdf-core'
 import { hashText } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
@@ -11,6 +11,7 @@ import { getPdfClient } from '@/workers/pdfClient'
 import {
   fontsForExport, measureText, cssFamily, cssWeight, faceKey, loadFont, DEFAULT_FAMILY,
 } from '@/lib/fonts'
+import { rgb } from '@/features/overlay/objects/svgPaint'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
 
 const props = defineProps<{
@@ -68,6 +69,16 @@ const bold = ref(false)
  * document holds a sentinel.
  */
 const size = ref(0)
+/**
+ * The colour the replacement will be filled with.
+ *
+ * Seeded from the line's own fill, which MuPDF reports per run. It used to
+ * be hardcoded black, so replacing a word in a grey label turned that row
+ * black -- the edit announced itself by being the only thing on the line in
+ * the wrong colour, which is the opposite of what a text edit should look
+ * like.
+ */
+const color = ref<Color>([0, 0, 0])
 /**
  * What happens when the replacement is wider than the line it replaces.
  *
@@ -184,6 +195,10 @@ const style = computed(() => {
     // bold on commit would move the text you were just looking at.
     fontFamily: cssFamily(DEFAULT_FAMILY),
     fontWeight: cssWeight(bold.value),
+    // The line's own colour, not the UI's text colour. What is being typed
+    // has to look like what will be committed, and the page underneath is
+    // rendered as-is -- so a grey label is typed in grey even in dark mode.
+    color: rgb(color.value),
   }
 })
 
@@ -223,6 +238,8 @@ async function begin(lineIndex: number): Promise<void> {
   // An existing patch's own weight, otherwise the weight the DOCUMENT set
   // this line in.
   bold.value = existing ? existing.bold === true : line?.bold === true
+  // The patch's own colour once it has one, otherwise the line's.
+  color.value = existing ? existing.color : line?.color ?? [0, 0, 0]
   // Likewise the size -- and a patch stored by an older build carries 0,
   // the "work it out at export" sentinel, so re-opening one heals it to the
   // real number rather than showing the sentinel back to the user.
@@ -247,6 +264,7 @@ function cancel(): void {
   draft.value = ''
   bold.value = false
   size.value = 0
+  color.value = [0, 0, 0]
   missing.value = []
 }
 
@@ -311,6 +329,7 @@ function commit(): void {
         id: existing,
         patch: {
           text: draft.value, fit: fit.value, bold: bold.value, fontSize: size.value,
+          color: color.value,
         },
       },
       'Edit text',
@@ -336,7 +355,7 @@ function commit(): void {
     // The pen position on the line being replaced, so the overlay draws the
     // replacement where the export will put it. See TextPatchObject.baseline.
     baseline: l.baseline,
-    color: [0, 0, 0],
+    color: color.value,
     background: sample?.color ?? [1, 1, 1],
     backgroundConfidence: sample?.confidence ?? 0,
     fit: fit.value,
@@ -427,7 +446,7 @@ defineExpose({ begin })
         data-patch-input
         aria-label="Replacement text"
         class="pointer-events-auto absolute box-border border border-accent bg-surface px-0.5
-               leading-none text-text focus:outline-none"
+               leading-none focus:outline-none"
         :style="style"
         @keydown.enter.prevent="commit()"
         @keydown.esc.prevent="cancel()"

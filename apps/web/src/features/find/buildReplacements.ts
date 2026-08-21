@@ -104,7 +104,10 @@ export function buildReplacements(
       // and previews at the wrong height.
       fontSize: first.size,
       baseline: first.baseline,
-      color: [0, 0, 0],
+      // The line's own fill. Replace All used to blacken every match it
+      // touched, which on a document with any grey or coloured text is a
+      // change nobody asked for on every row it changed.
+      color: first.color,
       background: sample?.color ?? [1, 1, 1],
       backgroundConfidence: sample?.confidence ?? 0,
       fit: 'shrink',
