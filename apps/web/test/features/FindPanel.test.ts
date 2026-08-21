@@ -23,6 +23,8 @@ const match = (page: number, text = 'hit'): PageMatch => ({
   page, lineIndex: 0, start: 0, end: text.length, text,
   lineText: text,
   bold: false,
+  size: 12,
+  baseline: 14,
   quads: [...text].map((_, i) => quad(i)),
 })
 

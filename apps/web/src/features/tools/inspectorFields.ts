@@ -189,17 +189,29 @@ const REGISTRY: Partial<Record<EditObject['kind'], Field[]>> = {
   /**
    * A replacement for a line of the DOCUMENT's own text.
    *
-   * Deliberately a SHORT list, and deliberately not `TEXT`. Size and
-   * alignment are inherited from the line being replaced -- the writer
-   * reads both back out of the page at export -- so offering them here
-   * would offer to override things the user did not choose in the first
-   * place. Font, weight, and colour are the three the substitution can get
-   * visibly wrong, and weight is the one it used to get wrong every time:
-   * every patch was drawn regular, so retyping a bold heading quietly
-   * un-bolded it. It now inherits the line's own weight and this is where
-   * that inheritance can be corrected.
+   * Deliberately not `TEXT`. Alignment is not offered because a patch has
+   * no box of its own to align within -- it redraws a line the document
+   * laid out, from that line's own left edge -- so the control would be
+   * three choices that all did the same thing.
+   *
+   * Everything else here is INHERITED from the line being replaced and then
+   * made correctable. That is the shape of the whole feature: font, weight,
+   * and size all used to be decided for the user, and weight and size were
+   * decided wrongly -- every patch was drawn regular, and every patch
+   * stored a 0 meaning "work the size out at export", which is not a number
+   * anybody can edit.
+   *
+   * Size steps in halves and reaches down to 1pt rather than the text
+   * tool's 4pt floor: document text is routinely smaller than anything
+   * anyone would place by hand, and the fine print on a real payment slip
+   * sits around 5.
    */
-  textPatch: [FONT_FAMILY, BOLD, { key: 'color', label: 'Colour', type: 'color' }],
+  textPatch: [
+    FONT_FAMILY,
+    BOLD,
+    { key: 'fontSize', label: 'Size', type: 'number', min: 1, max: 144, step: 0.5 },
+    { key: 'color', label: 'Colour', type: 'color' },
+  ],
   whiteout: [{ key: 'fill', label: 'Colour', type: 'color' }, OPACITY],
   ink: [
     { key: 'color', label: 'Colour', type: 'color' },

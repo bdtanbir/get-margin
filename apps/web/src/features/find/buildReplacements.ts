@@ -99,7 +99,11 @@ export function buildReplacements(
       // un-bold every heading it touches. The match carries it out of the
       // extraction for exactly this -- see Match.bold.
       bold: first.bold,
-      fontSize: 0,
+      // The line's own size and pen position, for the same reason as the
+      // weight: a patch built without them shows a zero in the inspector
+      // and previews at the wrong height.
+      fontSize: first.size,
+      baseline: first.baseline,
       color: [0, 0, 0],
       background: sample?.color ?? [1, 1, 1],
       backgroundConfidence: sample?.confidence ?? 0,

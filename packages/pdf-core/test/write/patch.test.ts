@@ -368,3 +368,75 @@ describe('text patch weight', () => {
     expect(textOf(bold, 'A rep').length).toBeLessThan(textOf(regular, 'A rep').length)
   })
 })
+
+/**
+ * Size on a replacement for the DOCUMENT's own text.
+ *
+ * The writer already honoured `fontSize`; what was missing was anything
+ * that could set it, and a guarantee that setting it does not move the text
+ * off the line it is replacing. These pin the second half: a resized
+ * replacement changes height and NOT baseline, because the writer sits it
+ * on the pen position it re-extracts rather than on one derived from the
+ * box and the size.
+ */
+describe('text patch size', () => {
+  /** The height of the exported line containing `needle`, in page units. */
+  const heightOf = (pdf: Uint8Array, needle: string): number => {
+    const d = PdfDocument.open(pdf)
+    try {
+      const line = buildQuadIndex(d, 0).lines.find((l) => l.text.includes(needle))
+      if (!line) throw new Error(`no line containing "${needle}"`)
+      return line.bbox[3] - line.bbox[1]
+    } finally { d.close() }
+  }
+
+  const baselineOf = (pdf: Uint8Array, needle: string): number => {
+    const d = PdfDocument.open(pdf)
+    try {
+      const line = buildQuadIndex(d, 0).lines.find((l) => l.text.includes(needle))
+      if (!line) throw new Error(`no line containing "${needle}"`)
+      return line.baseline
+    } finally { d.close() }
+  }
+
+  const sizeOf = (pdf: Uint8Array, needle: string): number => {
+    const d = PdfDocument.open(pdf)
+    try {
+      const line = buildQuadIndex(d, 0).lines.find((l) => l.text.includes(needle))
+      if (!line) throw new Error(`no line containing "${needle}"`)
+      return line.size
+    } finally { d.close() }
+  }
+
+  it('sets the replacement in the size the patch asks for', () => {
+    const out = write([patch({ text: 'Resized', fontSize: 30, fit: 'overflow' }) as EditObject])
+    expect(sizeOf(out, 'Resized')).toBeCloseTo(30, 1)
+  })
+
+  it('still matches the original line when the size is left at 0', () => {
+    // The sentinel every patch written before the size was editable holds.
+    // The fixture's first line is set in 24pt.
+    const out = write([patch({ text: 'Inherited', fontSize: 0, fit: 'overflow' }) as EditObject])
+    expect(sizeOf(out, 'Inherited')).toBeCloseTo(24, 1)
+  })
+
+  it('grows the text without moving the line it sits on', () => {
+    // The whole reason the writer reads the pen position rather than
+    // deriving one: a bigger replacement has to grow UPWARD from the
+    // baseline it shares with the text around it, not slide down the page.
+    const small = write([patch({ id: 's', text: 'Sized', fontSize: 12, fit: 'overflow' }) as EditObject])
+    const large = write([patch({ id: 'l', text: 'Sized', fontSize: 30, fit: 'overflow' }) as EditObject])
+    expect(heightOf(large, 'Sized')).toBeGreaterThan(heightOf(small, 'Sized') * 2)
+    expect(baselineOf(large, 'Sized')).toBeCloseTo(baselineOf(small, 'Sized'), 1)
+  })
+
+  it('measures the chosen size when deciding whether it fits', () => {
+    // 'truncate' cuts until the line fits. A larger size must lose more
+    // characters -- which it only does if the fit loop measured at the size
+    // the text is actually drawn in.
+    const long = 'A replacement long enough that it will not fit'
+    const small = write([patch({ id: 's', text: long, fontSize: 10, fit: 'truncate' }) as EditObject])
+    const large = write([patch({ id: 'l', text: long, fontSize: 20, fit: 'truncate' }) as EditObject])
+    expect(textOf(large, 'A rep').length).toBeLessThan(textOf(small, 'A rep').length)
+  })
+})

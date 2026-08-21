@@ -401,7 +401,7 @@ describe('Inspector weight controls', () => {
     id: 'x1', pageId: 'p1', kind: 'textPatch',
     lineIndex: 0, originalHash: 'abcd1234', originalText: 'Was bold',
     text: 'Now says this',
-    fontFamily: 'Inter', bold: true, fontSize: 0, color: [0, 0, 0],
+    fontFamily: 'Inter', bold: true, fontSize: 11, baseline: 118, color: [0, 0, 0],
     background: [1, 1, 1], backgroundConfidence: 1, fit: 'overflow',
     rect: { x: 10, y: 20, w: 100, h: 20 },
     rotation: 0, z: 1, locked: false, opacity: 1,
@@ -449,15 +449,28 @@ describe('Inspector weight controls', () => {
   })
 
   /**
-   * Size and alignment are inherited from the line being replaced and
-   * re-derived by the writer at export, so offering them here would offer
-   * to override something the user never chose.
+   * A patch redraws a line the document laid out, from that line's own left
+   * edge. It has no box of its own to align within, so the control would be
+   * three choices that all did the same thing.
    */
-  it('does not offer size or alignment on a text patch', () => {
+  it('does not offer alignment on a text patch', () => {
+    edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
+    edits.select(['x1'])
+    expect(mount(Inspector).find('[data-field="align"]').exists()).toBe(false)
+  })
+
+  it('offers Size on an edited line, showing the size the line was set in', () => {
+    edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
+    edits.select(['x1'])
+    const box = mount(Inspector).get('[data-field="fontSize"]').get('input')
+    expect((box.element as HTMLInputElement).value).toBe('11')
+  })
+
+  it('writes a new size onto the patch', async () => {
     edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
     edits.select(['x1'])
     const w = mount(Inspector)
-    expect(w.find('[data-field="fontSize"]').exists()).toBe(false)
-    expect(w.find('[data-field="align"]').exists()).toBe(false)
+    await w.get('[data-field="fontSize"]').get('input').setValue('18')
+    expect((edits.doc.objects.x1 as { fontSize: number }).fontSize).toBe(18)
   })
 })

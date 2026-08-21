@@ -66,12 +66,27 @@ const laid = computed(() => {
 /**
  * The baseline, in page space.
  *
- * The writer puts it at `y + h - size * ASCENT_RATIO` measured up from the
- * box's bottom in a y-UP space. Measured down from the box's top, which is
- * what page space gives, that is the same line at `y + size *
- * ASCENT_RATIO`.
+ * THE LINE'S OWN, when the patch carries it. The writer sits the
+ * replacement on the baseline it re-extracts from the page -- not on one
+ * derived from the box and the font size -- because how far a baseline sits
+ * above the bottom of a glyph box depends on the font's descender, and the
+ * derived figure misses it by a couple of points at body size and about
+ * five at 24pt.
+ *
+ * Deriving it here was survivable while the size was fixed: the error was
+ * fixed too, so the previewed text sat a little high and stayed there. With
+ * the size editable the error becomes a function of it -- the preview would
+ * climb the page as you increased the size while the exported text did not
+ * move at all.
+ *
+ * The fallback is for patches stored before the baseline was recorded. It
+ * is the old approximation, kept deliberately: those patches previewed at
+ * that height yesterday and moving them today would look like a bug in
+ * whatever the user had already laid out.
  */
-const baseline = computed(() => props.object.rect.y + laid.value.size * ASCENT_RATIO)
+const baseline = computed(() =>
+  props.object.baseline ?? props.object.rect.y + laid.value.size * ASCENT_RATIO,
+)
 
 const background = computed(() => rgb(props.object.background))
 const fill = computed(() => rgb(props.object.color))

@@ -58,6 +58,17 @@ const draft = ref('')
  */
 const bold = ref(false)
 /**
+ * The size the replacement will be set in, in page units.
+ *
+ * Seeded from the line's OWN size, which MuPDF reports per run, rather than
+ * from a guess at the relationship between a glyph box and a font size. It
+ * used to be stored as 0 -- "ask the writer to work it out at export" --
+ * which was fine while nobody could change it and useless the moment
+ * somebody could: an inspector cannot put a number in a box when the
+ * document holds a sentinel.
+ */
+const size = ref(0)
+/**
  * What happens when the replacement is wider than the line it replaces.
  *
  * Defaults to letting it run, and there is no longer a control for it.
@@ -118,9 +129,16 @@ const background = computed(() => {
 
 const risky = computed(() => (background.value?.confidence ?? 0) < CONFIDENT_ENOUGH)
 
-/** The editing box, positioned over the line it replaces. */
-/** The font size the writer will use when `fontSize` is 0, in page units. */
-const editSize = computed(() => (box.value ? box.value.h * 0.8 : 0))
+/**
+ * The size the field draws at, in page units.
+ *
+ * `size` once a line is open; the box-height approximation only as a floor
+ * for the moment before it is, and for a line the extraction gave no size
+ * for at all.
+ */
+const editSize = computed(() =>
+  size.value > 0 ? size.value : box.value ? box.value.h * 0.8 : 0,
+)
 
 /**
  * How wide the input has to be to show what is being typed.
@@ -201,9 +219,14 @@ async function begin(lineIndex: number): Promise<void> {
   const existing = patchOn(lineIndex)
   editingId.value = existing?.id
   draft.value = existing ? existing.text : originalText.value
+  const line = props.index?.lines[lineIndex]
   // An existing patch's own weight, otherwise the weight the DOCUMENT set
   // this line in.
-  bold.value = existing ? existing.bold === true : props.index?.lines[lineIndex]?.bold === true
+  bold.value = existing ? existing.bold === true : line?.bold === true
+  // Likewise the size -- and a patch stored by an older build carries 0,
+  // the "work it out at export" sentinel, so re-opening one heals it to the
+  // real number rather than showing the sentinel back to the user.
+  size.value = (existing && existing.fontSize > 0 ? existing.fontSize : line?.size) ?? 0
   fit.value = existing ? existing.fit : 'overflow'
   missing.value = []
   // The face the field is about to be styled with, so the caret sits
@@ -223,6 +246,7 @@ function cancel(): void {
   editingId.value = undefined
   draft.value = ''
   bold.value = false
+  size.value = 0
   missing.value = []
 }
 
@@ -285,7 +309,9 @@ function commit(): void {
       {
         type: 'updateObject',
         id: existing,
-        patch: { text: draft.value, fit: fit.value, bold: bold.value },
+        patch: {
+          text: draft.value, fit: fit.value, bold: bold.value, fontSize: size.value,
+        },
       },
       'Edit text',
     )
@@ -306,7 +332,10 @@ function commit(): void {
     text: draft.value,
     fontFamily: DEFAULT_FAMILY,
     bold: bold.value,
-    fontSize: 0,
+    fontSize: size.value,
+    // The pen position on the line being replaced, so the overlay draws the
+    // replacement where the export will put it. See TextPatchObject.baseline.
+    baseline: l.baseline,
     color: [0, 0, 0],
     background: sample?.color ?? [1, 1, 1],
     backgroundConfidence: sample?.confidence ?? 0,

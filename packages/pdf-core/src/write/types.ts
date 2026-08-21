@@ -243,8 +243,34 @@ export type TextPatchObject = BaseObject & {
    * which is what every patch written before this meant.
    */
   bold?: boolean
-  /** 0 means "derive from the line's height". */
+  /**
+   * The size to set the replacement in.
+   *
+   * 0 means "whatever the original line was set in", resolved by the writer
+   * from its own re-extraction. That is what every patch written before the
+   * size was editable contains, and it stays valid -- but a patch made now
+   * carries the real number instead, so the inspector has something to show
+   * in its box rather than a zero the reader has to know the meaning of.
+   */
   fontSize: number
+  /**
+   * Where the pen sat on the original line, in MuPDF PAGE space -- the same
+   * space `rect` uses for this kind. See `LineRun.baseline`.
+   *
+   * FOR THE PREVIEW ONLY. The writer re-derives this at export from the
+   * assembled page, which is authoritative and can differ if the page moved;
+   * this is the app's copy so the overlay can draw the replacement where the
+   * export will put it.
+   *
+   * It exists because the alternative was deriving a baseline from the box
+   * and the font size, and that derivation is wrong by however much the
+   * font's descender differs from the constant -- about 5pt on a 24pt line
+   * in the test fixture. Harmless while the size was fixed, because the
+   * error was fixed too. The moment the size became editable the error
+   * became a function of it, and the previewed text would slide up the page
+   * as you increased the size while the exported text stayed put.
+   */
+  baseline?: number
   color: Color
   /**
    * The colour to cover the original with, sampled from the rendered page

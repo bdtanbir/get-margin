@@ -31,6 +31,15 @@ export type Match = {
    * replacement for the same line, and this is what makes them.
    */
   bold: boolean
+  /**
+   * The size the line is set in, and where its baseline sits in page space.
+   *
+   * Carried for the same reason as `bold`: Replace All turns a match into a
+   * text patch, and a patch built without them is a patch the inspector
+   * shows a zero for and the overlay draws at the wrong height.
+   */
+  size: number
+  baseline: number
   /** One quad per matched character, for highlighting. */
   quads: Quad[]
 }
@@ -150,6 +159,8 @@ export function findInPage(
           text: source.slice(start, end),
           lineText: source,
           bold: line.bold,
+          size: line.size,
+          baseline: line.baseline,
           quads: line.chars.slice(start, end).map((c) => c.quad),
         })
       }

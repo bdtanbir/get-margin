@@ -17,6 +17,8 @@ function match(over: Partial<PageMatch> = {}): PageMatch {
     text: lineText.slice(start, end),
     lineText,
     bold: false,
+    size: 12,
+    baseline: 14,
     quads: Array.from({ length: end - start }, (_, i) => quad(start + i)),
     ...over,
   }

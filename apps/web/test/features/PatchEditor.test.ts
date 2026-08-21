@@ -469,3 +469,75 @@ describe('weight', () => {
     expect(patches(edits)[0]!.bold).toBe(false)
   })
 })
+
+/**
+ * Size.
+ *
+ * A patch used to store `fontSize: 0` -- a sentinel meaning "work it out at
+ * export from the line's own extraction". That was fine while nothing could
+ * change it and useless the moment something could: an inspector cannot put
+ * a number in a box when the document holds a sentinel. New patches carry
+ * the real size; old ones are healed when they are re-opened.
+ */
+describe('size', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    missingGlyphs.mockResolvedValue([])
+    seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+  })
+
+  /** The fixture's line reports size 12 and a baseline at 114. */
+  const commit = async (w: ReturnType<typeof mountEditor>, text: string) => {
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').setValue(text)
+    await w.get('[data-patch-input]').trigger('blur')
+    await flushPromises()
+  }
+
+  it('stores the size the line was actually set in, not a sentinel', async () => {
+    const edits = useEditsStore()
+    await commit(mountEditor(INDEX), 'Replacement')
+    expect(patches(edits)[0]!.fontSize).toBe(12)
+  })
+
+  it('stores the line’s own baseline for the overlay to draw on', async () => {
+    // Not derivable from the box: how far a baseline sits above the bottom
+    // of a glyph box depends on the font's descender.
+    const edits = useEditsStore()
+    await commit(mountEditor(INDEX), 'Replacement')
+    expect(patches(edits)[0]!.baseline).toBe(114)
+  })
+
+  it('draws the field at the line’s size rather than a fraction of its box', async () => {
+    const w = mountEditor(INDEX)
+    await w.get('[data-patch-target="0"]').trigger('click')
+    // 12pt at zoom 1. The box-height approximation would give 18 * 0.8.
+    expect(w.get('[data-patch-input]').attributes('style')).toContain('font-size: 12px')
+  })
+
+  it('heals a patch stored by an older build, which carries the sentinel', async () => {
+    const edits = useEditsStore()
+    await commit(mountEditor(INDEX), 'First edit')
+    // Put the object back the way an older build would have written it.
+    edits.applyOp(
+      { type: 'updateObject', id: patches(edits)[0]!.id, patch: { fontSize: 0 } },
+      'simulate an older build',
+    )
+    await commit(mountEditor(INDEX), 'Second edit')
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.fontSize).toBe(12)
+  })
+
+  it('keeps a size the user chose when the line is edited again', async () => {
+    const edits = useEditsStore()
+    await commit(mountEditor(INDEX), 'First edit')
+    edits.applyOp(
+      { type: 'updateObject', id: patches(edits)[0]!.id, patch: { fontSize: 20 } },
+      'resize',
+    )
+    await commit(mountEditor(INDEX), 'Second edit')
+    expect(patches(edits)[0]!.fontSize).toBe(20)
+  })
+})
