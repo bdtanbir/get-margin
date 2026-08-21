@@ -4,11 +4,14 @@ import { pdfRectToView, viewRectToPdf } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
+import { useDocumentStore } from '@/stores/document'
 import { useDragGesture } from './useDragGesture'
+import { pageBoxes, pageAtPoint } from './pageBoxes'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
 const tools = useToolsStore()
+const doc = useDocumentStore()
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const
 type Handle = (typeof HANDLES)[number]
@@ -97,11 +100,58 @@ function gesture(label: string, onMove: (d: { dx: number; dy: number }) => void,
   onPointerDown(e)
 }
 
+/**
+ * Drag an object, across pages if that is where it is dropped.
+ *
+ * A move used to be page-local: the rect grew past the sheet's edge while
+ * the object stayed OWNED by the page it started on, so it was clipped at
+ * that page's boundary and could never reach the next one -- the object was
+ * effectively trapped on page one.
+ *
+ * So the gesture works in CLIENT space, and the page under the pointer
+ * decides the owner on every frame. The boxes are read once at the start:
+ * the pages do not move while a drag is in progress, and re-measuring every
+ * frame would force layout sixty times a second.
+ *
+ * `origin`, `start` and the deltas stay relative to the page the drag BEGAN
+ * on even after the object changes hands, so a drag that crosses two pages
+ * is as exact as one that crosses none.
+ */
 function startMove(e: PointerEvent): void {
   const o = selected.value
   const start = box.value
   if (!o || !start || o.locked) return
-  gesture('Move', ({ dx, dy }) => commit({ ...start, x: start.x + dx, y: start.y + dy }), e)
+  const boxes = pageBoxes()
+  const origin = boxes.find((b) => b.id === props.page.id)
+  const id = o.id
+  // The page the object is on right now -- which the drag itself changes.
+  let owner = props.page.id
+
+  gesture('Move', ({ dx, dy }) => {
+    const view = { ...start, x: start.x + dx, y: start.y + dy }
+    // Nothing measured (a page not laid out yet, or a unit test): fall back
+    // to the page-local move rather than inventing a drop target.
+    if (!origin) return commit(view)
+
+    const drop = pageAtPoint(e.clientX + dx, e.clientY + dy, boxes)
+      ?? boxes.find((b) => b.id === owner)
+    const geometry = drop ? doc.pages[drop.id]?.geometry : undefined
+    if (!drop || !geometry) return commit(view)
+
+    // Client space is the common ground between two pages: the box's
+    // top-left, wherever it is on screen, expressed in the drop page's own
+    // view coordinates.
+    const local = {
+      x: view.x + origin.left - drop.left,
+      y: view.y + origin.top - drop.top,
+      w: view.w,
+      h: view.h,
+    }
+    const rect = viewRectToPdf(local, geometry, props.zoom)
+    const patch = drop.id === owner ? { rect } : { pageId: drop.id, rect }
+    owner = drop.id
+    edits.applyOp({ type: 'updateObject', id, patch }, 'Move')
+  }, e)
 }
 
 function startResize(e: PointerEvent, handle: Handle): void {

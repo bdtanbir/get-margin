@@ -204,7 +204,13 @@ onBeforeUnmount(() => {
         class="absolute left-0 top-0 w-full flex justify-center"
         :style="{ transform: `translateY(${item.start}px)` }"
       >
-        <div class="relative">
+        <!--
+          `data-page-id` is what an object being dragged hit-tests against
+          to find the page it is dropped on (pageBoxes.ts). It sits on the
+          page's own box, so the attribute and the sheet can never disagree
+          about where the page is.
+        -->
+        <div class="relative" :data-page-id="doc.pageOrder[item.index]">
           <PageCanvas
             v-if="doc.pages[doc.pageOrder[item.index]!]"
             :page="doc.pages[doc.pageOrder[item.index]!]!"
