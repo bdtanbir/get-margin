@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Trash2 } from 'lucide-vue-next'
-import { pdfRectToView } from '@margin/transform'
 import type { EditObject } from '@margin/pdf-core'
 import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
+import { objectViewRect } from '@/features/overlay/objectViewRect'
 import { layerLabel, layerIcon } from './layerLabel'
 
 const doc = useDocumentStore()
@@ -42,15 +42,16 @@ const total = computed(() => Object.keys(edits.doc.objects).length)
 /**
  * Select the object AND bring it into view.
  *
- * The scroll offset is the object's own top edge in view pixels. All the
- * conversion goes through @margin/transform (spec 1.4) -- the panel does no
- * coordinate arithmetic of its own, exactly like the overlay.
+ * The scroll offset is the object's own top edge in view pixels, via
+ * objectViewRect -- which knows that a text patch's rect is page space
+ * while everything else's is PDF space. The panel does no coordinate
+ * arithmetic of its own (spec 1.4), exactly like the overlay.
  */
 function go(object: EditObject, pageIndex: number): void {
   edits.select([object.id])
   const geometry = doc.pages[object.pageId]?.geometry
   if (!geometry) return vp.goToPage(pageIndex)
-  vp.goToPage(pageIndex, pdfRectToView(object.rect, geometry, vp.zoom).y)
+  vp.goToPage(pageIndex, objectViewRect(object, geometry, vp.zoom).y)
 }
 
 /**

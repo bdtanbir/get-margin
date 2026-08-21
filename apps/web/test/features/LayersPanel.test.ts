@@ -35,6 +35,19 @@ const signature = {
   data: new Uint8Array([1]), mime: 'image/png',
 } as unknown as EditObject
 
+/**
+ * An edited line. Its rect is the replaced line's own box in MuPDF PAGE
+ * space (top-down), unlike every other object's bottom-up rect -- 600 from
+ * the TOP of a 792pt page, i.e. near the bottom of the sheet.
+ */
+const patch = {
+  ...base, id: 'patch-1', pageId: 'p1', kind: 'textPatch', z: 4,
+  rect: { x: 100, y: 600, w: 80, h: 12 },
+  lineIndex: 3, originalHash: 'h', originalText: 'Total Amount', text: 'Total TK',
+  fontFamily: 'Helvetica', fontSize: 0, color: [0, 0, 0], background: [1, 1, 1],
+  backgroundConfidence: 1, fit: 'shrink',
+} as unknown as EditObject
+
 describe('LayersPanel', () => {
   let edits: ReturnType<typeof useEditsStore>
   let vp: ReturnType<typeof useViewportStore>
@@ -112,6 +125,18 @@ describe('LayersPanel', () => {
     const w = mount(LayersPanel)
     await rows(w)[1]!.trigger('click')
     expect(vp.scrollRequest?.index).toBe(1)
+  })
+
+  /**
+   * The bug this pins: a patch's rect is page space, and reading it as PDF
+   * space scrolled to 792 - 600 - 12 = 180 -- the mirror image of the line,
+   * near the TOP of the page, for a line near the bottom.
+   */
+  it('scrolls to an edited line where the line actually is', async () => {
+    add(patch)
+    const w = mount(LayersPanel)
+    await rows(w)[0]!.trigger('click')
+    expect(vp.scrollRequest).toMatchObject({ index: 0, offset: 600 })
   })
 
   it('marks the selected object row as current', async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
 import {
-  pageSizePt, pageViewSize, pdfToView, viewToPdf, pdfRectToView, viewRectToPdf,
+  pageSizePt, pageViewSize, pdfToView, viewToPdf, pdfRectToView, viewRectToPdf, pageRectToView,
   svgViewBox, svgRootTransform, normalizeRotation, rectFromPoints, directedRect,
   type PageGeometry, type Rotation,
 } from '../src/index.js'
@@ -26,6 +26,34 @@ describe('pageViewSize', () => {
 
   it('preserves dimensions for half turns', () => {
     expect(pageViewSize({ ...LETTER, rotate: 180 }, 1)).toEqual({ width: 612, height: 792 })
+  })
+})
+
+/**
+ * MuPDF PAGE space -- top-down, CropBox origin already at (0,0), /Rotate
+ * already applied. It is the space the extraction quads come in, and it is
+ * exactly what the overlay's viewBox describes, so the only thing between
+ * it and view pixels is the zoom.
+ */
+describe('pageRectToView', () => {
+  it('scales by zoom without flipping y', () => {
+    expect(pageRectToView({ x: 100, y: 40, w: 80, h: 10 }, LETTER, 2))
+      .toEqual({ x: 200, y: 80, w: 160, h: 20 })
+  })
+
+  // The distinction this function exists for: the same numbers read as PDF
+  // space land at the mirror image of where they belong.
+  it('is not the same as reading the rect as bottom-up PDF space', () => {
+    const r = { x: 100, y: 40, w: 80, h: 10 }
+    expect(pageRectToView(r, LETTER, 1).y).toBe(40)
+    expect(pdfRectToView(r, LETTER, 1).y).toBe(792 - 40 - 10)
+  })
+
+  // Page space already has /Rotate applied, so a rotated page needs no
+  // further work here -- unlike pdfRectToView, which rotates raw PDF coords.
+  it('leaves a rotated page alone, because page space is already rotated', () => {
+    expect(pageRectToView({ x: 10, y: 20, w: 30, h: 40 }, { ...LETTER, rotate: 90 }, 1))
+      .toEqual({ x: 10, y: 20, w: 30, h: 40 })
   })
 })
 

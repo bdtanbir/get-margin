@@ -47,6 +47,29 @@ describe('SelectionChrome', () => {
   })
 
   /**
+   * A text patch's rect is MuPDF page space, not the bottom-up PDF space
+   * every other object uses, so the selection box has to read it that way
+   * or it lands at the mirror image of the line -- which is what the layers
+   * list showed: the box near the top of the page for a line near the
+   * bottom.
+   */
+  it('boxes an edited line where the line is, not at its mirror image', () => {
+    const patch = {
+      id: 'tp1', pageId: 'p1', kind: 'textPatch',
+      rect: { x: 100, y: 600, w: 80, h: 12 },
+      rotation: 0, z: 3, locked: false, opacity: 1,
+      lineIndex: 3, originalHash: 'h', originalText: 'Total Amount', text: 'Total TK',
+      fontFamily: 'Helvetica', fontSize: 0, color: [0, 0, 0], background: [1, 1, 1],
+      backgroundConfidence: 1, fit: 'shrink',
+    } as unknown as EditObject
+    edits.applyOp({ type: 'addObject', object: patch }, 'add')
+    edits.select(['tp1'])
+
+    const w = mount(SelectionChrome, { props: { page, zoom: 1 } })
+    expect(w.get('[data-selection]').attributes('style')).toContain('top: 600px')
+  })
+
+  /**
    * Double-clicking a selected text object reopens it for editing.
    *
    * `ObjectLayer` has a `dblclick` that does this, and once the object was

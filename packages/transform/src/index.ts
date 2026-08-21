@@ -112,6 +112,25 @@ export function pdfRectToView(r: Rect, g: PageGeometry, zoom: number): ViewRect 
   }
 }
 
+/**
+ * A rect in MuPDF PAGE space to a view rect.
+ *
+ * Page space is top-down, already normalised to the CropBox origin and with
+ * /Rotate applied -- it is what buildQuadIndex produces and what the
+ * overlay's viewBox describes, so zoom is the only thing between it and
+ * view pixels. Deliberately NOT pdfRectToView: that one flips y and rotates
+ * raw PDF coordinates, and applying either to a page-space rect puts it at
+ * the mirror image of where it belongs. See objectViewRect in the app for
+ * which objects store which.
+ *
+ * `g` is accepted and unused: page space has already absorbed everything
+ * the geometry would tell us. The signature matches pdfRectToView's so the
+ * two can be swapped at a call site that picks between them.
+ */
+export function pageRectToView(r: Rect, _g: PageGeometry, zoom: number): ViewRect {
+  return { x: r.x * zoom, y: r.y * zoom, w: r.w * zoom, h: r.h * zoom }
+}
+
 export function viewRectToPdf(r: ViewRect, g: PageGeometry, zoom: number): Rect {
   const a = viewToPdf({ x: r.x, y: r.y }, g, zoom)
   const b = viewToPdf({ x: r.x + r.w, y: r.y + r.h }, g, zoom)

@@ -5,7 +5,7 @@ import {
   Copy, Trash2, BringToFront, SendToBack, Lock, LockOpen,
   Highlighter, Underline, Strikethrough, SquareSlash,
 } from 'lucide-vue-next'
-import { pdfRectToView } from '@margin/transform'
+import { objectViewRect } from '@/features/overlay/objectViewRect'
 import IconButton from '@/ui/IconButton.vue'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
@@ -31,7 +31,7 @@ const selected = computed(() => {
 const style = computed(() => {
   const o = selected.value
   if (!o) return {}
-  const b = pdfRectToView(o.rect, props.page.geometry, props.zoom)
+  const b = objectViewRect(o, props.page.geometry, props.zoom)
   return { left: `${b.x}px`, top: `${b.y - GAP_PX}px` }
 })
 

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { pdfRectToView, viewRectToPdf } from '@margin/transform'
+import { viewRectToPdf } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { useDocumentStore } from '@/stores/document'
 import { useDragGesture } from './useDragGesture'
 import { pageBoxes, pageAtPoint } from './pageBoxes'
+import { objectViewRect } from './objectViewRect'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -55,7 +56,7 @@ function editText(): void {
  */
 const box = computed(() => {
   const o = selected.value
-  return o ? pdfRectToView(o.rect, props.page.geometry, props.zoom) : undefined
+  return o ? objectViewRect(o, props.page.geometry, props.zoom) : undefined
 })
 
 const style = computed(() => {
