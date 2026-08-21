@@ -678,3 +678,91 @@ describe('slope', () => {
     expect(patches(edits)[0]!.italic).toBe(true)
   })
 })
+
+/**
+ * Changing ONLY the style, and not a character of the text.
+ *
+ * The reported bug, and the case every style test above missed by also
+ * retyping the line: `commit()` treated "the draft equals the original
+ * text" as a request to undo the edit, so pressing Ctrl+B and touching
+ * nothing else discarded the patch on blur. The style showed while the
+ * field was open and vanished the moment it closed.
+ *
+ * Restoring the document's own appearance still discards the patch -- that
+ * is the behaviour the shortcut exists for -- but it now takes ALL FOUR
+ * axes matching, not just the text.
+ */
+describe('a style-only edit', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    missingGlyphs.mockResolvedValue([])
+    seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+  })
+
+  /** Open the line, press the shortcuts, blur -- without retyping anything. */
+  const styleOnly = async (
+    index: PageQuadIndex,
+    keys: Array<'b' | 'i'>,
+  ) => {
+    const w = mountEditor(index)
+    await w.get('[data-patch-target="0"]').trigger('click')
+    for (const key of keys) {
+      await w.get('[data-patch-input]').trigger('keydown', { key, ctrlKey: true })
+    }
+    await w.get('[data-patch-input]').trigger('blur')
+    await flushPromises()
+    return w
+  }
+
+  it('keeps a bold-only change', async () => {
+    const edits = useEditsStore()
+    await styleOnly(indexOf('Project: Checkout Design'), ['b'])
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.bold).toBe(true)
+    expect(patches(edits)[0]!.text).toBe('Project: Checkout Design')
+  })
+
+  it('keeps an italic-only change', async () => {
+    const edits = useEditsStore()
+    await styleOnly(indexOf('Project: Checkout Design'), ['i'])
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.italic).toBe(true)
+  })
+
+  it('keeps both when both are pressed', async () => {
+    const edits = useEditsStore()
+    await styleOnly(indexOf('Project: Checkout Design'), ['b', 'i'])
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.bold).toBe(true)
+    expect(patches(edits)[0]!.italic).toBe(true)
+  })
+
+  it('records nothing when neither the text nor the style changed', async () => {
+    // The shortcut still earns its keep: a cover painted over text
+    // identical to what is underneath is a visible rectangle achieving
+    // nothing.
+    const edits = useEditsStore()
+    await styleOnly(indexOf('Project: Checkout Design'), [])
+    expect(patches(edits)).toHaveLength(0)
+  })
+
+  it('discards the patch when the style is toggled back to the document’s', async () => {
+    const edits = useEditsStore()
+    await styleOnly(indexOf('Project: Checkout Design'), ['b'])
+    expect(patches(edits)).toHaveLength(1)
+    await styleOnly(indexOf('Project: Checkout Design'), ['b'])
+    expect(patches(edits)).toHaveLength(0)
+  })
+
+  it('keeps an un-bold of a line the document set bold', async () => {
+    // The mirror image: the line is bold in the document and the user turns
+    // it off. The draft still equals the original text, and this is still a
+    // real edit.
+    const edits = useEditsStore()
+    await styleOnly(indexOf('Bold heading', true), ['b'])
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.bold).toBe(false)
+  })
+})

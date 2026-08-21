@@ -3,7 +3,9 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { nanoid } from 'nanoid'
 import { pageViewSize } from '@margin/transform'
 import type { PageState } from '@/stores/document'
-import type { Color, EditObject, PageQuadIndex, TextPatchObject } from '@margin/pdf-core'
+import type {
+  Color, EditObject, LineRun, PageQuadIndex, TextPatchObject,
+} from '@margin/pdf-core'
 import { hashText } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
@@ -306,6 +308,22 @@ watch([draft, bold, italic], async ([text]) => {
   }
 })
 
+/**
+ * Whether the style being committed is the one the line already has.
+ *
+ * Compared against the DOCUMENT's line rather than against any existing
+ * patch: "undo the edit" means restore what the page itself draws, so that
+ * is what the comparison has to be against.
+ */
+function matchesDocument(l: LineRun): boolean {
+  return (
+    bold.value === l.bold &&
+    italic.value === l.italic &&
+    size.value === l.size &&
+    l.color.every((channel, i) => channel === color.value[i])
+  )
+}
+
 function commit(): void {
   const l = line.value
   const b = box.value
@@ -315,13 +333,20 @@ function commit(): void {
   const existing = editingId.value
 
   /**
-   * Typing the original text back is a request to undo the edit.
+   * Putting the line back exactly as the document has it is a request to
+   * undo the edit.
+   *
+   * EXACTLY means the style too, and that used to be missing. The test was
+   * `draft === originalText`, so changing only the weight or the slope --
+   * pressing Ctrl+B on a line and touching nothing else -- looked like
+   * typing the original back, and the edit was discarded on blur. The style
+   * appeared while the field was open and vanished the moment it closed.
    *
    * With no existing patch there is simply nothing to record. With one,
    * leaving it in place would keep painting a cover over text identical to
    * what is underneath -- a visible flat rectangle achieving nothing.
    */
-  if (draft.value === originalText.value) {
+  if (draft.value === originalText.value && matchesDocument(l)) {
     if (existing) edits.applyOp({ type: 'deleteObject', id: existing }, 'Undo text edit')
     cancel()
     return
