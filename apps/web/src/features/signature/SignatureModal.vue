@@ -7,6 +7,7 @@ import Button from '@/ui/Button.vue'
 import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
+import { useViewportStore } from '@/stores/viewport'
 import { importImage } from '@/features/tools/importImage'
 import { SIGNATURE_FACES, cssFamily, loadSignatureFaces } from '@/lib/fonts'
 import { canvasToPng, cleanUpload, inkBounds, fillStroke } from './signatureImage'
@@ -17,6 +18,7 @@ import {
 const doc = useDocumentStore()
 const edits = useEditsStore()
 const tools = useToolsStore()
+const vp = useViewportStore()
 
 type Tab = 'draw' | 'type' | 'upload'
 const tab = ref<Tab>('draw')
@@ -180,7 +182,10 @@ function close(): void {
 useFocusTrap(surface, { onEscape: close })
 
 async function place(sig: { data: Uint8Array; w: number; h: number }): Promise<void> {
-  const pageId = doc.pageOrder[0]
+  // Centred on the page in view. A signature dropped on page one while the
+  // user was looking at the signature line on page four is a signature the
+  // user has to go and find.
+  const pageId = vp.anchorPageId
   const page = pageId ? doc.pages[pageId] : undefined
   if (!page) return
 

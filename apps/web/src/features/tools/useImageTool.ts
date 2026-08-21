@@ -3,21 +3,27 @@ import type { ImageObject, EditObject } from '@margin/pdf-core'
 import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
+import { useViewportStore } from '@/stores/viewport'
 import { importImage, placementRect } from './importImage'
 
 /**
  * The Image tool is a file picker, not a drag gesture: there is nothing to
- * draw until a file exists. Picking one places it centred on the anchor page
- * and hands it to the select tool, so the very next thing the user does is
- * position it.
+ * draw until a file exists. Picking one places it centred on the page in
+ * view and hands it to the select tool, so the very next thing the user
+ * does is position it.
  */
 export function useImageTool() {
   const doc = useDocumentStore()
   const edits = useEditsStore()
   const tools = useToolsStore()
+  const vp = useViewportStore()
 
   async function place(file: File, pageId?: string): Promise<void> {
-    const target = pageId ?? doc.pageOrder[0]
+    // The page in view, not the first page: an image picked while page
+    // three was on screen belongs on page three. An explicit `pageId` (a
+    // file dropped onto a page) still wins over where the user happens to
+    // be scrolled.
+    const target = pageId ?? vp.anchorPageId
     const page = target ? doc.pages[target] : undefined
     if (!page) return
 

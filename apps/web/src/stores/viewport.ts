@@ -283,6 +283,18 @@ export const useViewportStore = defineStore('viewport', () => {
 
   const zoomPercent = computed(() => Math.round(zoom.value * 100))
 
+  /**
+   * The page the user is currently looking at, by id.
+   *
+   * Anything that INSERTS something reads this rather than reaching for
+   * `pageOrder[0]`: picking an image while page three is on screen used to
+   * drop it on page one, off screen, where the user had no reason to look
+   * for it.
+   */
+  const anchorPageId = computed<string | undefined>(
+    () => doc.pageOrder[anchorIndex.value] ?? doc.pageOrder[0],
+  )
+
   // `zoom`, `dpr`, and `anchorIndex` are read-only outside the store — see
   // the invariant comment by `dirty` above. External code that needs to
   // change any of them calls `setZoom`/`setDpr`/`setAnchor`, which own
@@ -293,6 +305,7 @@ export const useViewportStore = defineStore('viewport', () => {
     scrollRequest: readonly(scrollRequest),
     dpr: readonly(dpr),
     zoomPercent,
+    anchorPageId,
     lastError: readonly(lastError),
     fitMode,
     bitmapFor,
