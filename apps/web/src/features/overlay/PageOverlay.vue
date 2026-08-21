@@ -55,7 +55,17 @@ const onPage = computed(() =>
     .sort((a, b) => a.z - b.z),
 )
 
-const objects = computed(() => onPage.value.filter((o) => !isMarkup(o.kind)))
+/**
+ * Everything drawn in raw PDF space -- minus whatever is being edited.
+ *
+ * A text object under the caret is drawn by TextEditor as a real
+ * contenteditable in the DOM. Leaving the SVG copy up as well drew the same
+ * string twice, a couple of pixels apart, which reads exactly like a drop
+ * shadow and vanished the moment the editor closed.
+ */
+const objects = computed(() =>
+  onPage.value.filter((o) => !isMarkup(o.kind) && o.id !== tools.editingId),
+)
 
 /**
  * Markup objects render OUTSIDE the y-flipped root <g>: their quads are in

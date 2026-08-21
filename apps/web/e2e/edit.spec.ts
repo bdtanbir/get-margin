@@ -126,3 +126,63 @@ test.describe('editing', () => {
     expect(named).toEqual(['redact'])
   })
 })
+
+/**
+ * A text object being edited must be drawn ONCE.
+ *
+ * `TextEditor` puts a real contenteditable in the DOM over the object,
+ * while `ObjectLayer` draws the same object as SVG. Both were up at the
+ * same time, so the string appeared twice a couple of pixels apart --
+ * reported as "double text like shadow", and it vanished as soon as the
+ * editor closed, which is what made it look like a rendering glitch rather
+ * than two real elements.
+ *
+ * Asserted in a browser rather than in jsdom because it is a question about
+ * what is on screen, and because the companion defect -- the selection box
+ * swallowing the double-click that reopens the editor -- is a stacking
+ * problem jsdom has no layout to reproduce.
+ */
+test('text being edited is drawn once, and can be reopened', async ({ page }) => {
+  await openFixture(page)
+  await page.getByRole('button', { name: 'Text' }).first().click()
+
+  // Captured while the Text tool is still active: the draw surface only
+  // exists for a drawing tool, and creating the frame switches back to
+  // select, so asking for its box afterwards waits forever.
+  const surface = page.locator('[data-draw-surface]').first()
+  await expect(surface).toBeVisible()
+  const box = (await surface.boundingBox())!
+
+  // The same frame the test above draws, so this works on the phone
+  // viewport too.
+  await drawOn(page, { x: 60, y: 240 }, { x: 260, y: 270 })
+
+  const editor = page.locator('[data-text-editor]')
+  await expect(editor).toBeVisible()
+  await editor.pressSequentially('Simple')
+  await expect(editor).toHaveText('Simple')
+
+  const drawn = async () =>
+    page.evaluate(() => ({
+      svg: [...document.querySelectorAll('svg text')].filter((e) =>
+        e.textContent?.includes('Simple'),
+      ).length,
+      dom: [...document.querySelectorAll('[data-text-editor]')].filter((e) =>
+        e.textContent?.includes('Simple'),
+      ).length,
+    }))
+
+  // While editing: the contenteditable only. Two renderings is the shadow.
+  expect(await drawn()).toEqual({ svg: 0, dom: 1 })
+
+  // After finishing: the SVG only.
+  await page.mouse.click(box.x + 300, box.y + 120)
+  await expect(editor).toHaveCount(0)
+  expect(await drawn()).toEqual({ svg: 1, dom: 0 })
+
+  // And it can be edited again. The selection box covers the object, so this
+  // double-click lands on that box rather than on the glyphs -- the case
+  // that used to do nothing at all.
+  await page.mouse.dblclick(box.x + 100, box.y + 255)
+  await expect(editor).toHaveCount(1)
+})

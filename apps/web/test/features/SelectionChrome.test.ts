@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import SelectionChrome from '@/features/overlay/SelectionChrome.vue'
 import { useEditsStore } from '@/stores/edits'
+import { useToolsStore } from '@/stores/tools'
 import type { PageState } from '@/stores/document'
 import type { EditObject } from '@margin/pdf-core'
 
@@ -43,6 +44,59 @@ describe('SelectionChrome', () => {
     edits = useEditsStore()
     edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
     edits.applyOp({ type: 'addObject', object }, 'add')
+  })
+
+  /**
+   * Double-clicking a selected text object reopens it for editing.
+   *
+   * `ObjectLayer` has a `dblclick` that does this, and once the object was
+   * selected it could never fire: this box covers the object with
+   * `pointer-events-auto` and stops the pointer on the way down, so every
+   * gesture landed here. Moving worked and editing did not, which is
+   * exactly how it was reported -- "added text i can't change but i can
+   * move".
+   */
+  describe('reopening a text object', () => {
+    const text: EditObject = {
+      id: 't1', pageId: 'p1', kind: 'text',
+      rect: { x: 100, y: 200, w: 120, h: 30 },
+      rotation: 0, z: 2, locked: false, opacity: 1,
+      text: 'Simple', fontFamily: 'Inter', fontSize: 14, color: [0, 0, 0], align: 'left',
+    } as EditObject
+
+    it('starts editing on a double-click', async () => {
+      const tools = useToolsStore()
+      edits.applyOp({ type: 'addObject', object: text }, 'add')
+      edits.select(['t1'])
+
+      const w = mount(SelectionChrome, { props: { page, zoom: 1 } })
+      await w.get('[data-selection]').trigger('dblclick')
+
+      expect(tools.editingId).toBe('t1')
+    })
+
+    /** A locked object is locked against editing, not only against dragging. */
+    it('leaves a locked text object alone', async () => {
+      const tools = useToolsStore()
+      edits.applyOp({ type: 'addObject', object: { ...text, locked: true } }, 'add')
+      edits.select(['t1'])
+
+      const w = mount(SelectionChrome, { props: { page, zoom: 1 } })
+      await w.get('[data-selection]').trigger('dblclick')
+
+      expect(tools.editingId).toBeUndefined()
+    })
+
+    /** Only text has an editor; a rectangle has nothing to open. */
+    it('does nothing for an object that is not text', async () => {
+      const tools = useToolsStore()
+      edits.select(['o1'])
+
+      const w = mount(SelectionChrome, { props: { page, zoom: 1 } })
+      await w.get('[data-selection]').trigger('dblclick')
+
+      expect(tools.editingId).toBeUndefined()
+    })
   })
 
   it('renders nothing when there is no selection', () => {

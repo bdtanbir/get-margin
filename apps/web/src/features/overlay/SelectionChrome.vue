@@ -3,10 +3,12 @@ import { computed } from 'vue'
 import { pdfRectToView, viewRectToPdf } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
+import { useToolsStore } from '@/stores/tools'
 import { useDragGesture } from './useDragGesture'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
+const tools = useToolsStore()
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const
 type Handle = (typeof HANDLES)[number]
@@ -25,6 +27,23 @@ const selected = computed(() => {
   const o = id ? edits.doc.objects[id] : undefined
   return o && o.pageId === props.page.id ? o : undefined
 })
+
+/**
+ * Reopen a text object for editing.
+ *
+ * `ObjectLayer` already has a `dblclick` that does exactly this, and it
+ * could never fire once the object was selected: the box below covers the
+ * object with `pointer-events-auto` and stops the pointer on the way down,
+ * so every gesture landed here instead. Moving worked -- that is what this
+ * box is for -- while editing looked broken, which is precisely what was
+ * reported: "added text i can't change but i can move".
+ *
+ * The surface that owns the pointer has to own the gesture.
+ */
+function editText(): void {
+  const o = selected.value
+  if (o && o.kind === 'text' && !o.locked) tools.startEditing(o.id)
+}
 
 /**
  * The selection box in view space. All conversion goes through
@@ -141,6 +160,7 @@ function startRotate(e: PointerEvent): void {
     class="pointer-events-auto absolute cursor-move ring-2 ring-accent"
     :style="style"
     @pointerdown.stop="startMove"
+    @dblclick.stop="editText"
   >
     <template v-if="!selected.locked">
       <button
