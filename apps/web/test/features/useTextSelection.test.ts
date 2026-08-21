@@ -93,11 +93,10 @@ describe('useTextSelection', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     selection = useSelectionStore()
-    selection.setIndex('p1', index)
   })
 
-  function drag(from: [number, number], to: [number, number]): void {
-    const { onPointerDown } = useTextSelection(() => index, surface)
+  function drag(from: [number, number], to: [number, number], page = 'p1', idx = index): void {
+    const { onPointerDown } = useTextSelection(() => page, () => idx, surface)
     onPointerDown(down(from[0], from[1]))
     move(to[0], to[1])
     up()
@@ -115,7 +114,7 @@ describe('useTextSelection', () => {
   })
 
   it('selects nothing for a click with no drag', () => {
-    const { onPointerDown } = useTextSelection(() => index, surface)
+    const { onPointerDown } = useTextSelection(() => 'p1', () => index, surface)
     onPointerDown(down(15, 5))
     up()
     expect(selection.selectedQuads).toEqual([])
@@ -145,11 +144,29 @@ describe('useTextSelection', () => {
     expect(selection.text).toBe('')
   })
 
-  // A selection belongs to one page; switching pages must not leave the old
-  // page's character refs pointing into the new page's index.
-  it('drops the selection when the index changes page', () => {
+  // A selection belongs to ONE page. Every mounted page fetches its own
+  // quad index, and the fetches resolve in whatever order the worker
+  // answers them -- so the page the pointer is on, not the page that
+  // registered an index last, decides which index the refs address.
+  it('selects on the page under the pointer, not the page whose index registered last', () => {
+    const other: PageQuadIndex = { lines: [] }
+    for (const l of stubIndex().lines) {
+      other.lines.push({ ...l, text: l.text.toUpperCase(),
+        chars: l.chars.map((c) => ({ ...c, char: c.char.toUpperCase() })) })
+    }
+    // Page two dragged (and so bound its own index) most recently.
+    drag([15, 5], [25, 45], 'p2', other)
+    drag([15, 5], [25, 45], 'p1', index)
+    expect(selection.pageId).toBe('p1')
+    expect(selection.text).toBe('bcd\nefgh\nijk')
+  })
+
+  // Starting a selection on another page must not leave the old page's
+  // character refs pointing into the new page's index.
+  it('drops the previous page selection when a new page begins one', () => {
     drag([15, 5], [25, 45])
-    selection.setIndex('p2', stubIndex())
+    drag([5, 5], [5, 5], 'p2', stubIndex())
+    expect(selection.pageId).toBe('p2')
     expect(selection.hasSelection).toBe(false)
   })
 })

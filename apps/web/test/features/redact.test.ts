@@ -48,8 +48,7 @@ function seed() {
 /** Drive the selection store the way the pointer gesture does. */
 function selectText() {
   const selection = useSelectionStore()
-  selection.setIndex('p1', INDEX)
-  selection.begin({ line: 0, char: 0 })
+  selection.begin('p1', INDEX, { line: 0, char: 0 })
   selection.extend({ line: 0, char: 1 })
   return selection
 }

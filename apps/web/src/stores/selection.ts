@@ -19,13 +19,20 @@ export const useSelectionStore = defineStore('textSelection', () => {
   const anchor = ref<CharRef | undefined>(undefined)
   const focus = ref<CharRef | undefined>(undefined)
 
-  function setIndex(page: string, quads: PageQuadIndex): void {
-    if (pageId.value !== page) clear()
+  /**
+   * Start a selection on ONE page, binding that page's identity, its quad
+   * index and the anchor in a single step.
+   *
+   * Atomic on purpose. Every mounted page fetches its own quad index and
+   * they resolve in whatever order the worker answers, so a store that let
+   * a page register an index separately from starting a selection ended up
+   * holding page two's index while page one's pointer produced the refs --
+   * and the highlight was painted on page two, over whatever text happened
+   * to share those character positions.
+   */
+  function begin(page: string, quads: PageQuadIndex, ref_: CharRef): void {
     pageId.value = page
     index.value = quads
-  }
-
-  function begin(ref_: CharRef): void {
     anchor.value = ref_
     focus.value = ref_
   }
@@ -102,7 +109,6 @@ export const useSelectionStore = defineStore('textSelection', () => {
     selectedQuads,
     text,
     hasSelection,
-    setIndex,
     begin,
     extend,
     clear,

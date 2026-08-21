@@ -115,9 +115,7 @@ async function ensureIndex(): Promise<void> {
     // BOTH halves of the identity: which file, and which page of it.
     // Passing only `sourceIndex` meant page two of a merge asked for "page
     // 0" and was handed page one of the first file.
-    const index = await getPdfClient().quadIndex(props.page.sourceId, props.page.sourceIndex)
-    quadIndex.value = index
-    selection.setIndex(props.page.id, index)
+    quadIndex.value = await getPdfClient().quadIndex(props.page.sourceId, props.page.sourceIndex)
   } catch {
     // Text extraction failing is not a reason to break the overlay: the
     // page still renders and every drawing tool still works.
@@ -127,7 +125,7 @@ async function ensureIndex(): Promise<void> {
 
 watch(selecting, (on) => { if (on) void ensureIndex() }, { immediate: true })
 
-const text = useTextSelection(() => quadIndex.value, {
+const text = useTextSelection(() => props.page.id, () => quadIndex.value, {
   /**
    * getScreenCTM().inverse() -- the browser owns this conversion (spec 1.4).
    * The <svg>'s own user space IS page space, because the viewBox is the

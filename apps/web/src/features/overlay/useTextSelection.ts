@@ -68,6 +68,7 @@ export type SelectionSurface = {
  * rotation, and scroll offset without this module reimplementing any of it.
  */
 export function useTextSelection(
+  page: () => string,
   index: () => PageQuadIndex | undefined,
   surface: SelectionSurface,
 ) {
@@ -79,7 +80,9 @@ export function useTextSelection(
     if (!idx || !start) return
     const from = charAt(idx, start.x, start.y)
     if (!from) return
-    selection.begin(from)
+    // The page under the pointer owns the selection, together with the
+    // index its refs address -- never whichever page's index landed last.
+    selection.begin(page(), idx, from)
 
     const { onPointerDown: begin } = useDragGesture({
       onMove: ({ dx, dy }) => {

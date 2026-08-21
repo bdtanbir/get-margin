@@ -112,13 +112,12 @@ describe('SelectionToolbar markup actions', () => {
     edits = useEditsStore()
     selection = useSelectionStore()
     edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'], { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
-    selection.setIndex('p1', index)
   })
 
   const mountFor = () => mount(SelectionToolbar, { props: { page, zoom: 1 } })
 
   function selectText(): void {
-    selection.begin({ line: 0, char: 0 })
+    selection.begin('p1', index, { line: 0, char: 0 })
     selection.extend({ line: 0, char: 1 })
   }
 
