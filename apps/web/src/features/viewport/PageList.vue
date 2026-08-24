@@ -35,6 +35,42 @@ const items = computed(() => virtualizer.value.getVirtualItems())
 const totalHeight = computed(() => virtualizer.value.getTotalSize())
 
 /**
+ * The scroller's own width, tracked because the content box below needs a
+ * REAL number rather than a percentage.
+ */
+const viewportWidth = ref(0)
+
+/**
+ * How wide the content box is, and why it cannot be `w-fit`.
+ *
+ * Every page row below is absolutely positioned -- that is what makes the
+ * virtualiser work -- and out-of-flow boxes contribute nothing to a
+ * max-content measurement. So `w-fit` resolved to ZERO, each row's
+ * `w-full` was 100% of zero, and `justify-center` centred each page on
+ * x = 0. Half of every page therefore sat at negative x, which no amount
+ * of scrolling can reach: `scrollLeft` has no negative side. Below fit
+ * zoom the halves were too small to notice; at 300% it cut 1444px off the
+ * left of the document while the right scrolled perfectly and the
+ * scrollbar looked healthy.
+ *
+ * Taking the widest page rather than the anchor page's: a document may mix
+ * page sizes, and a box sized to a narrow page would clip a wide one by
+ * exactly the same mechanism.
+ *
+ * `max` with the viewport keeps centring intact when the page is smaller
+ * than the window -- the box fills the scroller and `justify-center` has
+ * real room to work in.
+ */
+const contentWidth = computed(() => {
+  let widest = 0
+  for (const id of doc.pageOrder) {
+    const geometry = doc.pages[id]?.geometry
+    if (geometry) widest = Math.max(widest, pageViewSize(geometry, vp.zoom).width)
+  }
+  return Math.max(viewportWidth.value, widest)
+})
+
+/**
  * Keep the anchor pointing at whatever is actually centred in the viewport.
  *
  * This used to take `list[Math.floor(list.length / 2)]` -- the middle of
@@ -112,8 +148,13 @@ function referenceGeometry() {
 
 function refit(): void {
   const el = scroller.value
+  if (!el) return
+  // Recorded on every measurement, not only when a fit resolves: the
+  // content box's width depends on it, and a geometry-less early return
+  // below would otherwise leave it stale at 0 and collapse the box.
+  viewportWidth.value = el.clientWidth
   const geometry = referenceGeometry()
-  if (!el || !geometry) return
+  if (!geometry) return
   vp.applyFit(el.clientWidth, el.clientHeight, geometry)
 }
 
@@ -210,7 +251,16 @@ onBeforeUnmount(() => {
     @pointerup="onPointerUp"
     @pointercancel="onPointerUp"
   >
-    <div class="relative mx-auto w-fit py-6" :style="{ height: `${totalHeight}px` }">
+    <!--
+      An EXPLICIT width, never `w-fit` — see `contentWidth` for what that
+      cost. `mx-auto` is gone with it: the box is now at least as wide as
+      the scroller by construction, so there is never leftover room to
+      centre it in.
+    -->
+    <div
+      class="relative py-6"
+      :style="{ height: `${totalHeight}px`, width: `${contentWidth}px` }"
+    >
       <div
         v-for="item in items"
         :key="doc.pageOrder[item.index]"
