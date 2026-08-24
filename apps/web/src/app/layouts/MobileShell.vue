@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { LayoutGrid } from 'lucide-vue-next'
+import { LayoutGrid, SlidersHorizontal } from 'lucide-vue-next'
 import TopBar from '../TopBar.vue'
 import PageList from '@/features/viewport/PageList.vue'
 import ZoomPill from '@/features/viewport/ZoomPill.vue'
@@ -12,10 +12,28 @@ import SignatureModal from '@/features/signature/SignatureModal.vue'
 import { useToolsStore } from '@/stores/tools'
 import IconButton from '@/ui/IconButton.vue'
 import { useDocumentStore } from '@/stores/document'
+import { useEditsStore } from '@/stores/edits'
 
 const doc = useDocumentStore()
 const tools = useToolsStore()
+const edits = useEditsStore()
 const pagesOpen = ref(false)
+
+/**
+ * Whether the properties sheet is on screen — a decision the USER makes,
+ * held here beside `pagesOpen` because this shell owns both of its sheets.
+ *
+ * It used to be inferred: InspectorSheet opened on `selection.length > 0`,
+ * so it covered half the page after every shape drawn, and again the
+ * instant a finger touched an object to move it, because objects select on
+ * pointerdown. A selection is what makes properties MEANINGFUL; it is not
+ * a request to see them.
+ *
+ * Closing it when the selection goes away is InspectorSheet's own job — it
+ * emits `close` for that, and duplicating the rule here would give one
+ * piece of state two owners that can disagree.
+ */
+const inspectorOpen = ref(false)
 
 // Amendment A2: no ResizeObserver/applyFit wiring here — see the identical
 // comment in DesktopShell.vue. PageList owns its own resize-driven refit;
@@ -80,11 +98,15 @@ const pagesOpen = ref(false)
     </div>
 
     <!--
-      Fixed-position sheet, so it overlays rather than reflowing the strip
-      and nav beneath it. It appears only with a selection, which is also
-      the only time its contents mean anything.
+      Fixed-position sheet, so it overlays rather than reflowing the rail
+      and nav beneath it. Mounted with the document but shown only when
+      asked for -- see `inspectorOpen` above.
     -->
-    <InspectorSheet v-if="doc.isReady" />
+    <InspectorSheet
+      v-if="doc.isReady"
+      :open="inspectorOpen"
+      @close="inspectorOpen = false"
+    />
 
     <nav
       v-if="doc.isReady"
@@ -93,9 +115,24 @@ const pagesOpen = ref(false)
       aria-label="Document actions"
     >
       <ZoomPill />
-      <IconButton label="Pages" :active="pagesOpen" @click="pagesOpen = true">
-        <LayoutGrid :size="19" :stroke-width="1.5" />
-      </IconButton>
+      <div class="flex items-center gap-1">
+        <!--
+          Only with a selection, because that is the only time it has
+          anything to open. Rendering it disabled instead would give the
+          bar a permanent control that does nothing most of the time.
+        -->
+        <IconButton
+          v-if="edits.selection.length > 0"
+          label="Properties"
+          :active="inspectorOpen"
+          @click="inspectorOpen = !inspectorOpen"
+        >
+          <SlidersHorizontal :size="19" :stroke-width="1.5" />
+        </IconButton>
+        <IconButton label="Pages" :active="pagesOpen" @click="pagesOpen = true">
+          <LayoutGrid :size="19" :stroke-width="1.5" />
+        </IconButton>
+      </div>
     </nav>
 
     <!-- Pages become a full-screen modal on phones, per spec §6. -->
