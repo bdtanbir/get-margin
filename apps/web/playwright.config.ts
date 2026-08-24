@@ -24,17 +24,43 @@ export default defineConfig({
    * them here is minutes rather than a reason to defer.
    */
   projects: [
-    { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
+    {
+      name: 'desktop',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+      // Needs a touchscreen; the `touch` project below is the one with one.
+      testIgnore: '**/gestures.spec.ts',
+    },
     {
       name: 'firefox',
       use: { ...devices['Desktop Firefox'], viewport: { width: 1440, height: 900 } },
       // Desktop-only per its brief, same as the `phone` project below.
-      testIgnore: '**/worker-boot.spec.ts',
+      testIgnore: ['**/worker-boot.spec.ts', '**/gestures.spec.ts'],
     },
     {
       name: 'webkit',
       use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 900 } },
-      testIgnore: '**/worker-boot.spec.ts',
+      testIgnore: ['**/worker-boot.spec.ts', '**/gestures.spec.ts'],
+    },
+    /**
+     * Real touch gestures, which no other project can drive.
+     *
+     * The `phone` project below is WebKit, and Playwright's WebKit offers
+     * `touchscreen.tap()` and nothing else -- there is no way to express
+     * two fingers, so pinch-to-zoom had no coverage at all despite being
+     * implemented. Chromium's CDP `Input.dispatchTouchEvent` takes a list
+     * of touch points and feeds them through the browser's REAL input
+     * pipeline, which means `touch-action` arbitration, native scrolling
+     * and momentum all apply exactly as they do on a device. Synthetic
+     * `dispatchEvent` touches would bypass all three and prove nothing.
+     *
+     * Scoped to the gesture spec rather than running the whole suite a
+     * fifth time: this project exists for one capability, and every other
+     * spec is already covered by a project that shares its engine.
+     */
+    {
+      name: 'touch',
+      use: { ...devices['Pixel 7'] },
+      testMatch: '**/gestures.spec.ts',
     },
     {
       name: 'phone',
@@ -61,7 +87,11 @@ export default defineConfig({
       // change. Removing it now would just make `phone` launch a browser
       // per test here to immediately `test.skip` every one of them — legal,
       // but pure overhead for a file that was never meant to run there.
-      testIgnore: '**/worker-boot.spec.ts',
+      //
+      // gestures.spec.ts joins it for an unrelated reason: it drives real
+      // two-finger input through Chromium's CDP, which WebKit has no
+      // equivalent for. The `touch` project above owns that file.
+      testIgnore: ['**/worker-boot.spec.ts', '**/gestures.spec.ts'],
     },
   ],
 })
