@@ -103,6 +103,38 @@ pnpm --filter @margin/web preview
 `apps/web/scripts/make-icons.mjs` and re-run `pnpm --filter @margin/web
 icons:make` to regenerate every size plus `public/favicon.svg`.
 
+## Deployment headers
+
+`apps/web/vercel.json` sets two `Cache-Control` rules. JSON takes no
+comments, so the reasoning lives here.
+
+`/assets/*` is `immutable` for a year. Vite content-hashes every filename in
+that directory, so a changed file is a changed URL and there is nothing to go
+stale. Vercel's default for a static build is `max-age=0, must-revalidate`,
+which made every online launch re-validate the whole shell **and** the 10 MB
+WASM binary — round trips a phone on cellular pays for. This does not affect
+offline behaviour either way: Cache Storage ignores HTTP freshness, so the
+service worker's `CacheFirst` routes never revalidated in the first place.
+
+`/sw.js` is pinned to `max-age=0, must-revalidate`. That is already Vercel's
+default, and it is stated explicitly because it is the one file where a wrong
+header is unrecoverable: a service worker cached by the browser for a year
+would keep serving an old build to an installed app, with no way for the site
+to correct it. `public/` passthrough — the fonts and icons — is deliberately
+left at the default, because those filenames are stable rather than hashed
+and `immutable` on a name that can be overwritten serves a stale file
+forever.
+
+**Note if the headers do not take effect:** Vercel reads `vercel.json` from
+the project's configured Root Directory. This file sits in `apps/web/`, which
+is correct when Root Directory is `apps/web`. If the project builds from the
+repository root instead, move the file there — the contents are unchanged.
+Check with:
+
+```bash
+curl -sSI https://<your-deployment>/assets/index-<hash>.js | grep -i cache-control
+```
+
 ## Common Test Flow
 
 ```bash
