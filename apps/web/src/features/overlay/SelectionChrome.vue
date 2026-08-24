@@ -204,11 +204,18 @@ function startRotate(e: PointerEvent): void {
     Layer 3: DOM, not SVG, deliberately (spec 1.3). Tailwind classes, focus
     management, and mobile virtual keyboards all behave normally here and do
     not inside an <svg>.
+
+    `touch-none` for the reason PageOverlay's draw surface carries it: a
+    drag that starts here MOVES the object, and the scroller above would
+    otherwise be entitled to read it as a pan. The handles are children, so
+    the ancestor intersection covers resize and rotate too. This box is
+    only as large as the selected object, so scrolling by dragging anywhere
+    else on the page is unaffected.
   -->
   <div
     v-if="selected && box"
     data-selection
-    class="pointer-events-auto absolute cursor-move ring-2 ring-accent"
+    class="pointer-events-auto absolute cursor-move touch-none ring-2 ring-accent"
     :style="style"
     @pointerdown.stop="startMove"
     @dblclick.stop="editText"

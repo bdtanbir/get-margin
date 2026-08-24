@@ -163,12 +163,18 @@ onBeforeUnmount(reset)
     A transient canvas, NOT the SVG overlay: the in-flight stroke is redrawn
     on every pointermove, and doing that through the DOM would mean hundreds
     of element mutations a second. It holds nothing once the stroke commits.
+
+    `touch-none` for the reason PageOverlay's draw surface carries it: the
+    scroller above declares `pan-x pan-y`, and without an override the
+    browser reads a finger stroke as a pan and scrolls the page out from
+    under it. Only mounted while the ink tool is active, so ordinary
+    one-finger scrolling is untouched.
   -->
   <canvas
     v-if="tools.active === 'ink'"
     ref="surface"
     data-ink-canvas
-    class="pointer-events-auto absolute inset-0 size-full cursor-crosshair"
+    class="pointer-events-auto absolute inset-0 size-full cursor-crosshair touch-none"
     @pointerdown="onPointerDown"
   />
 </template>

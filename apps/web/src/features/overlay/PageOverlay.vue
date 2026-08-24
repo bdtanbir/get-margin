@@ -276,10 +276,26 @@ const draft = computed(() => {
       sits above the objects: while drawing, a pointerdown belongs to the new
       shape, not to whatever happens to be underneath.
     -->
+    <!--
+      `touch-none` is what makes drawing work with a finger.
+
+      PageList's scroller declares `touch-action: pan-x pan-y`, and the
+      effective value is the INTERSECTION down the ancestor chain -- so
+      without an override here the browser is entitled to read a one-finger
+      drag that starts on this surface as a pan. It then scrolls the
+      document under the finger while the draft rectangle is being sized
+      against a moving origin, and may take the gesture away outright with
+      a `pointercancel`. `none` is the only value that overrides `pan-x
+      pan-y` completely; `manipulation` still permits panning.
+
+      This surface only exists while a drawing tool is active, so opting
+      out of panning here costs nothing: with the select tool the surface
+      is unmounted and one-finger scrolling over the page is unaffected.
+    -->
     <div
       v-if="drawing"
       data-draw-surface
-      class="pointer-events-auto absolute inset-0 cursor-crosshair"
+      class="pointer-events-auto absolute inset-0 cursor-crosshair touch-none"
       @pointerdown="draw.onPointerDown"
     />
     <!--
