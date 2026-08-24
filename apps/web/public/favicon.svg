@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="oklch(0.53 0.2 268)"/>
+      <stop offset="1" stop-color="oklch(0.42 0.19 272)"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112.64" fill="url(#bg)"/>
+  <rect x="112.64" y="75.37" width="286.72" height="361.27"
+        rx="22.94" fill="oklch(0.99 0 0)"/>
+  <rect x="175.72" y="111.49" width="10.04" height="289.01"
+        rx="5.02" fill="oklch(0.53 0.2 268)" opacity="0.5"/>
+  <rect x="204.39" y="162.07" width="143.36" height="15.77" rx="7.88" fill="oklch(0.72 0.02 265)"/>
+  <rect x="204.39" y="219.87" width="120.42" height="15.77" rx="7.88" fill="oklch(0.72 0.02 265)"/>
+  <rect x="204.39" y="277.68" width="143.36" height="15.77" rx="7.88" fill="oklch(0.72 0.02 265)"/>
+  <rect x="204.39" y="335.48" width="86.02" height="15.77" rx="7.88" fill="oklch(0.72 0.02 265)"/>
+</svg>

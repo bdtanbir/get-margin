@@ -9,7 +9,8 @@
     "preview": "vite preview --port 4173",
     "typecheck": "vue-tsc --noEmit",
     "e2e": "pnpm --filter @margin/pdf-core fixtures && playwright test",
-    "fonts:fetch": "node scripts/fetch-fonts.mjs"
+    "fonts:fetch": "node scripts/fetch-fonts.mjs",
+    "icons:make": "node scripts/make-icons.mjs"
   },
   "dependencies": {
     "@margin/pdf-core": "workspace:*",
@@ -42,6 +43,8 @@
     "jsdom": "^25.0.1",
     "tailwindcss": "^4.0.0",
     "vite": "^6.0.0",
-    "vue-tsc": "^2.1.10"
+    "vite-plugin-pwa": "^1.3.0",
+    "vue-tsc": "^2.1.10",
+    "workbox-window": "^7.4.1"
   }
 }

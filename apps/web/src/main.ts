@@ -1,8 +1,12 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
+import { registerSW } from 'virtual:pwa-register'
 import App from './app/App.vue'
 import { initTelemetry } from './lib/telemetry/analytics'
 import { reporter } from './lib/telemetry/reporter'
+import { installPwaUpdates } from './lib/pwa/updates'
+import { consumeLaunchedFile } from './lib/pwa/launchQueue'
+import { useDocumentStore } from './stores/document'
 import './app/styles/tokens.css'
 
 const app = createApp(App)
@@ -35,4 +39,31 @@ app.config.errorHandler = (err, _instance, info) => {
  */
 initTelemetry()
 
+/**
+ * Register the service worker, and remember the handle it returns.
+ *
+ * Called before mount so a worker that is ALREADY waiting -- the case where
+ * the user last closed the app mid-deploy -- is reported to the prompt on
+ * the first frame rather than after one.
+ */
+installPwaUpdates(registerSW)
+
 app.use(createPinia()).mount('#app')
+
+/**
+ * Take the file the OS launched us with, if any.
+ *
+ * After mount, because it opens a document through the store and Pinia has
+ * to be installed first. Still synchronous with startup, which is what the
+ * launch queue requires -- a consumer registered a tick too late gets
+ * nothing, and the user sees an empty editor after double-clicking a PDF.
+ */
+const doc = useDocumentStore()
+consumeLaunchedFile(
+  (file) => void doc.openFile(file),
+  undefined,
+  (error) => {
+    doc.error = 'That file could not be opened from your file manager. Try opening it here instead.'
+    reporter().reportError({ name: 'launch-queue', component: 'main', error })
+  },
+)

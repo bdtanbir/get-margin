@@ -32,6 +32,21 @@ function gzippedSize(path: string): number {
 
 type Bundle = { app: number; wasm: number; total: number; files: Array<[string, number]> }
 
+/**
+ * Build output that lands in `dist/` root rather than `dist/assets/`.
+ *
+ * The service worker and its workbox runtime are code this app ships and
+ * every visitor downloads, so they belong in the budget — but they are
+ * emitted beside index.html, where the `assets/` walk below cannot see
+ * them. Without this list a precache manifest could grow without bound and
+ * the size gate would report no change at all.
+ *
+ * `public/` passthrough (fonts, icons, favicon.svg) stays out, exactly as
+ * it always has: those are fetched on demand or by the OS at install time,
+ * not on the path to first paint.
+ */
+const ROOT_OUTPUT = /^(index\.html|sw\.js|workbox-[^/]+\.js|manifest\.webmanifest)$/
+
 function measure(): Bundle {
   const assets = join(DIST, 'assets')
   const files: Array<[string, number]> = []
@@ -52,7 +67,13 @@ function measure(): Bundle {
     }
   }
   walk(assets)
-  app += gzippedSize(join(DIST, 'index.html'))
+
+  for (const entry of readdirSync(DIST)) {
+    if (!ROOT_OUTPUT.test(entry)) continue
+    const size = gzippedSize(join(DIST, entry))
+    files.push([entry, size])
+    app += size
+  }
 
   return { app, wasm, total: app + wasm, files: files.sort((a, b) => b[1] - a[1]) }
 }
@@ -73,15 +94,26 @@ const KB = 1024
  * message. The failure message below gives the numbers needed to write one.
  */
 const BUDGET = {
-  /** Everything we author: JS, CSS, the worker, the HTML shell. */
-  app: 260 * KB,
+  /**
+   * Everything we author: JS, CSS, the worker, the HTML shell, and the
+   * service worker.
+   *
+   * Raised from 260 KB when the PWA landed. That cost ~9 KB gzipped in
+   * total: workbox-window (2.4 KB) to talk to the service worker, the
+   * generated `sw.js` and its workbox runtime, the update prompt, and the
+   * launch-queue handler. Bought with it: the app installs, opens PDFs
+   * from the OS, and runs with no network. The 3% headroom above is the
+   * same margin the other two carry — room for a feature, not for a
+   * dependency nobody noticed.
+   */
+  app: 272 * KB,
   /**
    * MuPDF. It is the product -- there is no version of this app that reads
    * PDFs without it -- so this bound exists to catch it changing, not in
    * the hope of shrinking it.
    */
   wasm: 4700 * KB,
-  total: 4950 * KB,
+  total: 4962 * KB,
 }
 
 function human(bytes: number): string {

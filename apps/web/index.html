@@ -4,6 +4,24 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover" />
     <title>get-margin</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!--
+      iOS reads this and ignores the manifest's icons entirely, which is why
+      the same mark is shipped twice. It is also the flat variant: iOS
+      applies its own squircle, and a pre-rounded icon gets rounded again.
+    -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
+    <!--
+      The manifest's `theme_color` covers Android. iOS colours the status
+      bar from these instead, and it needs both: one static value would
+      leave a light bar above a dark app for every user on the other theme.
+      The document's own dark/light choice is applied by the script below;
+      these follow the OS, which is the only signal available before paint.
+    -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f4f6" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121417" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="get-margin" />
     <script>
       // Applied before first paint so there is no light-mode flash on a dark-theme load.
       try {

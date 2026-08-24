@@ -20,6 +20,7 @@ import { shouldAskForTelemetry } from '@/lib/telemetry/analytics'
 import { useDialogsStore } from '@/stores/dialogs'
 import RestorePrompt from '@/features/document/RestorePrompt.vue'
 import CommandPalette from '@/features/command/CommandPalette.vue'
+import UpdatePrompt from '@/features/pwa/UpdatePrompt.vue'
 
 useTheme()
 const { isDesktop } = useShell()
@@ -119,4 +120,13 @@ function record(err: Error): void {
     -->
     <FindPanel v-if="dialogs.isOpen('find')" @close="dialogs.close()" />
   </ErrorBoundary>
+  <!--
+    OUTSIDE the boundary and outside the status branches, unlike every
+    other prompt here. A new build being ready has nothing to do with
+    whether a document is open, and the one moment the offer matters most
+    is when the running build has just crashed into the boundary's
+    fallback -- which is precisely when a component mounted inside it
+    would be unreachable.
+  -->
+  <UpdatePrompt />
 </template>
