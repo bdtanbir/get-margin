@@ -31,6 +31,26 @@ describe('TextEditor', () => {
 
   const mountEditor = () => mount(TextEditor, { props: { page, zoom: 1 }, attachTo: document.body })
 
+  /**
+   * Same iOS problem the patch editor had: Safari zooms the whole page when
+   * it focuses a field drawing under 16px, and a 14pt text object at zoom 1
+   * is 14px. Tapping your own text box to fix a typo threw the viewport to
+   * a random magnification.
+   */
+  it('gives iOS no reason to zoom, without drawing the text any larger', async () => {
+    tools.startEditing('t1')
+    const w = mountEditor()
+    await w.vm.$nextTick()
+
+    const style = (w.get('[data-text-editor]').element as HTMLElement).style
+    const declared = Number.parseFloat(style.fontSize)
+    const scale = Number(/scale\(([\d.]+)\)/.exec(style.transform)?.[1] ?? 1)
+
+    expect(declared).toBeGreaterThanOrEqual(16)
+    expect(declared * scale, 'the text must still draw at its own 14px').toBeCloseTo(14, 6)
+    expect(style.transformOrigin).toBe('top left')
+  })
+
   async function type(w: ReturnType<typeof mountEditor>, text: string): Promise<void> {
     const node = w.get('[data-text-editor]').element as HTMLElement
     node.innerText = text
@@ -56,7 +76,12 @@ describe('TextEditor', () => {
     // PDF y 600..624 on a 792pt page -> view top = 792-624 = 168.
     expect(box.style.left).toBe('100px')
     expect(box.style.top).toBe('168px')
-    expect(box.style.width).toBe('200px')
+    // The DRAWN width, not the declared one. The element is over-sized and
+    // scaled back down so iOS has no reason to zoom the page while it is
+    // focused (lib/textFieldZoom.ts); left/top are untouched by that,
+    // because the transform runs from the top-left corner.
+    const scale = Number(/scale\(([\d.]+)\)/.exec(box.style.transform)?.[1] ?? 1)
+    expect(Number.parseFloat(box.style.width) * scale).toBeCloseTo(200, 6)
   })
 
   it('scales its type size with zoom so the caret matches the export', async () => {

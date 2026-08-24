@@ -13,6 +13,7 @@ import {
   DEFAULT_FAMILY,
 } from '@/lib/fonts'
 import { rgb } from '@/features/overlay/objects/svgPaint'
+import { noZoomTextSize } from '@/lib/textFieldZoom'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
 import {
   buildLinePatch, documentStyle, lineBox, patchOnLine, plainColor, sameStyle,
@@ -181,15 +182,56 @@ const inputWidth = computed(() => {
   return Math.min(wanted, Math.max(40, pageWidth - b.x))
 })
 
+/**
+ * The page's own colour behind this line -- the exact colour the committed
+ * patch will paint, so the field looks like the result.
+ *
+ * NOT a theme token. The field used to carry `bg-surface`, which is
+ * near-black under a dark theme, while its text colour was correctly taken
+ * from the line being replaced. On a phone in dark mode that meant black
+ * text on a black field: the page underneath is white paper whatever the
+ * interface is wearing. White is the fallback for the same reason
+ * `buildLinePatch` uses it -- an unsampled page is assumed to be paper.
+ */
+const fieldBackground = computed(() =>
+  rgb(background.value ? plainColor(background.value.color) : [1, 1, 1]),
+)
+
+/** How large the replacement should APPEAR, before iOS gets a say. */
+const drawnFontSize = computed(() => editSize.value * props.zoom)
+
+/**
+ * The font iOS is actually told about, and the scale that undoes it.
+ * See lib/textFieldZoom.ts for why this is not simply `drawnFontSize`.
+ */
+const fieldSize = computed(() => noZoomTextSize(drawnFontSize.value))
+
+/** The field's size ON SCREEN, which is what the warning panel hangs off. */
+const drawnBox = computed(() => {
+  const b = box.value
+  if (!b) return { width: 0, height: 0 }
+  return { width: inputWidth.value * props.zoom, height: b.h * props.zoom }
+})
+
 const style = computed(() => {
   const b = box.value
   if (!b) return {}
+  const { fontSize, scale } = fieldSize.value
   return {
     left: `${b.x * props.zoom}px`,
     top: `${b.y * props.zoom}px`,
-    width: `${inputWidth.value * props.zoom}px`,
-    height: `${b.h * props.zoom}px`,
-    fontSize: `${editSize.value * props.zoom}px`,
+    // Divided by the scale, because the transform below shrinks the box
+    // along with the text in it. These two and `fontSize` are the only
+    // values here that the scale touches.
+    width: `${drawnBox.value.width / scale}px`,
+    height: `${drawnBox.value.height / scale}px`,
+    fontSize: `${fontSize}px`,
+    transform: `scale(${scale})`,
+    // From the top-left corner, so the field stays over the line it
+    // replaces. The default centre origin would slide it up and left by
+    // half the shrinkage.
+    transformOrigin: 'top left',
+    backgroundColor: fieldBackground.value,
     // The family AND weight the export will use, so what is typed is the
     // width it will be measured at rather than whatever the UI font happens
     // to be. Bold glyphs are wider; typing into a regular field and getting
@@ -472,7 +514,7 @@ defineExpose({ begin })
         type="text"
         data-patch-input
         aria-label="Replacement text"
-        class="pointer-events-auto absolute box-border border border-accent bg-surface px-0.5
+        class="pointer-events-auto absolute box-border border border-accent px-0.5
                leading-none focus:outline-none"
         :style="style"
         @keydown.enter.prevent="commit()"
@@ -502,7 +544,7 @@ defineExpose({ begin })
         v-if="risky || missing.length"
         class="pointer-events-none absolute z-10 max-w-64 rounded-panel border border-border
                bg-surface-raised p-2 text-[12px] text-warning shadow-high"
-        :style="{ left: style.left, top: `calc(${style.top} + ${style.height})` }"
+        :style="{ left: style.left, top: `calc(${style.top} + ${drawnBox.height}px)` }"
         data-patch-warnings
         role="status"
       >

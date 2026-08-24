@@ -89,6 +89,61 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
   })
 
+  /**
+   * Issue reported from an iPhone in dark mode: tapping a line to edit it
+   * produced black text on a black field, unreadable.
+   *
+   * The field's colour was already taken from the LINE (a grey label types
+   * in grey, even in dark mode) but its background was `bg-surface` -- an
+   * app theme token, near-black under a dark theme. The page underneath is
+   * white paper whatever the interface is wearing, so the field has to be
+   * painted with the page, not with the chrome.
+   */
+  it('paints the field with the page behind it, not the app theme', async () => {
+    const w = mountEditor(INDEX)
+    await w.get('[data-patch-target="0"]').trigger('click')
+
+    const input = w.get('[data-patch-input]').element as HTMLInputElement
+    expect(input.style.backgroundColor).toBe('rgb(255, 255, 255)')
+    // Not merely "some inline colour": the theme token must be gone, or a
+    // dark theme would still win wherever the inline value is absent.
+    expect(w.get('[data-patch-input]').classes()).not.toContain('bg-surface')
+  })
+
+  it('follows the page colour rather than assuming white paper', async () => {
+    // A flat grey page, the colour the committed patch would paint.
+    const grey = flatBitmap()
+    grey.rgba.fill(200)
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(grey)
+
+    const w = mountEditor(INDEX)
+    await w.get('[data-patch-target="0"]').trigger('click')
+
+    const input = w.get('[data-patch-input]').element as HTMLInputElement
+    expect(input.style.backgroundColor).toBe('rgb(200, 200, 200)')
+  })
+
+  /**
+   * Second half of the same report: tapping a line threw the viewport to a
+   * random magnification. That is iOS zooming the page because the field it
+   * focused draws below 16px -- the fixture line is 12pt at zoom 1.
+   *
+   * The field asks for 16px and is scaled back down by the same factor, so
+   * iOS has nothing to correct and the text still draws at 12px.
+   */
+  it('gives iOS no reason to zoom, without drawing the text any larger', async () => {
+    const w = mountEditor(INDEX)
+    await w.get('[data-patch-target="0"]').trigger('click')
+
+    const input = w.get('[data-patch-input]').element as HTMLInputElement
+    expect(Number.parseFloat(input.style.fontSize)).toBeGreaterThanOrEqual(16)
+    // 12px asked for, 16px declared, so the element is drawn at 0.75.
+    expect(input.style.transform).toContain('scale(0.75)')
+    // Scaling from the top-left keeps the field over the line it replaces;
+    // the default centre origin would slide it up and to the left.
+    expect(input.style.transformOrigin).toBe('top left')
+  })
+
   it('offers a target for every line', () => {
     expect(mountEditor(INDEX).findAll('[data-patch-target]')).toHaveLength(1)
   })
@@ -522,8 +577,18 @@ describe('size', () => {
   it('draws the field at the line’s size rather than a fraction of its box', async () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
+
     // 12pt at zoom 1. The box-height approximation would give 18 * 0.8.
-    expect(w.get('[data-patch-input]').attributes('style')).toContain('font-size: 12px')
+    //
+    // Read as declared-size x scale rather than off `font-size` alone: the
+    // field declares 16px and is scaled back down, so that iOS has no
+    // reason to zoom the page (lib/textFieldZoom.ts). What this test is
+    // about is the size the user SEES, which is the product of the two and
+    // is still the line's own 12.
+    const style = (w.get('[data-patch-input]').element as HTMLInputElement).style
+    const declared = Number.parseFloat(style.fontSize)
+    const scale = Number(/scale\(([\d.]+)\)/.exec(style.transform)?.[1] ?? 1)
+    expect(declared * scale).toBeCloseTo(12, 6)
   })
 
   it('heals a patch stored by an older build, which carries the sentinel', async () => {

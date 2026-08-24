@@ -7,6 +7,7 @@ import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { cssFamily, cssWeight, cssStyle, loadFont, LINE_HEIGHT } from '@/lib/fonts'
 import { rgb } from './objects/svgPaint'
+import { noZoomTextSize } from '@/lib/textFieldZoom'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -33,14 +34,22 @@ const style = computed(() => {
   const o = target.value
   if (!o) return {}
   const b = pdfRectToView(o.rect, props.page.geometry, props.zoom)
+  // Point sizes scale with zoom exactly as the page does, so the caret sits
+  // where the exported glyphs will -- but iOS refuses to focus a field
+  // under 16px without zooming the page to compensate. `noZoomTextSize`
+  // gives it the 16px it wants and hands back the factor to undo it with;
+  // the box is divided by that factor so the transform does not shrink it
+  // along with the text. See lib/textFieldZoom.ts.
+  const { fontSize, scale } = noZoomTextSize(o.fontSize * props.zoom)
   return {
     left: `${b.x}px`,
     top: `${b.y}px`,
-    width: `${b.w}px`,
-    minHeight: `${b.h}px`,
-    // Point sizes scale with zoom exactly as the page does, so the caret
-    // sits where the exported glyphs will.
-    fontSize: `${o.fontSize * props.zoom}px`,
+    width: `${b.w / scale}px`,
+    minHeight: `${b.h / scale}px`,
+    fontSize: `${fontSize}px`,
+    transform: `scale(${scale})`,
+    // From the top-left, so the box stays over the object it is editing.
+    transformOrigin: 'top left',
     lineHeight: String(LINE_HEIGHT),
     fontFamily: cssFamily(o.fontFamily),
     fontWeight: cssWeight(o.bold),
