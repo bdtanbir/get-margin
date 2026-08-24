@@ -182,3 +182,41 @@ test('tapping a thumbnail closes the Pages modal on phone', async ({ page }, tes
   await modal.getByRole('option', { name: 'Page 8', exact: true }).click()
   await expect(modal).not.toBeVisible()
 })
+
+/**
+ * The tool rail is a LEFT COLUMN on phones, in the layout, not over it.
+ *
+ * The "in the layout" half is the part worth pinning. A floating rail
+ * would satisfy "on the left" while covering the left margin of every
+ * page -- which is precisely the overlap Task 21 removed for ZoomPill
+ * (see MobileShell.vue's Amendment A3). Measuring the two boxes is the
+ * only way to tell the two layouts apart from the outside; asserting on
+ * Tailwind classes would pass for a rail with `position: fixed` bolted on.
+ */
+test('the tool rail is a left column beside the page area, not over it', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'phone', 'phone only')
+  await page.goto('/')
+  await page.setInputFiles('input[type=file]', FIXTURE)
+  await expect(page1Canvas(page)).toBeVisible({ timeout: 30_000 })
+
+  const rail = page.getByRole('navigation', { name: 'Tools' })
+  const scroller = page.getByRole('region', { name: 'Document pages' })
+  const railBox = (await rail.boundingBox())!
+  const pagesBox = (await scroller.boundingBox())!
+  expect(railBox, 'the tool rail is not on screen').toBeTruthy()
+
+  // Against the left edge, and taller than it is wide -- a column, not the
+  // horizontal strip this replaced.
+  expect(railBox.x).toBeLessThanOrEqual(2)
+  expect(railBox.height).toBeGreaterThan(railBox.width * 2)
+
+  // The page area starts where the rail ends. This is the assertion a
+  // floating rail fails.
+  expect(railBox.x + railBox.width).toBeLessThanOrEqual(pagesBox.x + 1)
+
+  // And the rail must not have eaten the document: the page still renders.
+  const canvas = (await page1Canvas(page).boundingBox())!
+  expect(canvas.width).toBeGreaterThan(100)
+})

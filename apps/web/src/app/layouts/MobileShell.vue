@@ -52,18 +52,32 @@ const pagesOpen = ref(false)
       symmetric inset — no bottom-bias reserve needed, because there is no
       longer anything floating in from that edge.
     -->
-    <main class="relative min-h-0 flex-1 overflow-hidden p-3">
-      <PageList />
-    </main>
-
     <!--
-      The strip sits ABOVE the actions nav, not in place of it: both are
-      `shrink-0` siblings of the `flex-1` main, so each reduces PageList's
-      box through ordinary layout rather than floating over it — the
-      "reserved space in the layout flow" Amendment A3 calls for, which is
-      also why ZoomPill lives in the nav below.
+      Rail and page area are a ROW, and the row is what `flex-1` now
+      applies to. The rail is `shrink-0` and the page area is `flex-1`
+      beside it, so the document's box is measured to the space the rail
+      leaves — the same "reserved space in the layout flow" argument
+      Amendment A3 makes above, applied on the horizontal axis. Nothing
+      floats over the pages from the left edge any more than from the
+      bottom one.
+
+      `min-w-0` on the main is not decoration: a flex item defaults to
+      `min-width: auto`, which refuses to shrink below its content's
+      intrinsic width, and PageList's canvases would push the main wider
+      than the row and force the rail off screen instead of shrinking to
+      fit beside it.
+
+      `pl-[env(safe-area-inset-left)]` on the row, not on the rail: in
+      landscape on a notched phone the inset is ~44px, and putting it
+      inside the rail would squeeze the buttons rather than move the whole
+      column clear of the notch.
     -->
-    <ToolStrip v-if="doc.isReady" />
+    <div class="flex min-h-0 flex-1 pl-[env(safe-area-inset-left)]">
+      <ToolStrip v-if="doc.isReady" />
+      <main class="relative min-h-0 min-w-0 flex-1 overflow-hidden p-3">
+        <PageList />
+      </main>
+    </div>
 
     <!--
       Fixed-position sheet, so it overlays rather than reflowing the strip
