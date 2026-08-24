@@ -35,3 +35,28 @@ export function isValidUri(input: string): boolean {
     return false
   }
 }
+
+/**
+ * A link needs a URL before it can exist, and the URL is validated at
+ * op-creation time so an invalid one is unrepresentable (spec 2.1). The
+ * prompt is injectable so tests do not depend on window.prompt, and so a
+ * later task can swap it for a proper dialog without touching its callers.
+ *
+ * It lives beside the validation rather than in the draw tool because two
+ * gestures now ask the same question -- dragging a hotspot out, and turning
+ * a text selection into one -- and neither is the other's owner.
+ */
+export type UriPrompt = (current: string) => string | null
+
+const defaultPrompt: UriPrompt = (current) =>
+  typeof window === 'undefined' ? null : window.prompt('Link URL', current)
+
+let prompt: UriPrompt = defaultPrompt
+
+export function askForUri(current: string): string | null {
+  return prompt(current)
+}
+
+export function setUriPrompt(fn: UriPrompt | undefined): void {
+  prompt = fn ?? defaultPrompt
+}

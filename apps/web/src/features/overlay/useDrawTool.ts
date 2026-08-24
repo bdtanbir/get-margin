@@ -8,7 +8,7 @@ import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore, type ToolId } from '@/stores/tools'
 import { DEFAULT_FAMILY } from '@/lib/fonts'
-import { normalizeUri } from '@/lib/linkUrl'
+import { askForUri, normalizeUri } from '@/lib/linkUrl'
 import { useDragGesture } from './useDragGesture'
 import { newFieldNames } from '@/features/forms/fieldNaming'
 
@@ -57,23 +57,6 @@ export const TEXT_DEFAULTS = {
 
 /** Minimum box a dragged-out text frame gets, so an empty one is still visible. */
 const TEXT_MIN_SIZE_PT = { w: 120, h: 20 }
-
-/**
- * A link needs a URL before it can exist, and the URL is validated at
- * op-creation time so an invalid one is unrepresentable (spec 2.1). The
- * prompt is injectable so tests do not depend on window.prompt, and so a
- * later task can swap it for a proper dialog without touching this file.
- */
-export type UriPrompt = (current: string) => string | null
-
-const defaultPrompt: UriPrompt = (current) =>
-  typeof window === 'undefined' ? null : window.prompt('Link URL', current)
-
-let askForUri: UriPrompt = defaultPrompt
-
-export function setUriPrompt(fn: UriPrompt | undefined): void {
-  askForUri = fn ?? defaultPrompt
-}
 
 /**
  * The kind-specific half of a newly drawn object. Whiteout carries a `fill`

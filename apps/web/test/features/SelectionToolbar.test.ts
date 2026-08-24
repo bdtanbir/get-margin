@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useEditsStore } from '@/stores/edits'
 import { useSelectionStore } from '@/stores/selection'
+import { useDocumentStore } from '@/stores/document'
+import { setUriPrompt } from '@/lib/linkUrl'
 import type { PageState } from '@/stores/document'
-import type { Color, EditObject, TextPatchObject } from '@margin/pdf-core'
+import type { Color, EditObject, LinkObject, TextPatchObject } from '@margin/pdf-core'
 
 const page: PageState = { id: 'p1', sourceId: 'src-0', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }
 
@@ -349,5 +351,153 @@ describe('SelectionToolbar style actions', () => {
     expect(patches()).toHaveLength(1)
     expect(patches()[0]!.lineIndex).toBe(1)
     expect(patches()[0]!.bold).toBe(true)
+  })
+})
+
+/**
+ * Turning a text selection into a link.
+ *
+ * A PDF link hotspot is a rect, not a run of quads -- fz_link has no
+ * /QuadPoints -- so a selection spanning two lines becomes TWO link
+ * objects, one per line, rather than one box that also covers the text
+ * either side of the selection on the lines between.
+ */
+describe('SelectionToolbar link action', () => {
+  let edits: ReturnType<typeof useEditsStore>
+  let selection: ReturnType<typeof useSelectionStore>
+  let doc: ReturnType<typeof useDocumentStore>
+
+  /** One line per row, four characters wide, in MuPDF page space (top-down). */
+  const lineAt = (row: number, text: string) => ({
+    bbox: [10, 100 + row * 30, 10 + text.length * 10, 120 + row * 30] as [number, number, number, number],
+    text,
+    font: 'Helvetica',
+    bold: false,
+    italic: false,
+    color: [0, 0, 0] as Color,
+    size: 10,
+    baseline: 116 + row * 30,
+    chars: [...text].map((char, i) => ({
+      char,
+      quad: [
+        10 + i * 10, 100 + row * 30, 20 + i * 10, 100 + row * 30,
+        10 + i * 10, 120 + row * 30, 20 + i * 10, 120 + row * 30,
+      ] as never,
+    })),
+  })
+
+  const oneLine = { lines: [lineAt(0, 'ab')] }
+  const twoLines = { lines: [lineAt(0, 'ab'), lineAt(1, 'cd')] }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    edits = useEditsStore()
+    selection = useSelectionStore()
+    doc = useDocumentStore()
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'],
+      { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
+  })
+
+  afterEach(() => setUriPrompt(undefined))
+
+  const mountFor = () => mount(SelectionToolbar, { props: { page, zoom: 1 } })
+
+  function select(index: typeof oneLine, from = { line: 0, char: 0 }, to = { line: 0, char: 1 }) {
+    selection.begin('p1', index, from)
+    selection.extend(to)
+  }
+
+  const links = (): LinkObject[] =>
+    Object.values(edits.doc.objects).filter((o): o is LinkObject => o.kind === 'link')
+
+  it('offers a Link action while text is selected', () => {
+    select(oneLine)
+    expect(mountFor().find('[data-link]').exists()).toBe(true)
+  })
+
+  it('normalises a bare domain into an https URL', async () => {
+    select(oneLine)
+    setUriPrompt(() => 'example.com/a')
+    await mountFor().get('[data-link]').trigger('click')
+    expect(links()).toHaveLength(1)
+    expect(links()[0]!.uri).toBe('https://example.com/a')
+  })
+
+  /**
+   * The URL is ALWAYS typed, never guessed from the page.
+   *
+   * Offering the selected text as the URL was tempting -- a document that
+   * prints "please visit www.usbair.com" reads like it is asking for it --
+   * but a guess that is right most of the time is worse here than no guess
+   * at all: the wrong one is a working link to somewhere nobody chose, and
+   * it looks identical to the right one until someone clicks it.
+   */
+  it('always asks with an empty box, whatever the selected text says', async () => {
+    selection.begin('p1', { lines: [lineAt(0, 'a.com')] }, { line: 0, char: 0 })
+    selection.extend({ line: 0, char: 4 })
+    let offered: string | undefined
+    setUriPrompt((current) => { offered = current; return null })
+    await mountFor().get('[data-link]').trigger('click')
+    expect(offered).toBe('')
+  })
+
+  // Spec 2.1: a javascript: URL must never reach the export path, so it is
+  // refused at op-creation time and no object is produced at all.
+  it('creates nothing for a javascript: URL and says why', async () => {
+    select(oneLine)
+    setUriPrompt(() => 'javascript:alert(1)')
+    await mountFor().get('[data-link]').trigger('click')
+    expect(links()).toHaveLength(0)
+    expect(doc.error).toMatch(/not allowed/i)
+  })
+
+  it('creates nothing when the prompt is cancelled', async () => {
+    select(oneLine)
+    setUriPrompt(() => null)
+    const before = edits.historySize
+    await mountFor().get('[data-link]').trigger('click')
+    expect(links()).toHaveLength(0)
+    expect(edits.historySize).toBe(before)
+  })
+
+  // The hotspot's rect is raw bottom-up PDF space like every other object's,
+  // which is what writeLink's toAnnotSpace expects -- the quads it came from
+  // are top-down page space.
+  it('puts the hotspot over the selected text, in bottom-up PDF space', async () => {
+    select(oneLine)
+    setUriPrompt(() => 'a.com')
+    await mountFor().get('[data-link]').trigger('click')
+    // Quads span x 10..30, y 100..120 top-down on a 792pt page.
+    expect(links()[0]!.rect).toEqual({ x: 10, y: 672, w: 20, h: 20 })
+  })
+
+  it('makes one hotspot per line, because a link hotspot is a rect', async () => {
+    select(twoLines, { line: 0, char: 0 }, { line: 1, char: 1 })
+    setUriPrompt(() => 'a.com')
+    await mountFor().get('[data-link]').trigger('click')
+    expect(links()).toHaveLength(2)
+    // Same URL, different rows -- one gesture, two hotspots.
+    expect(links().map((l) => l.uri)).toEqual(['https://a.com/', 'https://a.com/'])
+    expect(links().map((l) => l.rect.y).sort()).toEqual([642, 672])
+  })
+
+  it('is one undo step however many lines it touched', async () => {
+    select(twoLines, { line: 0, char: 0 }, { line: 1, char: 1 })
+    setUriPrompt(() => 'a.com')
+    const before = edits.historySize
+    await mountFor().get('[data-link]').trigger('click')
+    expect(edits.historySize).toBe(before + 1)
+  })
+
+  /**
+   * The new links are handed to the object selection so the Inspector's URL
+   * field is in front of the user, which is where a mistyped URL gets fixed.
+   */
+  it('clears the text selection and selects the new links', async () => {
+    select(oneLine)
+    setUriPrompt(() => 'a.com')
+    await mountFor().get('[data-link]').trigger('click')
+    expect(selection.hasSelection).toBe(false)
+    expect(edits.selection).toEqual(links().map((l) => l.id))
   })
 })

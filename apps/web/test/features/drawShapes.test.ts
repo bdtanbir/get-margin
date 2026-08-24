@@ -5,7 +5,7 @@ import PageOverlay from '@/features/overlay/PageOverlay.vue'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { useDocumentStore } from '@/stores/document'
-import { setUriPrompt } from '@/features/overlay/useDrawTool'
+import { setUriPrompt } from '@/lib/linkUrl'
 import type { PageState } from '@/stores/document'
 
 const page: PageState = { id: 'p1', sourceId: 'src-0', sourceIndex: 0, geometry: { cropBox: [0, 0, 612, 792], rotate: 0 } }

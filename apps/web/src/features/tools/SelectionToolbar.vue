@@ -3,22 +3,27 @@ import { computed } from 'vue'
 import { nanoid } from 'nanoid'
 import {
   Copy, Trash2, BringToFront, SendToBack, Lock, LockOpen,
-  Highlighter, Underline, Strikethrough, SquareSlash, Bold, Italic,
+  Highlighter, Underline, Strikethrough, SquareSlash, Bold, Italic, Link2,
 } from 'lucide-vue-next'
 import { objectViewRect } from '@/features/overlay/objectViewRect'
 import IconButton from '@/ui/IconButton.vue'
 import type { PageState } from '@/stores/document'
+import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useSelectionStore } from '@/stores/selection'
 import { useViewportStore } from '@/stores/viewport'
 import { DEFAULT_FAMILY } from '@/lib/fonts'
+import { askForUri, normalizeUri } from '@/lib/linkUrl'
 import { sampleBackground } from '@/features/patch/sampleBackground'
 import {
   buildLinePatch, documentStyle, isPristine, lineBox, patchOnLine, styleOf,
 } from '@/features/patch/linePatch'
-import type { LineRun, MarkupObject, RedactionObject, EditObject } from '@margin/pdf-core'
+import type {
+  LineRun, LinkObject, MarkupObject, RedactionObject, EditObject,
+} from '@margin/pdf-core'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
+const doc = useDocumentStore()
 const edits = useEditsStore()
 const selection = useSelectionStore()
 const vp = useViewportStore()
@@ -109,14 +114,14 @@ const textStyle = computed(() => {
   return { left: `${left}px`, top: `${top - GAP_PX}px` }
 })
 
-function markup(kind: 'highlight' | 'underline' | 'strikeout'): void {
-  const quads = selection.selectedQuads
-  if (quads.length === 0) return
-
-  // The object's `rect` is raw bottom-up PDF space like every other object,
-  // while its `quads` stay in MuPDF page space -- see the MarkupObject type
-  // and write/objects/markup.ts. The rect is selection geometry only; the
-  // exported annotation derives its own box from the quads.
+/**
+ * The box a run of quads covers, in raw bottom-up PDF space.
+ *
+ * The quads arrive in MuPDF page space (top-down) and every object's `rect`
+ * is bottom-up, so this flip is the one conversion the three selection
+ * actions all need -- see MarkupObject for why the two spaces coexist.
+ */
+function boxOf(quads: number[][]): { x: number; y: number; w: number; h: number } {
   const [, y0, , y1] = props.page.geometry.cropBox
   const pageH = y1 - y0
   let minX = Infinity, minTop = Infinity, maxX = -Infinity, maxBottom = -Infinity
@@ -126,14 +131,24 @@ function markup(kind: 'highlight' | 'underline' | 'strikeout'): void {
       minTop = Math.min(minTop, q[i + 1]!); maxBottom = Math.max(maxBottom, q[i + 1]!)
     }
   }
+  return { x: minX, y: pageH - maxBottom, w: maxX - minX, h: maxBottom - minTop }
+}
 
+function markup(kind: 'highlight' | 'underline' | 'strikeout'): void {
+  const quads = selection.selectedQuads
+  if (quads.length === 0) return
+
+  // The object's `rect` is raw bottom-up PDF space like every other object,
+  // while its `quads` stay in MuPDF page space -- see the MarkupObject type
+  // and write/objects/markup.ts. The rect is selection geometry only; the
+  // exported annotation derives its own box from the quads.
   const object: MarkupObject = {
     id: nanoid(10),
     pageId: props.page.id,
     kind,
     quads: quads.map((q) => [...q]),
     color: MARKUP_COLOURS[kind],
-    rect: { x: minX, y: pageH - maxBottom, w: maxX - minX, h: maxBottom - minTop },
+    rect: boxOf(quads),
     rotation: 0,
     z: edits.nextZ(),
     locked: false,
@@ -161,16 +176,6 @@ function redact(): void {
   const quads = selection.selectedQuads
   if (quads.length === 0) return
 
-  const [, y0, , y1] = props.page.geometry.cropBox
-  const pageH = y1 - y0
-  let minX = Infinity, minTop = Infinity, maxX = -Infinity, maxBottom = -Infinity
-  for (const q of quads) {
-    for (let i = 0; i < 8; i += 2) {
-      minX = Math.min(minX, q[i]!); maxX = Math.max(maxX, q[i]!)
-      minTop = Math.min(minTop, q[i + 1]!); maxBottom = Math.max(maxBottom, q[i + 1]!)
-    }
-  }
-
   const object: RedactionObject = {
     id: nanoid(10),
     pageId: props.page.id,
@@ -179,7 +184,7 @@ function redact(): void {
     // A mark by default: a redaction nobody can see is one nobody can
     // check, including the person who made it.
     blackBox: true,
-    rect: { x: minX, y: pageH - maxBottom, w: maxX - minX, h: maxBottom - minTop },
+    rect: boxOf(quads),
     rotation: 0,
     z: edits.nextZ(),
     locked: false,
@@ -188,6 +193,66 @@ function redact(): void {
   edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Redact')
   selection.clear()
   edits.select([object.id])
+}
+
+/**
+ * Turn the selected text into a link hotspot.
+ *
+ * ONE OBJECT PER LINE, unlike the markup actions above. A markup annotation
+ * carries /QuadPoints and can describe a ragged multi-line run exactly; a
+ * link cannot -- fz_link is a single rect (see write/objects/link.ts). A
+ * selection ending mid-line would therefore become a box covering the rest
+ * of that line too, making text nobody selected clickable. Per line, the
+ * hotspot hugs what was selected.
+ *
+ * The URL is TYPED, never derived from the page, and it is asked for and
+ * validated BEFORE any object exists -- so a rejected or cancelled link
+ * leaves nothing behind to clean up. Same order the draw tool uses, and
+ * what keeps a `javascript:` URL unrepresentable rather than merely refused
+ * at export.
+ */
+function addLink(): void {
+  const quads = selection.selectedQuads
+  if (quads.length === 0) return
+
+  // ALWAYS an empty box. Offering the selected text as the URL reads like a
+  // kindness -- most documents that print an address mean it -- but a guess
+  // that is usually right is the wrong trade here: a wrong one is a working
+  // link to somewhere nobody chose, and it looks exactly like a right one
+  // until someone clicks it. The URL is the user's to state.
+  const answer = askForUri('')
+  if (answer === null) return
+
+  let uri: string
+  try {
+    uri = normalizeUri(answer)
+  } catch (e) {
+    doc.error = e instanceof Error ? e.message : 'That link is not valid.'
+    return
+  }
+
+  const ids: string[] = []
+  edits.withTransaction('Add link', () => {
+    for (const quad of quads) {
+      const object: LinkObject = {
+        id: nanoid(10),
+        pageId: props.page.id,
+        kind: 'link',
+        uri,
+        rect: boxOf([quad]),
+        rotation: 0,
+        z: edits.nextZ(),
+        locked: false,
+        opacity: 1,
+      }
+      ids.push(object.id)
+      edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Add link')
+    }
+  })
+  selection.clear()
+  // Straight to the object selection, which puts the Inspector's URL field
+  // in front of the user -- where a mistyped URL gets fixed.
+  edits.select(ids)
 }
 
 /**
@@ -347,6 +412,9 @@ function toggleLock(): void {
     </IconButton>
     <IconButton size="sm" label="Strikeout" @click="markup('strikeout')">
       <Strikethrough :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <IconButton size="sm" label="Link" data-link @click="addLink()">
+      <Link2 :size="16" :stroke-width="1.5" />
     </IconButton>
     <!--
       Separated and coloured, because it is the one control here that
