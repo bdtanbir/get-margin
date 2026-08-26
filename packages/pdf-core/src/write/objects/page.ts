@@ -2,7 +2,7 @@ import type * as mupdf from 'mupdf'
 import type { PageGeometry } from '@margin/transform'
 import type { EditDocument } from '../types.js'
 import { toAnnotSpace, toContentSpace, num } from '../coords.js'
-import { prependContent, fillColor } from '../content.js'
+import { appendContent, fillColor, blendState } from '../content.js'
 
 /**
  * Apply each page's rotation and crop, AFTER assembly and BEFORE objects
@@ -119,17 +119,29 @@ export function applyTabOrder(
 }
 
 /**
- * Paint each page's background colour UNDER everything already on it.
+ * Tint each page in its background colour.
  *
- * `prependContent`, not `appendContent`, and the distinction is the whole
- * feature: a page's content is drawn over the background, so appending
- * would put a coloured rectangle over the document instead of behind it.
+ * MULTIPLY OVER THE CONTENT, not an opaque fill under it, and that choice
+ * is the whole feature working or not working.
  *
- * LAST in the write pipeline, after the object writers have run. A stamp
- * with `behind: true` prepends too, and prepending puts a stream at index 0
- * -- so whoever prepends last ends up at the bottom. Running this after the
- * stamps is what keeps a watermark ON the background rather than under it,
- * where it would be invisible.
+ * Under the content is the obvious implementation and it is wrong for most
+ * real files. A page is usually white because NOTHING painted it -- and an
+ * underlying fill is exactly right for those -- but any page printed from a
+ * browser paints its own opaque white background across the sheet, and a
+ * fill beneath that is invisible. Measured on a real HTML-to-PDF ticket:
+ * every one of its 500,990 pixels came back opaque.
+ *
+ * `Multiply` computes `backdrop x source`, so it covers both cases with one
+ * rule: white paper (painted or unpainted, both composite as white) takes
+ * the colour exactly, black text stays black, and nothing on the page can
+ * be hidden by it. That last part is why this is safe to apply to a
+ * document sight unseen -- there is no colour the user can pick that
+ * erases their content.
+ *
+ * BEFORE the object writers, so the user's own text and shapes are drawn ON
+ * the tinted page rather than through the tint. A stamp asking to sit
+ * `behind` the content prepends, so it lands under this and is tinted with
+ * the page -- which is what "behind the content" asked for.
  *
  * The rect is the page's CropBox as it stands NOW, read through `geometryOf`
  * rather than from the source: `applyPageBoxes` has already run, so a page
@@ -152,11 +164,11 @@ export function applyPageBackgrounds(
 
     const page = raw.loadPage(index)
     try {
-      prependContent(
-        raw,
-        page,
-        `${fillColor(background)}\n${num(x)} ${num(y)} ${num(w)} ${num(h)} re f`,
-      )
+      appendContent(raw, page, [
+        blendState(raw, page, `GSbg${index}`, 'Multiply'),
+        fillColor(background),
+        `${num(x)} ${num(y)} ${num(w)} ${num(h)} re f`,
+      ].join('\n'))
     } finally {
       page.destroy()
     }

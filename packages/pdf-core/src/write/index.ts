@@ -267,6 +267,11 @@ export function replay(
     // must be the final one.
     applyPageBoxes(raw, editDoc, geometryOf)
 
+    // AFTER the boxes, so the tint fills the crop the user drew, and BEFORE
+    // the object writers, so their text and shapes are drawn ON the tinted
+    // page rather than seen through the tint.
+    if (hasBackground) applyPageBackgrounds(raw, editDoc, geometryOf)
+
     // One registry per replay call, so a family used on five pages is parsed
     // and embedded once rather than five times.
     const fonts = new FontRegistry(raw, provider)
@@ -353,14 +358,6 @@ export function replay(
     // before flatten, so a redacted form field is redacted before it is
     // frozen into the page.
     applyRedactions(raw, editDoc)
-
-    // AFTER every writer that touches page content, because prepending puts
-    // a stream at the FRONT of /Contents and the last prepend wins the
-    // bottom: running this before the stamps would bury a `behind`
-    // watermark under the background it is meant to sit on. After
-    // applyRedactions too -- that rewrites content streams wholesale, and
-    // there is nothing to gain from handing it one more to rewrite.
-    if (hasBackground) applyPageBackgrounds(raw, editDoc, geometryOf)
 
     // AFTER the fields exist and BEFORE they are baked: tab order IS
     // /Annots order, so it has to be applied while there is still an

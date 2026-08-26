@@ -136,8 +136,12 @@ const ALIGNMENTS = [
 <template>
   <div
     data-page-style-bar
-    class="shrink-0 border-b border-border px-3 pb-2 text-[13px]"
+    class="shrink-0 border-b border-border pb-3 text-[13px]"
   >
+    <h2 class="pb-1 text-[13px] font-medium text-text">
+      {{ pageIds.length === 1 ? 'Page' : `${pageIds.length} pages` }}
+    </h2>
+
     <div class="flex min-h-8 items-center gap-2">
       <label for="page-background" class="mr-auto text-text-muted">Background</label>
       <!--

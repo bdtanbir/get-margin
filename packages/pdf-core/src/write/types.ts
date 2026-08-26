@@ -352,19 +352,17 @@ export type PageEntry = {
    */
   tabOrder?: string[]
   /**
-   * A colour painted across the whole page, UNDER everything the source
-   * document draws.
+   * A colour the whole page is tinted in.
    *
    * OPTIONAL, and absent means "leave the page as it is" -- which is what
    * every page written before this existed meant, so no stored document
    * needs migrating and no schema version had to move. Same reasoning as
    * `tabOrder`.
    *
-   * Under, not over, and that is the only version of this feature that
-   * works: a PDF page is not white because something painted it white, it
-   * is white because nothing painted it at all. Drawing OVER the content
-   * would hide the document behind a coloured rectangle; drawing under it
-   * fills in the nothing, which is what a page background is.
+   * A TINT, applied with the Multiply blend mode, not a fill laid under the
+   * content -- see applyPageBackgrounds for the measurement that settled it.
+   * The short version: a fill underneath is invisible on any page that
+   * paints its own white background, which is every page a browser printed.
    */
   background?: Color
 }

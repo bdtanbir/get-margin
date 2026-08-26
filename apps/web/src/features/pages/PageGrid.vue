@@ -11,11 +11,13 @@ import { useDragReorder } from './useDragReorder'
 import SplitDialog from './SplitDialog.vue'
 import AddSourceButton from './AddSourceButton.vue'
 import PageStyleBar from './PageStyleBar.vue'
+import { useShell } from '@/lib/breakpoint'
 
 const doc = useDocumentStore()
 const edits = useEditsStore()
 const vp = useViewportStore()
 const selection = usePageSelectionStore()
+const { isDesktop } = useShell()
 
 const emit = defineEmits<{ select: [index: number] }>()
 
@@ -225,12 +227,14 @@ function remove(): void {
     </header>
 
     <!--
-      Under the action bar rather than in it: the header is a row of verbs
-      that happen once (rotate, delete) and this is a pair of properties the
-      selection HAS. Crowding a colour swatch and three alignment buttons in
-      beside them at 32px would also leave the row unusable on a phone.
+      MOBILE ONLY. On desktop these live in the right-hand panel, beside the
+      layers list, where every other set of properties in the app is -- a
+      second copy here would be the same controls in two places disagreeing
+      about which one the user reaches for. The phone has no such panel: its
+      inspector is a sheet that only opens for a selected OBJECT, so without
+      this the feature would not exist there at all.
     -->
-    <PageStyleBar v-if="count > 0" />
+    <PageStyleBar v-if="count > 0 && !isDesktop" />
 
     <!--
       role=option is only meaningful inside a listbox; on its own it tells a

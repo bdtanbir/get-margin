@@ -155,6 +155,29 @@ export function strokeColor(c: Color): string {
 }
 
 /**
+ * The Multiply blend mode via an ExtGState. Like alpha, PDF has no inline
+ * operator for it, so a blend mode always costs a resource entry.
+ *
+ * Multiply is what makes a page TINT rather than a page COVER: the result
+ * is `backdrop x source`, so white paper takes the colour exactly, black
+ * text stays black, and nothing on the page is hidden. A plain opaque fill
+ * over the content would erase the document, and a plain fill under it is
+ * invisible on the very common page that paints its own white background.
+ */
+export function blendState(
+  raw: mupdf.PDFDocument,
+  page: mupdf.PDFPage,
+  name: string,
+  mode: 'Multiply',
+): string {
+  const gs = raw.newDictionary()
+  gs.put('Type', raw.newName('ExtGState'))
+  gs.put('BM', raw.newName(mode))
+  addResource(raw, page, 'ExtGState', name, raw.addObject(gs))
+  return `/${name} gs`
+}
+
+/**
  * Constant alpha via an ExtGState. PDF has no inline opacity operator, so
  * transparency always costs a resource entry.
  */

@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import type { TextObject } from '@margin/pdf-core'
 import PageStyleBar from '@/features/pages/PageStyleBar.vue'
 import PageGrid from '@/features/pages/PageGrid.vue'
+import Inspector from '@/features/tools/Inspector.vue'
+import { DESKTOP_MIN_PX } from '@/lib/breakpoint'
 import { useEditsStore } from '@/stores/edits'
 import { usePageSelectionStore } from '@/stores/pageSelection'
 
@@ -180,12 +183,50 @@ describe('PageStyleBar', () => {
     })
   })
 
-  describe('in the grid', () => {
-    it('appears only once a page is selected', async () => {
+  /**
+   * ONE surface per shell, never two. The desktop panel is where every other
+   * set of properties in the app lives; the phone has no such panel -- its
+   * inspector is a sheet that opens only for a selected OBJECT -- so the
+   * grid carries the bar there and nowhere else.
+   */
+  describe('where it appears', () => {
+    async function resizeTo(px: number): Promise<void> {
+      window.innerWidth = px
+      window.dispatchEvent(new Event('resize'))
+      await nextTick()
+    }
+
+    it('is in the properties panel once a page is selected', async () => {
+      const w = mount(Inspector)
+      expect(w.find('[data-page-style-bar]').exists()).toBe(false)
+      selection.selectOnly('p1')
+      await nextTick()
+      expect(w.find('[data-page-style-bar]').exists()).toBe(true)
+    })
+
+    it('gives way to an object\'s own properties', async () => {
+      addText('t1', 'p0', 'left')
+      selection.selectOnly('p0')
+      edits.select(['t1'])
+      const w = mount(Inspector)
+      await nextTick()
+      expect(w.find('[data-page-style-bar]').exists()).toBe(false)
+    })
+
+    it('is not also in the grid on desktop', async () => {
+      await resizeTo(DESKTOP_MIN_PX)
+      const w = mount(PageGrid)
+      await w.get('[data-page-tile="p1"]').trigger('click')
+      expect(w.find('[data-page-style-bar]').exists()).toBe(false)
+    })
+
+    it('is in the grid on a phone, which has no properties panel', async () => {
+      await resizeTo(DESKTOP_MIN_PX - 1)
       const w = mount(PageGrid)
       expect(w.find('[data-page-style-bar]').exists()).toBe(false)
       await w.get('[data-page-tile="p1"]').trigger('click')
       expect(w.find('[data-page-style-bar]').exists()).toBe(true)
+      await resizeTo(DESKTOP_MIN_PX)
     })
   })
 })

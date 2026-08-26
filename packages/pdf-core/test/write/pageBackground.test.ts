@@ -2,7 +2,9 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as mupdf from 'mupdf'
 import { replay } from '../../src/write/index.js'
+import { prependContent } from '../../src/write/content.js'
 import {
   EDIT_DOCUMENT_VERSION, emptyEditDocument,
   type Color, type EditDocument, type EditObject,
@@ -45,6 +47,29 @@ function docWith(
   }
 }
 
+/**
+ * `simple-text` with an opaque white rectangle painted under it.
+ *
+ * Stands in for the very common real file this feature exists for: anything
+ * printed from a browser paints its own white background across the sheet,
+ * so the page is not white by default -- it is white because something drew
+ * white there. Built here rather than added to the fixture set because it is
+ * one writer's edge case, not a shape the whole suite needs.
+ */
+function whitePaintedPage(): Uint8Array {
+  const raw = mupdf.PDFDocument.openDocument(
+    bytes('simple-text'), 'application/pdf',
+  ) as mupdf.PDFDocument
+  const page = raw.loadPage(0)
+  try {
+    prependContent(raw, page, '1 1 1 rg\n0 0 612 792 re f')
+    return raw.saveToBuffer('compress').asUint8Array()
+  } finally {
+    page.destroy()
+    raw.destroy()
+  }
+}
+
 /** A rendered pixel, in 0..255 channels. */
 function sample(pdf: Uint8Array, index: number, x: number, y: number) {
   const doc = PdfDocument.open(pdf)
@@ -55,22 +80,32 @@ function sample(pdf: Uint8Array, index: number, x: number, y: number) {
   } finally { doc.close() }
 }
 
-/** How many pixels on the page are darker than mid-grey. */
-function darkPixels(pdf: Uint8Array, index = 0): number {
+/**
+ * How many pixels are near-black in EVERY channel.
+ *
+ * All three channels, not the red one: a teal tint takes red to zero across
+ * the whole sheet, so a red-channel threshold would count the entire page as
+ * ink and measure nothing. Multiplying black by any colour leaves it black,
+ * so this count is what must survive a tint exactly.
+ */
+function inkPixels(pdf: Uint8Array, index = 0): number {
   const doc = PdfDocument.open(pdf)
   try {
     const { rgba } = renderPage(doc, index, 1)
-    let dark = 0
-    for (let i = 0; i < rgba.length; i += 4) if (rgba[i]! < 128) dark++
-    return dark
+    let ink = 0
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (rgba[i]! < 60 && rgba[i + 1]! < 60 && rgba[i + 2]! < 60) ink++
+    }
+    return ink
   } finally { doc.close() }
 }
 
 describe('page background', () => {
-  it('paints the whole page in the chosen colour', () => {
+  it('tints the whole page in the chosen colour', () => {
     const out = replay(new Map([[SRC, bytes('simple-text')]]), docWith(1, 0, TEAL))
     // A corner, which no fixture text reaches: nothing but the background
-    // can be responsible for the colour there.
+    // can be responsible for the colour there. Multiply against white paper
+    // reproduces the colour exactly.
     const px = sample(out, 0, 4, 4)
     expect(px.r).toBeLessThan(20)
     expect(px.g).toBeGreaterThan(110)
@@ -80,21 +115,52 @@ describe('page background', () => {
   })
 
   /**
-   * THE WHOLE POINT of prepending rather than appending. An `appendContent`
-   * background is a coloured rectangle drawn OVER the document -- it would
-   * pass the corner check above while having hidden every word on the page,
-   * and the two are indistinguishable from the corner alone.
+   * THE REASON THIS IS A MULTIPLY AND NOT AN OPAQUE FILL. A plain fill over
+   * the content would pass the corner check above while having erased every
+   * word on the page, and the two are indistinguishable from the corner
+   * alone. Multiply is `backdrop x source`, so black text multiplied by any
+   * colour is still black -- there is no colour the user can pick that hides
+   * their document.
    */
-  it('goes UNDER the page content, which is still visible over it', () => {
+  it('cannot hide the page content', () => {
     const src = bytes('simple-text')
-    const before = darkPixels(src)
+    const before = inkPixels(src)
     expect(before).toBeGreaterThan(0)
+    // Not equality: multiply can only DARKEN, so an antialiased glyph edge
+    // that was grey on white can cross the threshold once the page is tinted.
+    // That direction is fine and is the point -- what must never happen is
+    // the count falling, which is what a fill over the content produces.
+    expect(inkPixels(replay(new Map([[SRC, src]]), docWith(1, 0, TEAL))))
+      .toBeGreaterThanOrEqual(before)
+  })
+
+  /**
+   * THE REASON THIS IS NOT A FILL UNDER THE CONTENT, which is the obvious
+   * implementation and the one that fails on most real files. A page printed
+   * from a browser paints its own opaque white across the whole sheet, and a
+   * fill beneath that is invisible -- the export looked untouched while the
+   * edit document said otherwise.
+   *
+   * The fixture here is built to be exactly that shape: white painted, not
+   * white by default.
+   */
+  it('tints a page that paints its own opaque white background', () => {
+    const src = whitePaintedPage()
+    // Precondition: the source really does paint, so this is testing what it
+    // claims to. Every pixel opaque is what a browser-printed page looks like.
+    const doc = PdfDocument.open(src)
+    try {
+      const { rgba } = renderPage(doc, 0, 1)
+      let transparent = 0
+      for (let i = 3; i < rgba.length; i += 4) if (rgba[i]! < 255) transparent++
+      expect(transparent).toBe(0)
+    } finally { doc.close() }
 
     const out = replay(new Map([[SRC, src]]), docWith(1, 0, TEAL))
-    // The glyphs are black on teal rather than black on white, so the count
-    // shifts slightly with antialiasing -- but it must not collapse to zero,
-    // which is what being painted over looks like.
-    expect(darkPixels(out)).toBeGreaterThan(before * 0.5)
+    const px = sample(out, 0, 4, 4)
+    expect(px.r).toBeLessThan(20)
+    expect(px.g).toBeGreaterThan(110)
+    expect(px.b).toBeGreaterThan(110)
   })
 
   it('paints only the page it was set on', () => {
@@ -141,25 +207,39 @@ describe('page background', () => {
   })
 
   /**
-   * A watermark asks to be drawn behind the content and the background asks
-   * to be drawn behind everything -- both prepend, and the one that prepends
-   * LAST ends up at the bottom. If this ordering ever flips, the watermark
-   * is painted over and vanishes without any error.
+   * The tint goes down BEFORE the object writers, so the user's own text is
+   * drawn ON the tinted page rather than seen through it. A white text object
+   * is the case that tells the two apart: on top of the tint it stays white,
+   * and under it would come out the tint's colour.
    */
-  it('sits under a behind-the-content stamp rather than over it', () => {
-    const stamp = {
-      id: 's1', pageId: 'p0', kind: 'stamp', stampKind: 'watermark',
-      rect: { x: 50, y: 300, w: 500, h: 100 },
+  it('goes under the objects the user drew, not over them', () => {
+    const label = {
+      id: 't1', pageId: 'p0', kind: 'text',
+      rect: { x: 100, y: 400, w: 400, h: 60 },
       rotation: 0, z: 1, locked: false, opacity: 1,
-      text: 'DRAFT', fontFamily: 'Inter', fontSize: 72,
-      color: [0, 0, 0] as Color, align: 'center', behind: true,
+      text: 'WHITE', fontFamily: 'Inter', bold: false, italic: false,
+      fontSize: 48, color: [1, 1, 1] as Color, align: 'left',
     } as unknown as EditObject
 
-    const opts = { fonts: FONTS }
-    const withStamp = replay(new Map([[SRC, bytes('simple-text')]]), docWith(1, 0, undefined, [stamp]), opts)
-    const withBoth = replay(new Map([[SRC, bytes('simple-text')]]), docWith(1, 0, TEAL, [stamp]), opts)
-    // The stamp's own dark pixels survive the background being added.
-    expect(darkPixels(withBoth)).toBeGreaterThan(darkPixels(withStamp) * 0.5)
+    const out = replay(
+      new Map([[SRC, bytes('simple-text')]]),
+      docWith(1, 0, TEAL, [label]),
+      { fonts: FONTS },
+    )
+    const doc = PdfDocument.open(out)
+    try {
+      const { width, height, rgba } = renderPage(doc, 0, 1)
+      // Somewhere in the label's box there must be a pixel that is still
+      // white. Under the tint there would not be one.
+      let white = 0
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 4
+          if (rgba[i]! > 240 && rgba[i + 1]! > 240 && rgba[i + 2]! > 240) white++
+        }
+      }
+      expect(white).toBeGreaterThan(0)
+    } finally { doc.close() }
   })
 
   /**
