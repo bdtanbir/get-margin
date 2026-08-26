@@ -30,8 +30,8 @@ const tools = useToolsStore()
     21 rejected for ZoomPill (see MobileShell.vue).
   -->
   <nav
-    class="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border
-           bg-surface py-2"
+    class="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto scrollbar-none
+           border-r border-border bg-surface py-2"
     aria-label="Tools"
   >
     <IconButton

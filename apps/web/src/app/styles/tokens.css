@@ -79,6 +79,21 @@
   --shadow-high: 0 4px 14px -2px oklch(0 0 0 / 0.45), 0 2px 8px -2px oklch(0 0 0 / 0.3);
 }
 
+/*
+  A scroller with no visible scrollbar. For rails that scroll but are too
+  narrow to spend 15px of their width on a track -- the tool rail is 48-64px
+  wide, and a gutter there eats a quarter of the column and sits against the
+  icons. The content still scrolls by wheel, trackpad, touch and keyboard;
+  only the painted bar is gone.
+*/
+@utility scrollbar-none {
+  scrollbar-width: none;            /* Firefox */
+  -ms-overflow-style: none;         /* legacy Edge */
+  &::-webkit-scrollbar {            /* Chrome, Safari */
+    display: none;
+  }
+}
+
 @layer base {
   html {
     color-scheme: light dark;

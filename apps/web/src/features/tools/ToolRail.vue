@@ -9,7 +9,8 @@ const tools = useToolsStore()
 
 <template>
   <nav
-    class="flex w-16 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border bg-surface py-2"
+    class="flex w-16 shrink-0 flex-col items-center gap-1 overflow-y-auto scrollbar-none
+           border-r border-border bg-surface py-2"
     aria-label="Tools"
   >
     <Tooltip v-for="t in TOOLS" :key="t.id" :content="t.label" side="right">
