@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Color } from '@margin/pdf-core'
-import {
-  detectPaper, multiplyFactor, applyFactor, reachable, isNeutral, WHITE,
-} from '@/features/pages/paperColor'
+import { detectPaper, applyTint, reachable, isNeutral, WHITE } from '@/features/pages/paperColor'
 
 /** A w x h bitmap filled with one RGBA colour, optionally with one corner off. */
 function bitmap(
@@ -61,33 +59,35 @@ describe('detectPaper', () => {
   })
 })
 
-describe('multiplyFactor', () => {
+describe('applyTint', () => {
   /**
-   * The ordinary case, and the one that must not change: on a white page the
-   * factor IS the colour, so everything that worked before this existed keeps
-   * working byte for byte.
+   * The ordinary case: on a white page the tint IS the colour that comes out,
+   * which is why a background reads as "set the page to this colour".
    */
   it('is the colour itself on a white page', () => {
-    expect(multiplyFactor([0.2, 0.4, 0.6], WHITE)).toEqual([0.2, 0.4, 0.6])
+    expect(applyTint(WHITE, [0.2, 0.4, 0.6])).toEqual([0.2, 0.4, 0.6])
   })
 
   /**
-   * THE BUG THIS FIXES. Picking dark red on a page already red used to store
-   * dark red and land on red x dark red -- a dirty overlay rather than the
-   * colour pointed at.
+   * THE PROPERTY THAT MAKES A PLAIN MULTIPLY THE RIGHT OPERATION. It can
+   * never introduce a channel the page did not already have, so two regions
+   * of a page with different papers -- a document that renders its margin
+   * orange and its card white -- both move toward the tint instead of each
+   * acquiring its own colour cast. Dividing the sampled paper out did not
+   * have this property: it turned that white card magenta.
    */
-  it('divides the existing paper back out so the pick lands where it was aimed', () => {
-    const paper: Color = [1, 0, 0]
-    const target: Color = [0.5, 0, 0]
-    expect(applyFactor(paper, multiplyFactor(target, paper))).toEqual(target)
-  })
-
-  it('leaves a channel the paper has none of alone rather than dividing by zero', () => {
-    expect(multiplyFactor([0, 0, 1], [1, 0, 0])).toEqual([0, 1, 1])
-  })
-
-  it('never asks for more than the paper has', () => {
-    expect(multiplyFactor([1, 1, 1], [0.5, 0.5, 0.5])).toEqual([1, 1, 1])
+  it('never raises a channel', () => {
+    const orange: Color = [235 / 255, 115 / 255, 0]
+    const red: Color = [1, 0, 0]
+    for (const paper of [orange, WHITE] as Color[]) {
+      applyTint(paper, red).forEach((n, i) => {
+        expect(n).toBeLessThanOrEqual(paper[i]! + 1e-9)
+        expect(n).toBeLessThanOrEqual(red[i]! + 1e-9)
+      })
+    }
+    // Both papers land on red rather than one of them going magenta.
+    expect(applyTint(WHITE, red)).toEqual(red)
+    expect(applyTint(orange, red)[2]).toBe(0)
   })
 })
 
@@ -100,9 +100,19 @@ describe('reachable', () => {
     expect(reachable([0.5, 0, 0], [1, 0, 0])).toBe(true)
   })
 
-  /** No factor turns a red sheet blue: multiply cannot raise a channel. */
+  /** No tint turns a red sheet blue: multiply cannot raise a channel. */
   it('rejects a colour the paper has no channel for', () => {
     expect(reachable([0, 0, 1], [1, 0, 0])).toBe(false)
+  })
+
+  /**
+   * Judged on the result rather than on a per-channel fit. This page's margin
+   * renders at 235, so a pick of pure red does not strictly fit -- and comes
+   * out a red nobody could tell from the one they asked for. Warning about
+   * that would be noise on every slightly-off-white document there is.
+   */
+  it('ignores a miss too small to see', () => {
+    expect(reachable([1, 0, 0], [235 / 255, 115 / 255, 0])).toBe(true)
   })
 })
 

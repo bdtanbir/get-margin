@@ -32,12 +32,13 @@ function pixelAt(bitmap: Pixels, x: number, y: number): Color {
 /**
  * The colour of a page's paper, read off its render.
  *
- * WHY THIS EXISTS: a background is stored as a multiplier, not as a colour,
- * so the swatch cannot simply show what is stored -- it has to show what the
- * page actually looks like. And on a page whose colour is already baked into
- * the file (open a document you exported a background onto, and it is), there
- * is nothing stored at all. Reading the render answers both cases with one
- * rule, and it is the only source that knows what the reader is looking at.
+ * WHY THIS EXISTS: the swatch cannot show the stored colour, because a
+ * background is MULTIPLIED over the page rather than replacing it -- what the
+ * reader sees is `paper x stored`, and on a page that was not white to begin
+ * with those are two different colours. And on a page whose colour is already
+ * baked into the file (open a document you exported a background onto, and it
+ * is), there is nothing stored at all. Reading the render answers both cases
+ * with one rule, and it is the only source that knows what is on screen.
  *
  * THE FOUR CORNERS, and they must agree. A page's outermost pixels are its
  * margin in every layout that has one, so they are the best available witness
@@ -67,45 +68,53 @@ export function detectPaper(bitmap: Pixels | undefined): Color {
 }
 
 /**
- * The multiplier that takes `paper` to `target`.
+ * WHY THERE IS NO "DIVIDE THE EXISTING PAPER OUT" FUNCTION HERE.
  *
- * A background is written as a Multiply fill, so what reaches the page is
- * `paper x factor` -- and on the ordinary white page that is just the colour
- * the user picked. It stops being just the colour the moment the paper is not
- * white, which is exactly the case that made a second background look like a
- * dirty overlay instead of a new colour: picking dark red on a page already
- * red gave red x dark red, not dark red.
+ * There was one, briefly. Given a detected paper P and a target C it returned
+ * `clamp(C / P)`, so that `P x factor` landed on C -- which fixes picking a
+ * second colour on a page that already has one, as long as the page has ONE
+ * paper colour. Real pages do not. The document that prompted it renders its
+ * margin at (235,115,0) and its card interior at (255,255,255): two papers on
+ * one page, and the corners can only witness the first.
  *
- * Dividing the paper out fixes that wherever it can be fixed. A channel the
- * paper has none of cannot be raised -- multiplying by anything leaves zero --
- * so it clamps to 1, meaning "leave this channel alone"; `reachable` below is
- * how the UI says so rather than quietly producing mud.
+ * The clamp is what made that fatal rather than merely approximate. A channel
+ * the sampled paper has none of divides to infinity, so it clamped to 1 --
+ * "leave this channel alone" -- and on orange, blue clamps to 1. Correct on
+ * the orange margin, and on the white card it left blue at full strength: the
+ * user asked for red and got a magenta card.
+ *
+ * A plain Multiply by the colour has no such failure mode. It can only ever
+ * darken, and it can never introduce a channel the page did not already have,
+ * so every region of a multi-paper page moves toward the same colour instead
+ * of each acquiring its own cast. It is the weaker operation and it is the
+ * one that is always right.
  */
-export function multiplyFactor(target: Color, paper: Color): Color {
-  return target.map((t, i) => {
-    const p = paper[i]!
-    if (p <= 0) return 1
-    return Math.min(1, t / p)
-  }) as Color
-}
 
-/** What `paper` becomes once `factor` is multiplied over it. */
-export function applyFactor(paper: Color, factor: Color): Color {
-  return paper.map((p, i) => p * factor[i]!) as Color
+/** What `paper` becomes once `tint` is multiplied over it. */
+export function applyTint(paper: Color, tint: Color): Color {
+  return paper.map((p, i) => p * tint[i]!) as Color
 }
 
 /**
- * Whether `target` is a colour this page can actually be made.
+ * Whether tinting `paper` with `target` gets somewhere the user would accept
+ * as the colour they picked.
  *
- * Multiply only ever darkens. A page whose paper is already coloured can be
- * taken further down but never back up, and no factor exists that turns a red
- * sheet blue -- the red channel would have to be raised from zero.
+ * Multiply only ever darkens, so a page whose paper is already coloured can
+ * be taken further down but never back up: no tint turns a red sheet blue,
+ * because the blue channel would have to be raised from zero.
+ *
+ * Judged on the RESULT, not on whether every channel fits. "Fits" is true or
+ * false at a hair's width, and a page whose margin renders at 235 rather than
+ * 255 fails it while coming out a red nobody could distinguish from the one
+ * they asked for. What matters is whether the answer is visibly the wrong
+ * colour -- red on orange misses by 0.08 and blue on orange misses by 1.0, so
+ * a threshold in between separates a rounding error from black.
  */
-export function reachable(target: Color, paper: Color, tolerance = 1 / 255): boolean {
-  return target.every((t, i) => t <= paper[i]! + tolerance)
+export function reachable(target: Color, paper: Color, tolerance = 0.15): boolean {
+  return sameColor(applyTint(paper, target), target, tolerance)
 }
 
-/** The identity factor: a background that changes nothing. */
-export function isNeutral(factor: Color): boolean {
-  return sameColor(factor, WHITE, 0)
+/** White: the tint that changes nothing, whatever the page underneath is. */
+export function isNeutral(tint: Color): boolean {
+  return sameColor(tint, WHITE, 0)
 }

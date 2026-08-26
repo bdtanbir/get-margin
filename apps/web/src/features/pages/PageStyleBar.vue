@@ -7,31 +7,29 @@ import { useEditsStore } from '@/stores/edits'
 import { usePageSelectionStore } from '@/stores/pageSelection'
 import { useViewportStore } from '@/stores/viewport'
 import { toHex, fromHex } from '@/features/tools/colorInput'
-import {
-  detectPaper, multiplyFactor, applyFactor, reachable, isNeutral, sameColor, WHITE,
-} from './paperColor'
+import { detectPaper, applyTint, reachable, isNeutral, sameColor, WHITE } from './paperColor'
 
 /**
  * Page properties for whatever is selected in the grid.
  *
- * THE SWATCH SHOWS THE PAPER, NOT THE STORED VALUE, and that distinction is
+ * THE SWATCH SHOWS THE PAPER, NOT THE STORED COLOUR, and that distinction is
  * the whole of this component.
  *
- * What is stored is a MULTIPLIER -- a background is written as a Multiply
- * fill, because that is the only form that survives a page which paints its
- * own opaque white (see applyPageBackgrounds). On a plain white page the
- * multiplier and the colour are the same number, which is why showing the
- * stored value looked correct for as long as every test page was white.
+ * A background is MULTIPLIED over the page rather than replacing it, because
+ * that is the only form that survives a page which paints its own opaque
+ * white (see applyPageBackgrounds). So what the reader sees is `paper x
+ * stored`. On a plain white page those are the same number, which is why
+ * showing the stored value looked correct for as long as every test page was
+ * white -- and why it was wrong on a document you exported a background onto
+ * and reopened, where the colour is baked into the file and NOTHING is
+ * stored. There the swatch showed black while the page was plainly red.
  *
- * It stops being correct on a page that already has a colour -- including,
- * pointedly, a document you exported a background onto and reopened, where
- * the colour is baked into the file and NOTHING is stored. There the stored
- * value is absent and the swatch showed black while the page was plainly red.
- *
- * So the paper colour is read off the page's own render, and everything else
- * is derived from it: the swatch shows `paper x stored`, and picking a colour
- * divides the paper back out so the pick lands where the user pointed instead
- * of combining with what was already there.
+ * Reading the paper off the page's own render answers both cases with one
+ * rule. What is stored stays exactly the colour the user picked: an earlier
+ * version divided the detected paper back out so a second pick would land on
+ * itself, and that assumes a page has ONE paper colour, which real pages do
+ * not -- see paperColor.ts for the document that disproved it and the magenta
+ * card it produced.
  */
 const edits = useEditsStore()
 const selection = usePageSelectionStore()
@@ -51,14 +49,14 @@ function shared(values: Color[]): Color | undefined {
   return values.every((v) => sameColor(v, first)) ? first : undefined
 }
 
-const factorOf = (id: string): Color => edits.doc.pages[id]?.background ?? WHITE
+const tintOf = (id: string): Color => edits.doc.pages[id]?.background ?? WHITE
 
 /** What each page's paper would be with no background of ours on it. */
 const sourcePaper = computed(() => shared(pageIds.value.map((id) => detectPaper(vp.bitmapFor(id)))))
 
 /** What the reader is actually looking at right now. */
 const paper = computed(() => {
-  const values = pageIds.value.map((id) => applyFactor(detectPaper(vp.bitmapFor(id)), factorOf(id)))
+  const values = pageIds.value.map((id) => applyTint(detectPaper(vp.bitmapFor(id)), tintOf(id)))
   return shared(values)
 })
 
@@ -100,22 +98,12 @@ let dragging = false
 function paint(target: Color | null): void {
   const ids = pageIds.value
   if (ids.length === 0) return
+  // The colour itself, unadjusted. See the header: the page is not guaranteed
+  // to have one paper colour, so there is nothing sound to adjust it against.
+  const color = target === null || isNeutral(target) ? null : target
   for (const pageId of ids) {
-    const color = target === null
-      ? null
-      : normalise(multiplyFactor(target, detectPaper(vp.bitmapFor(pageId))))
     edits.applyOp({ type: 'setPageBackground', pageId, color }, 'Page background')
   }
-}
-
-/**
- * A factor that changes nothing is stored as no background at all, so an
- * untouched document stays untouched: `replay` hands back the user's original
- * bytes when nothing is on them, and a neutral Multiply fill would defeat
- * that while being invisible.
- */
-function normalise(factor: Color): Color | null {
-  return isNeutral(factor) ? null : factor
 }
 
 function onColorInput(e: Event): void {

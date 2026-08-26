@@ -352,20 +352,20 @@ export type PageEntry = {
    */
   tabOrder?: string[]
   /**
-   * A MULTIPLIER applied across the whole page, not a colour.
+   * A colour the whole page is TINTED in -- multiplied over it, not painted
+   * onto it.
    *
    * OPTIONAL, and absent means "leave the page as it is" -- which is what
    * every page written before this existed meant, so no stored document
    * needs migrating and no schema version had to move. Same reasoning as
    * `tabOrder`.
    *
-   * It reads as a colour on the ordinary white page, where `paper x factor`
-   * is just the factor, and that is why it is easy to mistake for one. It is
-   * not one on a page whose paper is already coloured: there the app divides
-   * the existing paper back out so the user's pick lands where they aimed
-   * rather than combining with what was there, and what is stored is the
-   * quotient. See applyPageBackgrounds for why the fill is a Multiply at all,
-   * and apps/web/src/features/pages/paperColor.ts for the division.
+   * On the ordinary white page this IS the colour the page comes out, which
+   * is what makes it worth calling a background. On a page that already has
+   * a colour it is not: `paper x this` is, and nothing can raise a channel
+   * the page has none of. See applyPageBackgrounds for why the fill is a
+   * Multiply, and apps/web/src/features/pages/paperColor.ts for why no
+   * attempt is made to compensate for the paper already there.
    */
   background?: Color
 }

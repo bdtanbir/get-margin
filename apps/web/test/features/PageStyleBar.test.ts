@@ -129,13 +129,14 @@ describe('PageStyleBar', () => {
     })
 
     /**
-     * THE OTHER HALF OF THE SAME BUG. A stored value is a MULTIPLIER, not a
-     * colour: on a red page a stored 0.5 red means the paper is dark red, and
-     * showing the stored number would say bright red.
+     * THE OTHER HALF OF THE SAME BUG. A background is MULTIPLIED over the
+     * page, so on a page that was not white the stored colour and the colour
+     * on screen are two different things. Showing the stored one would claim
+     * a page is grey when it is in fact dark red.
      */
-    it('shows the paper, not the multiplier stored for it', () => {
+    it('shows the page, not the colour stored for it', () => {
       paperIs('p0', [255, 0, 0])
-      edits.applyOp({ type: 'setPageBackground', pageId: 'p0', color: [0.5, 1, 1] }, 'bg')
+      edits.applyOp({ type: 'setPageBackground', pageId: 'p0', color: [0.5, 0.5, 0.5] }, 'bg')
       selection.selectOnly('p0')
       const input = bar().get('[data-page-background-input]')
       expect((input.element as HTMLInputElement).value).toBe('#800000')
@@ -165,30 +166,28 @@ describe('PageStyleBar', () => {
     })
 
     /**
-     * THE OVERLAY BUG. Picking dark red on a page already red used to store
-     * dark red and land on red x dark red -- a dirty combination of the two
-     * rather than the colour pointed at. Dividing the paper out is what makes
-     * a pick mean what it looks like.
+     * THE MAGENTA CARD. A page is not guaranteed to have ONE paper colour:
+     * the document that produced this test renders its margin orange and its
+     * card white. An earlier version divided the sampled corner back out of
+     * the pick, which on orange sent blue to 1 -- correct on the margin, and
+     * on the white card it left blue at full strength, so a pick of red came
+     * out magenta.
+     *
+     * What is stored is now the colour itself. A plain Multiply can never
+     * raise a channel, so both papers move toward red instead of one of them
+     * acquiring a cast.
      */
-    it('lands on the colour picked, not on it combined with what was there', async () => {
-      paperIs('p0', [255, 0, 0])
+    it('stores the colour picked, unadjusted for whatever the page already is', async () => {
+      paperIs('p0', [235, 115, 0])
       selection.selectOnly('p0')
       const w = bar()
 
       const input = w.get('[data-page-background-input]')
-      ;(input.element as HTMLInputElement).value = '#800000'
+      ;(input.element as HTMLInputElement).value = '#ff0000'
       await input.trigger('input')
       await input.trigger('change')
 
-      // Only the red channel is halved; the two the paper has none of are
-      // left alone rather than divided by zero.
-      const factor = edits.doc.pages.p0!.background!
-      expect(factor[0]).toBeCloseTo(0.502, 2)
-      expect(factor[1]).toBe(1)
-      expect(factor[2]).toBe(1)
-      // And the swatch now reads back the colour that was asked for.
-      expect((w.get('[data-page-background-input]').element as HTMLInputElement).value)
-        .toBe('#800000')
+      expect(edits.doc.pages.p0!.background).toEqual([1, 0, 0])
     })
 
     /**
@@ -210,6 +209,23 @@ describe('PageStyleBar', () => {
       expect(w.get('[data-unreachable-notice]').text()).toContain('only')
     })
 
+    it('is reported by the swatch as what the page has become', async () => {
+      paperIs('p0', [235, 115, 0])
+      selection.selectOnly('p0')
+      const w = bar()
+
+      const input = w.get('[data-page-background-input]')
+      ;(input.element as HTMLInputElement).value = '#ff0000'
+      await input.trigger('input')
+      await input.trigger('change')
+
+      // Orange x red is the orange's own red channel with the rest removed --
+      // not the #ff0000 that was asked for, and the swatch says so rather
+      // than repeating the request back.
+      expect((w.get('[data-page-background-input]').element as HTMLInputElement).value)
+        .toBe('#eb0000')
+    })
+
     it('says nothing of the sort on an ordinary white page', async () => {
       selection.selectOnly('p0')
       const w = bar()
@@ -226,12 +242,12 @@ describe('PageStyleBar', () => {
      * original bytes when nothing is on them, and a neutral fill would defeat
      * that while being invisible.
      */
-    it('stores nothing when the pick is the colour the page already is', async () => {
+    it('stores nothing for white, which multiplies to no change at all', async () => {
       paperIs('p0', [255, 0, 0])
       selection.selectOnly('p0')
       const w = bar()
       const input = w.get('[data-page-background-input]')
-      ;(input.element as HTMLInputElement).value = '#ff0000'
+      ;(input.element as HTMLInputElement).value = '#ffffff'
       await input.trigger('input')
       await input.trigger('change')
       expect(edits.doc.pages.p0!.background).toBeUndefined()
