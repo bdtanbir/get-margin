@@ -1,7 +1,7 @@
 import * as mupdf from 'mupdf'
 import { withPage, SAVE_OPTIONS } from './session.js'
 import { assemble, isUntouched, type SourceBytes, type SourcePasswords } from './assemble.js'
-import { applyPageBoxes, applyTabOrder } from './objects/page.js'
+import { applyPageBoxes, applyTabOrder, applyPageBackgrounds } from './objects/page.js'
 import { geometryFromPageObject } from '../geometry.js'
 import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectKind } from './types.js'
 import type { PageGeometry } from '@margin/transform'
@@ -220,6 +220,10 @@ export function replay(
   const hasTabOrder = editDoc.pageOrder.some(
     (id) => (editDoc.pages[id]?.tabOrder?.length ?? 0) > 0,
   )
+  // Painting a page is an edit even on a document with nothing else done to
+  // it. Without this the pass-through would hand back the original file and
+  // the background would be silently discarded at Download.
+  const hasBackground = editDoc.pageOrder.some((id) => !!editDoc.pages[id]?.background)
   // Protecting an otherwise-untouched document is an edit to its bytes,
   // even though it is not an edit to its content. Without this the
   // pass-through would hand back the original, unencrypted, having been
@@ -247,7 +251,7 @@ export function replay(
     // e2e/download.spec.ts asserts this byte-for-byte.
     if (
       unchanged && !hasObjects && !hasFills && !flatten && !hasTabOrder && !protection
-      && !unprotect && !hasMetadata && !anythingStripped(stripped)
+      && !unprotect && !hasMetadata && !hasBackground && !anythingStripped(stripped)
     ) {
       const original = sources.get(Object.keys(editDoc.sources)[0]!)
       if (original) return original
@@ -350,6 +354,14 @@ export function replay(
     // frozen into the page.
     applyRedactions(raw, editDoc)
 
+    // AFTER every writer that touches page content, because prepending puts
+    // a stream at the FRONT of /Contents and the last prepend wins the
+    // bottom: running this before the stamps would bury a `behind`
+    // watermark under the background it is meant to sit on. After
+    // applyRedactions too -- that rewrites content streams wholesale, and
+    // there is nothing to gain from handing it one more to rewrite.
+    if (hasBackground) applyPageBackgrounds(raw, editDoc, geometryOf)
+
     // AFTER the fields exist and BEFORE they are baked: tab order IS
     // /Annots order, so it has to be applied while there is still an
     // /Annots array of widgets to order.
@@ -390,7 +402,7 @@ export function replay(
 
 export { withDocument, withPage, SAVE_OPTIONS } from './session.js'
 export { assemble, isUntouched, type SourceBytes, type SourcePasswords } from './assemble.js'
-export { applyPageBoxes, applyTabOrder } from './objects/page.js'
+export { applyPageBoxes, applyTabOrder, applyPageBackgrounds } from './objects/page.js'
 export { applyRedactions } from './objects/redact.js'
 export {
   stripActiveContent, anythingStripped, nothingStripped, type StrippedContent,

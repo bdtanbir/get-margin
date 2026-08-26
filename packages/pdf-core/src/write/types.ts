@@ -351,6 +351,22 @@ export type PageEntry = {
    * the name is the only identity those two share.
    */
   tabOrder?: string[]
+  /**
+   * A colour painted across the whole page, UNDER everything the source
+   * document draws.
+   *
+   * OPTIONAL, and absent means "leave the page as it is" -- which is what
+   * every page written before this existed meant, so no stored document
+   * needs migrating and no schema version had to move. Same reasoning as
+   * `tabOrder`.
+   *
+   * Under, not over, and that is the only version of this feature that
+   * works: a PDF page is not white because something painted it white, it
+   * is white because nothing painted it at all. Drawing OVER the content
+   * would hide the document behind a coloured rectangle; drawing under it
+   * fills in the nothing, which is what a page background is.
+   */
+  background?: Color
 }
 
 export type EditDocument = {
@@ -438,6 +454,13 @@ export type Op =
   | { type: 'setFlattenForms'; on: boolean }
   /** Task 76 -- field names in tab order for one page. */
   | { type: 'setTabOrder'; pageId: PageId; order: string[] }
+  /**
+   * The colour painted under one page's content. `null` removes it, which
+   * is a different thing from painting the page white -- white is a colour
+   * that covers whatever the page was shown against, and null is no
+   * opinion at all.
+   */
+  | { type: 'setPageBackground'; pageId: PageId; color: Color | null }
   /** Task 86 -- the document description. */
   | { type: 'setMetadata'; metadata: EditDocument['metadata'] }
   | { type: 'setStripMetadata'; strip: boolean }

@@ -13,6 +13,25 @@ function bitmap(w: number, h: number) {
 }
 
 describe('PageCanvas', () => {
+  /**
+   * The frame behind the canvas IS the paper the reader sees: MuPDF renders
+   * with alpha, so the bitmap is transparent everywhere the page paints
+   * nothing -- which is most of a page. A background drawn INTO the canvas
+   * would be a second, divergent implementation of the same compositing the
+   * export does one layer down.
+   */
+  it('paints the page background behind the render', () => {
+    const painted = { ...page, background: [0, 0.5, 0.5] as [number, number, number] }
+    const w = mount(PageCanvas, { props: { page: painted, index: 0, zoom: 1, bitmap: bitmap(612, 792) } })
+    expect(w.attributes('data-page-background')).toBe('#008080')
+  })
+
+  it('leaves an unpainted page on the surface token it always used', () => {
+    const w = mount(PageCanvas, { props: { page, index: 0, zoom: 1, bitmap: bitmap(612, 792) } })
+    expect(w.attributes('data-page-background')).toBeUndefined()
+    expect((w.element as HTMLElement).style.backgroundColor).toBe('')
+  })
+
   it('sizes the element from pageViewSize, not the bitmap', () => {
     // The bitmap is at devicePixelRatio; CSS size must be the logical size.
     const w = mount(PageCanvas, { props: { page, index: 0, zoom: 1, bitmap: bitmap(1224, 1584) } })

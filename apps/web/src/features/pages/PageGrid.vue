@@ -10,6 +10,7 @@ import { usePageSelectionStore } from '@/stores/pageSelection'
 import { useDragReorder } from './useDragReorder'
 import SplitDialog from './SplitDialog.vue'
 import AddSourceButton from './AddSourceButton.vue'
+import PageStyleBar from './PageStyleBar.vue'
 
 const doc = useDocumentStore()
 const edits = useEditsStore()
@@ -222,6 +223,14 @@ function remove(): void {
         </IconButton>
       </template>
     </header>
+
+    <!--
+      Under the action bar rather than in it: the header is a row of verbs
+      that happen once (rotate, delete) and this is a pair of properties the
+      selection HAS. Crowding a colour swatch and three alignment buttons in
+      beside them at 32px would also leave the row unusable on a phone.
+    -->
+    <PageStyleBar v-if="count > 0" />
 
     <!--
       role=option is only meaningful inside a listbox; on its own it tells a

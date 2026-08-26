@@ -4,6 +4,7 @@ import { pageViewSize } from '@margin/transform'
 import { useViewportStore } from '@/stores/viewport'
 import type { PageState } from '@/stores/document'
 import { cn } from '@/ui/cn'
+import { toHex } from '@/features/tools/colorInput'
 
 // Props are `{ page, index, active }` — deliberately no `bitmap` prop.
 // `index` is the page's position in `pageOrder` (display order), NOT
@@ -43,6 +44,12 @@ const vp = useViewportStore()
 // this costs nothing extra to open.
 const bitmap = computed(() => vp.bitmapFor(props.page.id))
 
+// See PageCanvas: the render is transparent where the page paints nothing,
+// so the frame behind it IS the paper the reader sees.
+const paper = computed(() =>
+  props.page.background ? toHex(props.page.background) : undefined,
+)
+
 const ratio = computed(() => {
   const { width, height } = pageViewSize(props.page.geometry, 1)
   return `${width} / ${height}`
@@ -73,7 +80,7 @@ function paintBitmap(el: HTMLCanvasElement | null): void {
         'w-full overflow-hidden rounded-sheet bg-surface ring-1 transition-shadow duration-fast',
         props.active ? 'ring-2 ring-accent' : 'ring-border group-hover:ring-border-strong',
       )"
-      :style="{ aspectRatio: ratio }"
+      :style="{ aspectRatio: ratio, backgroundColor: paper }"
     >
       <canvas
         v-if="bitmap"

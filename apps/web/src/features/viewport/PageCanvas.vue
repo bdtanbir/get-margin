@@ -3,6 +3,7 @@ import { computed, ref, watchEffect, onMounted } from 'vue'
 import { pageViewSize } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import type { RenderResult } from '@/workers/pdfService'
+import { toHex } from '@/features/tools/colorInput'
 
 const props = defineProps<{
   page: PageState
@@ -32,6 +33,23 @@ const cssWidth = computed(() => `${Math.round(view.value.width)}px`)
 const cssHeight = computed(() => `${Math.round(view.value.height)}px`)
 
 const label = computed(() => `Page ${props.index + 1}`)
+
+/**
+ * The page's own background, previewed behind the render.
+ *
+ * A CSS colour on the frame rather than a fill drawn into the canvas,
+ * because MuPDF renders with alpha=true (render.ts) -- the bitmap is
+ * TRANSPARENT wherever the page paints nothing, which is most of a page.
+ * Whatever is behind the canvas is what the reader sees as the paper, so
+ * setting it here is not an approximation of the export; it is the same
+ * compositing the export does, one layer up.
+ *
+ * Falls back to the surface token, which is what the frame was before this
+ * existed, so an unpainted page looks exactly as it always did.
+ */
+const paper = computed(() =>
+  props.page.background ? toHex(props.page.background) : undefined,
+)
 
 function paint(): void {
   const el = canvas.value
@@ -70,7 +88,8 @@ watchEffect(paint, { flush: 'post' })
     role="img"
     :aria-label="label"
     class="relative shrink-0 overflow-hidden rounded-sheet bg-surface ring-1 ring-border shadow-low"
-    :style="{ width: cssWidth, height: cssHeight }"
+    :style="{ width: cssWidth, height: cssHeight, backgroundColor: paper }"
+    :data-page-background="paper"
   >
     <canvas
       v-if="props.bitmap"

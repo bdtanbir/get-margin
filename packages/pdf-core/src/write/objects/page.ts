@@ -1,7 +1,8 @@
 import type * as mupdf from 'mupdf'
 import type { PageGeometry } from '@margin/transform'
 import type { EditDocument } from '../types.js'
-import { toAnnotSpace } from '../coords.js'
+import { toAnnotSpace, toContentSpace, num } from '../coords.js'
+import { prependContent, fillColor } from '../content.js'
 
 /**
  * Apply each page's rotation and crop, AFTER assembly and BEFORE objects
@@ -111,6 +112,51 @@ export function applyTabOrder(
       for (const o of others) next.push(o)
       obj.put('Annots', next)
       obj.put('Tabs', raw.newName('R'))
+    } finally {
+      page.destroy()
+    }
+  })
+}
+
+/**
+ * Paint each page's background colour UNDER everything already on it.
+ *
+ * `prependContent`, not `appendContent`, and the distinction is the whole
+ * feature: a page's content is drawn over the background, so appending
+ * would put a coloured rectangle over the document instead of behind it.
+ *
+ * LAST in the write pipeline, after the object writers have run. A stamp
+ * with `behind: true` prepends too, and prepending puts a stream at index 0
+ * -- so whoever prepends last ends up at the bottom. Running this after the
+ * stamps is what keeps a watermark ON the background rather than under it,
+ * where it would be invisible.
+ *
+ * The rect is the page's CropBox as it stands NOW, read through `geometryOf`
+ * rather than from the source: `applyPageBoxes` has already run, so a page
+ * the user cropped is filled to the crop the user drew and not to the box it
+ * had when the file was opened. Convention B -- a content stream speaks raw
+ * PDF user space, CropBox origin NOT normalised -- so the offset corner of a
+ * non-zero-origin page is part of the rect, not something to subtract.
+ */
+export function applyPageBackgrounds(
+  raw: mupdf.PDFDocument,
+  editDoc: EditDocument,
+  geometryOf: (index: number) => PageGeometry,
+): void {
+  editDoc.pageOrder.forEach((pageId, index) => {
+    const background = editDoc.pages[pageId]?.background
+    if (!background) return
+
+    const [x0, y0, x1, y1] = geometryOf(index).cropBox
+    const { x, y, w, h } = toContentSpace({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
+
+    const page = raw.loadPage(index)
+    try {
+      prependContent(
+        raw,
+        page,
+        `${fillColor(background)}\n${num(x)} ${num(y)} ${num(w)} ${num(h)} re f`,
+      )
     } finally {
       page.destroy()
     }
