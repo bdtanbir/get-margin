@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -9,18 +9,44 @@ import Inspector from '@/features/tools/Inspector.vue'
 import { DESKTOP_MIN_PX } from '@/lib/breakpoint'
 import { useEditsStore } from '@/stores/edits'
 import { usePageSelectionStore } from '@/stores/pageSelection'
+import { useViewportStore } from '@/stores/viewport'
 
 import { seedPages } from '../helpers/seedDocument'
 
 describe('PageStyleBar', () => {
   let edits: ReturnType<typeof useEditsStore>
   let selection: ReturnType<typeof usePageSelectionStore>
+  let vp: ReturnType<typeof useViewportStore>
+
+  /**
+   * What each page RENDERS as, which is where the swatch reads the paper
+   * colour from. Stubbed rather than driven through the worker: the component
+   * only asks the viewport store what a page looks like, and every case here
+   * is about what it does with the answer.
+   */
+  let rendered: Record<string, [number, number, number]>
+
+  function paperIs(id: string, rgb: [number, number, number]): void {
+    rendered[id] = rgb
+  }
 
   beforeEach(() => {
     setActivePinia(createPinia())
     seedPages(3)
     edits = useEditsStore()
     selection = usePageSelectionStore()
+    vp = useViewportStore()
+    rendered = {}
+    vi.spyOn(vp, 'bitmapFor').mockImplementation((id: string) => {
+      const rgb = rendered[id] ?? [255, 255, 255]
+      const w = 8
+      const h = 8
+      const buf = new Uint8Array(w * h * 4)
+      for (let i = 0; i < buf.length; i += 4) {
+        buf[i] = rgb[0]; buf[i + 1] = rgb[1]; buf[i + 2] = rgb[2]; buf[i + 3] = 255
+      }
+      return { width: w, height: h, rgba: buf, page: 0, scale: 1 }
+    })
   })
 
   const bar = () => mount(PageStyleBar)
@@ -88,6 +114,34 @@ describe('PageStyleBar', () => {
     })
 
     /**
+     * THE REPORTED BUG. Open a document you exported a background onto and the
+     * colour is baked into the file: nothing is stored, and the swatch showed
+     * black while the page was plainly red. The paper is what the reader sees,
+     * so the paper is what the swatch has to show.
+     */
+    it("shows a colour baked into the PDF, which nothing is stored for", () => {
+      paperIs('p0', [255, 0, 0])
+      selection.selectOnly('p0')
+      const input = bar().get('[data-page-background-input]')
+      expect((input.element as HTMLInputElement).value).toBe('#ff0000')
+      // Nothing of ours is on it, so there is nothing to remove.
+      expect(bar().get('[data-clear-page-background]').attributes('disabled')).toBeDefined()
+    })
+
+    /**
+     * THE OTHER HALF OF THE SAME BUG. A stored value is a MULTIPLIER, not a
+     * colour: on a red page a stored 0.5 red means the paper is dark red, and
+     * showing the stored number would say bright red.
+     */
+    it('shows the paper, not the multiplier stored for it', () => {
+      paperIs('p0', [255, 0, 0])
+      edits.applyOp({ type: 'setPageBackground', pageId: 'p0', color: [0.5, 1, 1] }, 'bg')
+      selection.selectOnly('p0')
+      const input = bar().get('[data-page-background-input]')
+      expect((input.element as HTMLInputElement).value).toBe('#800000')
+    })
+
+    /**
      * A swatch showing the first page's colour for a selection of pages that
      * disagree would be a claim about the others that is not true -- and the
      * next click would silently repaint them all to a colour the user was
@@ -108,6 +162,79 @@ describe('PageStyleBar', () => {
       await w.get('[data-clear-page-background]').trigger('click')
       expect(edits.doc.pages.p0!.background).toBeUndefined()
       expect('background' in edits.doc.pages.p0!).toBe(false)
+    })
+
+    /**
+     * THE OVERLAY BUG. Picking dark red on a page already red used to store
+     * dark red and land on red x dark red -- a dirty combination of the two
+     * rather than the colour pointed at. Dividing the paper out is what makes
+     * a pick mean what it looks like.
+     */
+    it('lands on the colour picked, not on it combined with what was there', async () => {
+      paperIs('p0', [255, 0, 0])
+      selection.selectOnly('p0')
+      const w = bar()
+
+      const input = w.get('[data-page-background-input]')
+      ;(input.element as HTMLInputElement).value = '#800000'
+      await input.trigger('input')
+      await input.trigger('change')
+
+      // Only the red channel is halved; the two the paper has none of are
+      // left alone rather than divided by zero.
+      const factor = edits.doc.pages.p0!.background!
+      expect(factor[0]).toBeCloseTo(0.502, 2)
+      expect(factor[1]).toBe(1)
+      expect(factor[2]).toBe(1)
+      // And the swatch now reads back the colour that was asked for.
+      expect((w.get('[data-page-background-input]').element as HTMLInputElement).value)
+        .toBe('#800000')
+    })
+
+    /**
+     * Multiply only ever darkens, so no factor turns a red sheet blue. Saying
+     * so is the alternative to silently producing mud, which is what the
+     * report was about.
+     */
+    it('says so when the pick is lighter than the page already is', async () => {
+      paperIs('p0', [255, 0, 0])
+      selection.selectOnly('p0')
+      const w = bar()
+      expect(w.find('[data-unreachable-notice]').exists()).toBe(false)
+
+      const input = w.get('[data-page-background-input]')
+      ;(input.element as HTMLInputElement).value = '#0000ff'
+      await input.trigger('input')
+      await input.trigger('change')
+
+      expect(w.get('[data-unreachable-notice]').text()).toContain('only')
+    })
+
+    it('says nothing of the sort on an ordinary white page', async () => {
+      selection.selectOnly('p0')
+      const w = bar()
+      const input = w.get('[data-page-background-input]')
+      ;(input.element as HTMLInputElement).value = '#0000ff'
+      await input.trigger('input')
+      await input.trigger('change')
+      expect(w.find('[data-unreachable-notice]').exists()).toBe(false)
+    })
+
+    /**
+     * A factor that changes nothing is stored as no background at all, so an
+     * untouched document stays untouched -- `replay` hands back the user's
+     * original bytes when nothing is on them, and a neutral fill would defeat
+     * that while being invisible.
+     */
+    it('stores nothing when the pick is the colour the page already is', async () => {
+      paperIs('p0', [255, 0, 0])
+      selection.selectOnly('p0')
+      const w = bar()
+      const input = w.get('[data-page-background-input]')
+      ;(input.element as HTMLInputElement).value = '#ff0000'
+      await input.trigger('input')
+      await input.trigger('change')
+      expect(edits.doc.pages.p0!.background).toBeUndefined()
     })
 
     it('disables the remove button when there is nothing to remove', () => {

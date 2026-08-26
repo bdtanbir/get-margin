@@ -352,17 +352,20 @@ export type PageEntry = {
    */
   tabOrder?: string[]
   /**
-   * A colour the whole page is tinted in.
+   * A MULTIPLIER applied across the whole page, not a colour.
    *
    * OPTIONAL, and absent means "leave the page as it is" -- which is what
    * every page written before this existed meant, so no stored document
    * needs migrating and no schema version had to move. Same reasoning as
    * `tabOrder`.
    *
-   * A TINT, applied with the Multiply blend mode, not a fill laid under the
-   * content -- see applyPageBackgrounds for the measurement that settled it.
-   * The short version: a fill underneath is invisible on any page that
-   * paints its own white background, which is every page a browser printed.
+   * It reads as a colour on the ordinary white page, where `paper x factor`
+   * is just the factor, and that is why it is easy to mistake for one. It is
+   * not one on a page whose paper is already coloured: there the app divides
+   * the existing paper back out so the user's pick lands where they aimed
+   * rather than combining with what was there, and what is stored is the
+   * quotient. See applyPageBackgrounds for why the fill is a Multiply at all,
+   * and apps/web/src/features/pages/paperColor.ts for the division.
    */
   background?: Color
 }
