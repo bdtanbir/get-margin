@@ -1,8 +1,7 @@
 import type * as mupdf from 'mupdf'
 import type { PageGeometry } from '@margin/transform'
 import type { EditDocument } from '../types.js'
-import { toAnnotSpace, toContentSpace, num } from '../coords.js'
-import { appendContent, fillColor, blendState } from '../content.js'
+import { toAnnotSpace } from '../coords.js'
 
 /**
  * Apply each page's rotation and crop, AFTER assembly and BEFORE objects
@@ -112,63 +111,6 @@ export function applyTabOrder(
       for (const o of others) next.push(o)
       obj.put('Annots', next)
       obj.put('Tabs', raw.newName('R'))
-    } finally {
-      page.destroy()
-    }
-  })
-}
-
-/**
- * Tint each page in its background colour.
- *
- * MULTIPLY OVER THE CONTENT, not an opaque fill under it, and that choice
- * is the whole feature working or not working.
- *
- * Under the content is the obvious implementation and it is wrong for most
- * real files. A page is usually white because NOTHING painted it -- and an
- * underlying fill is exactly right for those -- but any page printed from a
- * browser paints its own opaque white background across the sheet, and a
- * fill beneath that is invisible. Measured on a real HTML-to-PDF ticket:
- * every one of its 500,990 pixels came back opaque.
- *
- * `Multiply` computes `backdrop x source`, so it covers both cases with one
- * rule: white paper (painted or unpainted, both composite as white) takes
- * the colour exactly, black text stays black, and nothing on the page can
- * be hidden by it. That last part is why this is safe to apply to a
- * document sight unseen -- there is no colour the user can pick that
- * erases their content.
- *
- * BEFORE the object writers, so the user's own text and shapes are drawn ON
- * the tinted page rather than through the tint. A stamp asking to sit
- * `behind` the content prepends, so it lands under this and is tinted with
- * the page -- which is what "behind the content" asked for.
- *
- * The rect is the page's CropBox as it stands NOW, read through `geometryOf`
- * rather than from the source: `applyPageBoxes` has already run, so a page
- * the user cropped is filled to the crop the user drew and not to the box it
- * had when the file was opened. Convention B -- a content stream speaks raw
- * PDF user space, CropBox origin NOT normalised -- so the offset corner of a
- * non-zero-origin page is part of the rect, not something to subtract.
- */
-export function applyPageBackgrounds(
-  raw: mupdf.PDFDocument,
-  editDoc: EditDocument,
-  geometryOf: (index: number) => PageGeometry,
-): void {
-  editDoc.pageOrder.forEach((pageId, index) => {
-    const background = editDoc.pages[pageId]?.background
-    if (!background) return
-
-    const [x0, y0, x1, y1] = geometryOf(index).cropBox
-    const { x, y, w, h } = toContentSpace({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
-
-    const page = raw.loadPage(index)
-    try {
-      appendContent(raw, page, [
-        blendState(raw, page, `GSbg${index}`, 'Multiply'),
-        fillColor(background),
-        `${num(x)} ${num(y)} ${num(w)} ${num(h)} re f`,
-      ].join('\n'))
     } finally {
       page.destroy()
     }

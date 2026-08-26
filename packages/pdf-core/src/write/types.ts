@@ -351,23 +351,6 @@ export type PageEntry = {
    * the name is the only identity those two share.
    */
   tabOrder?: string[]
-  /**
-   * A colour the whole page is TINTED in -- multiplied over it, not painted
-   * onto it.
-   *
-   * OPTIONAL, and absent means "leave the page as it is" -- which is what
-   * every page written before this existed meant, so no stored document
-   * needs migrating and no schema version had to move. Same reasoning as
-   * `tabOrder`.
-   *
-   * On the ordinary white page this IS the colour the page comes out, which
-   * is what makes it worth calling a background. On a page that already has
-   * a colour it is not: `paper x this` is, and nothing can raise a channel
-   * the page has none of. See applyPageBackgrounds for why the fill is a
-   * Multiply, and apps/web/src/features/pages/paperColor.ts for why no
-   * attempt is made to compensate for the paper already there.
-   */
-  background?: Color
 }
 
 export type EditDocument = {
@@ -455,13 +438,6 @@ export type Op =
   | { type: 'setFlattenForms'; on: boolean }
   /** Task 76 -- field names in tab order for one page. */
   | { type: 'setTabOrder'; pageId: PageId; order: string[] }
-  /**
-   * The colour painted under one page's content. `null` removes it, which
-   * is a different thing from painting the page white -- white is a colour
-   * that covers whatever the page was shown against, and null is no
-   * opinion at all.
-   */
-  | { type: 'setPageBackground'; pageId: PageId; color: Color | null }
   /** Task 86 -- the document description. */
   | { type: 'setMetadata'; metadata: EditDocument['metadata'] }
   | { type: 'setStripMetadata'; strip: boolean }

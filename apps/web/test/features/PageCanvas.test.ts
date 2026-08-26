@@ -13,38 +13,6 @@ function bitmap(w: number, h: number) {
 }
 
 describe('PageCanvas', () => {
-  /**
-   * The tint is MULTIPLIED over the render, which is the browser's version
-   * of the /BM /Multiply ExtGState the export writes. A plain colour behind
-   * the canvas would be a second, divergent implementation -- and an
-   * invisible one on every page that paints its own white background, which
-   * is every page a browser printed.
-   */
-  it('multiplies the page tint over the render', () => {
-    const painted = { ...page, background: [0, 0.5, 0.5] as [number, number, number] }
-    const w = mount(PageCanvas, { props: { page: painted, index: 0, zoom: 1, bitmap: bitmap(612, 792) } })
-    const layer = w.get('[data-page-tint]').element as HTMLElement
-    expect(layer.style.backgroundColor).toBe('rgb(0, 128, 128)')
-    expect(layer.style.mixBlendMode).toBe('multiply')
-  })
-
-  /**
-   * Multiply against a near-black sheet would preview a colour the exported
-   * file does not contain: the export composites onto white paper, so the
-   * preview must too, in either theme.
-   */
-  it('puts the tinted page on white, not on the theme surface', () => {
-    const painted = { ...page, background: [0, 0.5, 0.5] as [number, number, number] }
-    const w = mount(PageCanvas, { props: { page: painted, index: 0, zoom: 1, bitmap: bitmap(612, 792) } })
-    expect((w.element as HTMLElement).style.backgroundColor).toBe('rgb(255, 255, 255)')
-  })
-
-  it('leaves an unpainted page on the surface token it always used', () => {
-    const w = mount(PageCanvas, { props: { page, index: 0, zoom: 1, bitmap: bitmap(612, 792) } })
-    expect(w.find('[data-page-tint]').exists()).toBe(false)
-    expect((w.element as HTMLElement).style.backgroundColor).toBe('')
-  })
-
   it('sizes the element from pageViewSize, not the bitmap', () => {
     // The bitmap is at devicePixelRatio; CSS size must be the logical size.
     const w = mount(PageCanvas, { props: { page, index: 0, zoom: 1, bitmap: bitmap(1224, 1584) } })

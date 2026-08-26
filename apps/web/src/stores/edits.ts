@@ -184,19 +184,6 @@ function reduce(draft: EditDocument, op: Op): void {
       page.tabOrder = [...op.order]
       break
     }
-
-    case 'setPageBackground': {
-      const page = draft.pages[op.pageId]
-      if (!page) return
-      // Deleting the key rather than storing null: absent means "no
-      // opinion", which is what a page that was never painted means and
-      // what the writer's optional `background` is typed to expect. A
-      // stored null would be a third state nothing else in the pipeline
-      // distinguishes.
-      if (op.color === null) delete page.background
-      else page.background = [...op.color] as [number, number, number]
-      break
-    }
   }
 }
 

@@ -25,16 +25,6 @@ export type PageState = {
    * the app reads this and none of them need to know an override exists.
    */
   geometry: PageGeometry
-  /**
-   * The colour the page is painted under its content, or undefined for
-   * whatever the page already was.
-   *
-   * Carried here rather than read from the edit store at each call site for
-   * the same reason `geometry` is: the viewer, the thumbnail panel and the
-   * pages grid all draw a page, and none of them should have to know that a
-   * page property exists somewhere else.
-   */
-  background?: [number, number, number]
 }
 
 /** One opened file. Facts about a file, never edited. */
@@ -134,7 +124,6 @@ export const useDocumentStore = defineStore('document', {
         const key = [
           entry.sourceId, entry.sourceIndex, entry.rotation,
           entry.cropBox?.join(',') ?? '-', base.cropBox.join(','), base.rotate,
-          entry.background?.join(',') ?? '-',
         ].join('|')
 
         const hit = pageStateCache.get(id)
@@ -151,7 +140,6 @@ export const useDocumentStore = defineStore('document', {
             cropBox: entry.cropBox ?? base.cropBox,
             rotate: normalizeRotation(base.rotate + entry.rotation),
           },
-          ...(entry.background ? { background: entry.background } : {}),
         }
         pageStateCache.set(id, { key, state })
         out[id] = state

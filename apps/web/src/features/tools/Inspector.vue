@@ -7,8 +7,6 @@ import { fieldsFor, toDisplay, fromDisplay, type Field } from './inspectorFields
 import { toHex, fromHex } from './colorInput'
 import TabOrderList from './TabOrderList.vue'
 import LayersPanel from '@/features/layers/LayersPanel.vue'
-import PageStyleBar from '@/features/pages/PageStyleBar.vue'
-import { usePageSelectionStore } from '@/stores/pageSelection'
 import { layerLabel } from '@/features/layers/layerLabel'
 
 /**
@@ -21,7 +19,6 @@ const props = withDefaults(defineProps<{ back?: boolean }>(), { back: true })
 
 const edits = useEditsStore()
 const doc = useDocumentStore()
-const pageSelection = usePageSelectionStore()
 
 const selected = computed(() => {
   const id = edits.selection[0]
@@ -131,21 +128,13 @@ function handleInput(field: Field, e: Event): void {
     :aria-label="selected ? 'Properties' : 'Layers'"
   >
     <!--
-      Two states, never both: what is on the document, and one object's
-      properties. Selecting anywhere -- a row here or the object itself on
-      the page -- swaps to properties, and clearing the selection (Back,
-      Escape, a click on bare page) swaps back, so the sidebar always agrees
-      with what is selected rather than being a third place to look.
-
-      Selecting a PAGE is a third thing, and it does not swap: the page is
-      what the layers are on, so its properties sit above the list rather
-      than replacing it, and what is on the page stays readable while its
-      background is being changed.
+      Two states, never both: the list of what is on the document, and one
+      object's properties. Selecting anywhere -- a row here or the object
+      itself on the page -- swaps to properties, and clearing the selection
+      (Back, Escape, a click on bare page) swaps back, so the sidebar always
+      agrees with what is selected rather than being a third place to look.
     -->
-    <template v-if="!selected">
-      <PageStyleBar v-if="pageSelection.count > 0" />
-      <LayersPanel />
-    </template>
+    <LayersPanel v-if="!selected" />
 
     <template v-else>
       <button

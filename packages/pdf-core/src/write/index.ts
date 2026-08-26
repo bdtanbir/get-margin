@@ -1,7 +1,7 @@
 import * as mupdf from 'mupdf'
 import { withPage, SAVE_OPTIONS } from './session.js'
 import { assemble, isUntouched, type SourceBytes, type SourcePasswords } from './assemble.js'
-import { applyPageBoxes, applyTabOrder, applyPageBackgrounds } from './objects/page.js'
+import { applyPageBoxes, applyTabOrder } from './objects/page.js'
 import { geometryFromPageObject } from '../geometry.js'
 import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectKind } from './types.js'
 import type { PageGeometry } from '@margin/transform'
@@ -220,10 +220,6 @@ export function replay(
   const hasTabOrder = editDoc.pageOrder.some(
     (id) => (editDoc.pages[id]?.tabOrder?.length ?? 0) > 0,
   )
-  // Painting a page is an edit even on a document with nothing else done to
-  // it. Without this the pass-through would hand back the original file and
-  // the background would be silently discarded at Download.
-  const hasBackground = editDoc.pageOrder.some((id) => !!editDoc.pages[id]?.background)
   // Protecting an otherwise-untouched document is an edit to its bytes,
   // even though it is not an edit to its content. Without this the
   // pass-through would hand back the original, unencrypted, having been
@@ -251,7 +247,7 @@ export function replay(
     // e2e/download.spec.ts asserts this byte-for-byte.
     if (
       unchanged && !hasObjects && !hasFills && !flatten && !hasTabOrder && !protection
-      && !unprotect && !hasMetadata && !hasBackground && !anythingStripped(stripped)
+      && !unprotect && !hasMetadata && !anythingStripped(stripped)
     ) {
       const original = sources.get(Object.keys(editDoc.sources)[0]!)
       if (original) return original
@@ -266,11 +262,6 @@ export function replay(
     // a crop only changes the window, but the geometry the writers receive
     // must be the final one.
     applyPageBoxes(raw, editDoc, geometryOf)
-
-    // AFTER the boxes, so the tint fills the crop the user drew, and BEFORE
-    // the object writers, so their text and shapes are drawn ON the tinted
-    // page rather than seen through the tint.
-    if (hasBackground) applyPageBackgrounds(raw, editDoc, geometryOf)
 
     // One registry per replay call, so a family used on five pages is parsed
     // and embedded once rather than five times.
@@ -399,7 +390,7 @@ export function replay(
 
 export { withDocument, withPage, SAVE_OPTIONS } from './session.js'
 export { assemble, isUntouched, type SourceBytes, type SourcePasswords } from './assemble.js'
-export { applyPageBoxes, applyTabOrder, applyPageBackgrounds } from './objects/page.js'
+export { applyPageBoxes, applyTabOrder } from './objects/page.js'
 export { applyRedactions } from './objects/redact.js'
 export {
   stripActiveContent, anythingStripped, nothingStripped, type StrippedContent,

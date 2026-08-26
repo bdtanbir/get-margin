@@ -3,7 +3,6 @@ import { computed, ref, watchEffect, onMounted } from 'vue'
 import { pageViewSize } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import type { RenderResult } from '@/workers/pdfService'
-import { toHex } from '@/features/tools/colorInput'
 
 const props = defineProps<{
   page: PageState
@@ -33,24 +32,6 @@ const cssWidth = computed(() => `${Math.round(view.value.width)}px`)
 const cssHeight = computed(() => `${Math.round(view.value.height)}px`)
 
 const label = computed(() => `Page ${props.index + 1}`)
-
-/**
- * The page's tint, previewed the same way the export applies it: a colour
- * multiplied over the rendered page.
- *
- * `mix-blend-mode: multiply` over the canvas is the browser's version of the
- * /BM /Multiply ExtGState applyPageBackgrounds writes, so the preview and
- * the downloaded file agree by construction rather than by two
- * implementations happening to land in the same place.
- *
- * The sheet under it is forced to WHITE while a tint is set, because that is
- * the paper the export composites onto. Left on the surface token it would
- * multiply against a near-black sheet in dark mode and preview a colour the
- * file does not contain.
- */
-const tint = computed(() =>
-  props.page.background ? toHex(props.page.background) : undefined,
-)
 
 function paint(): void {
   const el = canvas.value
@@ -89,7 +70,7 @@ watchEffect(paint, { flush: 'post' })
     role="img"
     :aria-label="label"
     class="relative shrink-0 overflow-hidden rounded-sheet bg-surface ring-1 ring-border shadow-low"
-    :style="{ width: cssWidth, height: cssHeight, ...(tint ? { backgroundColor: '#ffffff' } : {}) }"
+    :style="{ width: cssWidth, height: cssHeight }"
   >
     <canvas
       v-if="props.bitmap"
@@ -101,21 +82,5 @@ watchEffect(paint, { flush: 'post' })
     />
     <!-- Placeholder occupies the exact final size, so nothing shifts on arrival. -->
     <div v-else class="size-full animate-pulse bg-surface-sunken" />
-
-    <!--
-      The tint. Over the render and under PageOverlay's objects, which is
-      where the export puts it -- the user's own text and shapes are drawn
-      on the tinted page, not seen through the tint.
-
-      `pointer-events-none` because it spans the whole page: without it this
-      would swallow every click meant for the document underneath.
-    -->
-    <div
-      v-if="tint"
-      data-page-tint
-      :data-page-background="tint"
-      class="pointer-events-none absolute inset-0"
-      :style="{ backgroundColor: tint, mixBlendMode: 'multiply' }"
-    />
   </div>
 </template>

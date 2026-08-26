@@ -4,7 +4,6 @@ import { pageViewSize } from '@margin/transform'
 import { useViewportStore } from '@/stores/viewport'
 import type { PageState } from '@/stores/document'
 import { cn } from '@/ui/cn'
-import { toHex } from '@/features/tools/colorInput'
 
 // Props are `{ page, index, active }` — deliberately no `bitmap` prop.
 // `index` is the page's position in `pageOrder` (display order), NOT
@@ -44,13 +43,6 @@ const vp = useViewportStore()
 // this costs nothing extra to open.
 const bitmap = computed(() => vp.bitmapFor(props.page.id))
 
-// See PageCanvas: a tint is multiplied OVER the render, matching the
-// /BM /Multiply the export writes, on a sheet forced to the white the
-// export composites onto.
-const tint = computed(() =>
-  props.page.background ? toHex(props.page.background) : undefined,
-)
-
 const ratio = computed(() => {
   const { width, height } = pageViewSize(props.page.geometry, 1)
   return `${width} / ${height}`
@@ -78,10 +70,10 @@ function paintBitmap(el: HTMLCanvasElement | null): void {
     <div
       data-testid="thumb-frame"
       :class="cn(
-        'relative w-full overflow-hidden rounded-sheet bg-surface ring-1 transition-shadow duration-fast',
+        'w-full overflow-hidden rounded-sheet bg-surface ring-1 transition-shadow duration-fast',
         props.active ? 'ring-2 ring-accent' : 'ring-border group-hover:ring-border-strong',
       )"
-      :style="{ aspectRatio: ratio, ...(tint ? { backgroundColor: '#ffffff' } : {}) }"
+      :style="{ aspectRatio: ratio }"
     >
       <canvas
         v-if="bitmap"
@@ -91,12 +83,6 @@ function paintBitmap(el: HTMLCanvasElement | null): void {
         :ref="(el) => paintBitmap(el as HTMLCanvasElement | null)"
       />
       <div v-else class="size-full animate-pulse bg-surface-sunken" />
-      <div
-        v-if="tint"
-        data-page-tint
-        class="pointer-events-none absolute inset-0"
-        :style="{ backgroundColor: tint, mixBlendMode: 'multiply' }"
-      />
     </div>
     <span class="text-[11px] tabular-nums text-text-subtle">{{ props.index + 1 }}</span>
   </component>
