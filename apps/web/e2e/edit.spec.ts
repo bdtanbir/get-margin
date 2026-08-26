@@ -186,3 +186,60 @@ test('text being edited is drawn once, and can be reopened', async ({ page }) =>
   await page.mouse.dblclick(box.x + 100, box.y + 255)
   await expect(editor).toHaveCount(1)
 })
+
+
+/**
+ * "Click somewhere else to deselect."
+ *
+ * Reported against the Layers panel: picking a layer there opened its
+ * properties and nothing on the document put them away again -- clicking
+ * blank page left the object selected with its inspector open, and the only
+ * exits were the panel's own back arrow or switching tools.
+ *
+ * A browser test, not jsdom: the claim is about which element a real click
+ * at a real coordinate lands on, and the point of the fix is that a pointer
+ * on blank page misses every selection surface and falls through to the
+ * scroller underneath them all.
+ */
+test('a click on blank page deselects', async ({ page }) => {
+  await openFixture(page)
+  await page.getByRole('button', { name: 'Rectangle' }).first().click()
+
+  // Captured while the draw surface still exists: drawing switches back to
+  // the select tool, which unmounts it.
+  const surface = page.locator('[data-draw-surface]').first()
+  await expect(surface).toBeVisible()
+  const box = (await surface.boundingBox())!
+
+  await drawOn(page, { x: 40, y: 40 }, { x: 140, y: 90 })
+  await expect(page.locator('[data-selection]')).toHaveCount(1)
+
+  // Blank page, well clear of the shape.
+  await page.mouse.click(box.x + 40, box.y + 400)
+  await expect(page.locator('[data-selection]')).toHaveCount(0)
+})
+
+test('a click on blank page deselects a layer picked in the panel', async ({ page }, testInfo) => {
+  // The route the defect was reported through. Desktop only because the
+  // phone shell keeps layers behind a sheet rather than in a sidebar; the
+  // rule itself is covered on every project by the test above.
+  test.skip(testInfo.project.name !== 'desktop', 'the Layers sidebar is desktop-only')
+  await openFixture(page)
+  await page.getByRole('button', { name: 'Rectangle' }).first().click()
+
+  const surface = page.locator('[data-draw-surface]').first()
+  await expect(surface).toBeVisible()
+  const box = (await surface.boundingBox())!
+  await drawOn(page, { x: 40, y: 40 }, { x: 140, y: 90 })
+
+  // Put away what drawing selected, so the panel row below is what selects
+  // it -- otherwise this proves nothing about the panel.
+  await page.mouse.click(box.x + 40, box.y + 400)
+  await expect(page.locator('[data-selection]')).toHaveCount(0)
+
+  await page.locator('[data-layer-row]').first().click()
+  await expect(page.locator('[data-selection]')).toHaveCount(1)
+
+  await page.mouse.click(box.x + 40, box.y + 400)
+  await expect(page.locator('[data-selection]')).toHaveCount(0)
+})

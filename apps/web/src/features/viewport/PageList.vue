@@ -5,12 +5,14 @@ import { pageViewSize } from '@margin/transform'
 import PageCanvas from './PageCanvas.vue'
 import PageOverlay from '@/features/overlay/PageOverlay.vue'
 import { useDocumentStore } from '@/stores/document'
+import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
 import { useGestures } from './useGestures'
 import { scrollTarget } from './scrollTarget'
 
 const doc = useDocumentStore()
 const vp = useViewportStore()
+const edits = useEditsStore()
 const scroller = ref<HTMLElement | null>(null)
 
 const GAP = 24
@@ -199,8 +201,35 @@ function isTouch(e: PointerEvent): boolean {
   return e.pointerType === 'touch'
 }
 
+/**
+ * A touch gesture starts here -- and a pointer that lands on nothing clears
+ * the object selection.
+ *
+ * "Click somewhere else to deselect" was the rule this editor did not have:
+ * a layer picked in the Layers panel stayed selected, inspector and all, no
+ * matter where on the document the next click went. Only the panel's back
+ * arrow or switching tools put it away.
+ *
+ * The rule lives on THIS element rather than on the page overlay because
+ * the scroller is the one node every pointer in the document area passes
+ * through -- bare page, the gutter between pages, and the canvas either
+ * side of them all bubble to it, so the rule is stated once instead of per
+ * surface.
+ *
+ * Every surface that OWNS a selection already stops the pointer on the way
+ * down: SelectionChrome's move box, its resize and rotate handles, both
+ * selection toolbars, and the text editor. None of them reach this handler.
+ * Objects are the deliberate exception -- their <g> selects on pointerdown
+ * and lets the event through, so that a touch gesture can still begin on
+ * top of one -- which is what the `data-object-id` check is for. Without
+ * it this handler would undo the selection the object had just made.
+ */
 function onPointerDown(e: PointerEvent): void {
   if (isTouch(e)) gestures.onPointerDown(e)
+  const target = e.target
+  if (target instanceof Element && !target.closest('[data-object-id]')) {
+    edits.clearSelection()
+  }
 }
 
 function onPointerMove(e: PointerEvent): void {
