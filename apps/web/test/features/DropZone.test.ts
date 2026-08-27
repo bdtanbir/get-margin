@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import DropZone from '@/features/document/DropZone.vue'
 import { useDocumentStore } from '@/stores/document'
 import { MAX_BYTES, MAX_PAGES } from '@/lib/limits'
+import { AUTHOR_NAME, AUTHOR_URL } from '@/lib/author'
 
 vi.mock('@/lib/autosaveDb', () => ({
   clearEdits: async () => {}, putEdit: async () => {},
@@ -55,5 +56,13 @@ describe('DropZone empty state', () => {
   it('surfaces an open failure', () => {
     useDocumentStore().error = 'That file is not a PDF.'
     expect(zone().get('[role="alert"]').text()).toContain('not a PDF')
+  })
+
+  // The only screen a visitor sees before opening a file, so the credit
+  // lives here rather than in a toolbar it would follow them around from.
+  it('credits the author, outside the drop target', () => {
+    const w = zone()
+    expect(w.text()).toContain(`Made by ${AUTHOR_NAME}`)
+    expect(w.get('[data-author-link]').attributes('href')).toBe(AUTHOR_URL)
   })
 })

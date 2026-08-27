@@ -6,6 +6,7 @@ import { useFocusTrap } from '@/lib/useFocusTrap'
 import { shortcutsByGroup } from './shortcuts'
 import { MAX_BYTES, MAX_PAGES } from '@/lib/limits'
 import { conversionAvailable } from '@/features/convert/useJob'
+import MadeBy from '@/ui/MadeBy.vue'
 
 /**
  * What the app does, and how to drive it.
@@ -102,6 +103,16 @@ const mb = (bytes: number): string => `${Math.round(bytes / 1048576)} MB`
           What this app stores on your device, and how to clear it, is listed on
           the privacy page.
         </p>
+      </section>
+
+      <!--
+        The same credit as the empty state, because the empty state stops
+        existing the moment a document is open -- and this panel is then
+        the only thing left that answers "who made this?".
+      -->
+      <section class="flex flex-col gap-2 border-t border-border pt-4">
+        <h3 class="text-[14px] font-medium">Who made this</h3>
+        <MadeBy align="start" />
       </section>
     </div>
   </div>

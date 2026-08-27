@@ -5,6 +5,7 @@ import { defineComponent } from 'vue'
 import HelpPanel from '@/features/help/HelpPanel.vue'
 import { SHORTCUTS, combosFor, shortcut, shortcutsByGroup } from '@/features/help/shortcuts'
 import { useEditShortcuts } from '@/features/tools/useEditShortcuts'
+import { AUTHOR_NAME, AUTHOR_URL } from '@/lib/author'
 
 vi.mock('@/lib/autosaveDb', () => ({
   clearEdits: async () => {}, putEdit: async () => {}, findEdit: async () => undefined,
@@ -136,5 +137,16 @@ describe('what is documented is what is bound', () => {
     expect(combosFor('zoom-in')).toEqual([])
     expect(combosFor('zoom-out')).toEqual([])
     expect(shortcut('zoom-in').display).toBe('⌘+')
+  })
+
+  /**
+   * The empty state carries the same credit, but it stops existing the
+   * moment a document is open. This panel is then the only route back to
+   * "who made this?", which is why the line is in both places.
+   */
+  it('credits the author, reachable with a document open', () => {
+    const w = mount(HelpPanel)
+    expect(w.text()).toContain(`Made by ${AUTHOR_NAME}`)
+    expect(w.get('[data-author-link]').attributes('href')).toBe(AUTHOR_URL)
   })
 })

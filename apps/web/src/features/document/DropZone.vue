@@ -6,6 +6,7 @@ import Button from '@/ui/Button.vue'
 import { useDocumentStore } from '@/stores/document'
 import { MAX_BYTES, MAX_PAGES } from '@/lib/limits'
 import PrivacyPage from './PrivacyPage.vue'
+import MadeBy from '@/ui/MadeBy.vue'
 
 const doc = useDocumentStore()
 const privacyOpen = ref(false)
@@ -34,7 +35,7 @@ function onInput(e: Event): void {
   <div
     ref="zone"
     data-empty-state
-    class="flex h-full w-full items-center justify-center p-6 transition-colors duration-base"
+    class="flex h-full w-full flex-col items-center justify-center gap-4 p-6 transition-colors duration-base"
     :class="isOverDropZone ? 'bg-accent-subtle' : 'bg-canvas'"
   >
     <div
@@ -113,5 +114,13 @@ function onInput(e: Event): void {
 
       <p v-if="doc.error" role="alert" class="text-[13px] text-danger">{{ doc.error }}</p>
     </div>
+
+    <!--
+      Outside the dashed card, so it reads as the page's footer rather than
+      as one more thing inside the drop target. This is the only screen a
+      visitor sees before opening a file, which makes it the one place a
+      credit is worth the pixels.
+    -->
+    <MadeBy />
   </div>
 </template>
