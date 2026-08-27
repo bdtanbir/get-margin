@@ -55,7 +55,7 @@ const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`
 
 <template>
   <div
-    class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4"
+    class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 text-left"
     role="dialog"
     aria-modal="true"
     aria-label="Privacy"

@@ -29,6 +29,16 @@ describe('PrivacyPage', () => {
     expect(page().text()).toContain('never leave this device')
   })
 
+  /**
+   * It is opened from two places, and one of them -- DropZone's empty state
+   * -- is a `text-center` card. `position: fixed` escapes the layout but not
+   * inheritance, so opened from there this page rendered centred, bulleted
+   * list and all, while opening it from the top bar looked correct.
+   */
+  it('pins its own text alignment, so a centred parent cannot centre it', () => {
+    expect(page().get('[data-privacy-page]').classes()).toContain('text-left')
+  })
+
   it('says there is no backend at all', () => {
     expect(page().text()).toMatch(/no backend/i)
   })
