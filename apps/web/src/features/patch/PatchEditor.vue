@@ -115,10 +115,46 @@ const originalText = computed(() =>
   line.value ? line.value.chars.map((c) => c.char).join('') : '',
 )
 
-/** The line's box in MuPDF page space, from its character quads. */
+/**
+ * The line's box in MuPDF page space, from its character quads.
+ *
+ * The box in the SOURCE, which is the box the cover is painted over and
+ * stays put however far the replacement has been dragged. Anything about
+ * what is UNDER the line -- the background sample below -- has to use this
+ * one. Anything about where the text the user can see IS has to use
+ * `drawnAt`.
+ */
 const box = computed(() => {
   const l = line.value
   return l && l.chars.length > 0 ? lineBox(l) : undefined
+})
+
+/** How far a line's patch has dragged it from where the document put it. */
+function offsetOf(lineIndex: number): { dx: number; dy: number } {
+  const patch = patchOn(lineIndex)
+  return { dx: patch?.offset?.dx ?? 0, dy: patch?.offset?.dy ?? 0 }
+}
+
+const offset = computed(() =>
+  editing.value === undefined ? { dx: 0, dy: 0 } : offsetOf(editing.value),
+)
+
+const isMoved = computed(() => offset.value.dx !== 0 || offset.value.dy !== 0)
+
+/**
+ * Where the line is actually drawn -- its source box plus whatever the
+ * user has dragged it by.
+ *
+ * Everything the user POINTS AT or LOOKS AT goes through this: the field,
+ * the warnings hanging off it, and the click target. They were all reading
+ * `box`, so after a move they stayed behind at the empty space the line had
+ * left. The text the user could see had no target at all, and clicking the
+ * gap where it used to be opened a field for it somewhere else entirely.
+ */
+const drawnAt = computed(() => {
+  const b = box.value
+  if (!b) return undefined
+  return { ...b, x: b.x + offset.value.dx, y: b.y + offset.value.dy }
 })
 
 /**
@@ -172,13 +208,16 @@ const editSize = computed(() =>
 const face = computed(() => ({ bold: bold.value, italic: italic.value }))
 
 const inputWidth = computed(() => {
-  const b = box.value
+  const b = drawnAt.value
   if (!b) return 0
   const measured = measureText(draft.value || ' ', DEFAULT_FAMILY, editSize.value, face.value)
   // A little slack so the caret at the end of the text is never against the
   // border, and a floor so an emptied field stays clickable.
   const wanted = Math.max(b.w, measured + editSize.value, 40)
   const pageWidth = pageViewSize(props.page.geometry, 1).width
+  // Against the DRAWN x: a line dragged towards the right margin has less
+  // room left than its source position had, and capping against the source
+  // would hang the field off the paper.
   return Math.min(wanted, Math.max(40, pageWidth - b.x))
 })
 
@@ -208,13 +247,13 @@ const fieldSize = computed(() => noZoomTextSize(drawnFontSize.value))
 
 /** The field's size ON SCREEN, which is what the warning panel hangs off. */
 const drawnBox = computed(() => {
-  const b = box.value
+  const b = drawnAt.value
   if (!b) return { width: 0, height: 0 }
   return { width: inputWidth.value * props.zoom, height: b.h * props.zoom }
 })
 
 const style = computed(() => {
-  const b = box.value
+  const b = drawnAt.value
   if (!b) return {}
   const { fontSize, scale } = fieldSize.value
   return {
@@ -376,11 +415,18 @@ function commit(): void {
    * typing the original back, and the edit was discarded on blur. The style
    * appeared while the field was open and vanished the moment it closed.
    *
+   * AND THE POSITION, for the same reason and with a worse failure. A line
+   * that has only been MOVED still has the document's own words and the
+   * document's own style, so this matched it -- and merely opening the
+   * field and clicking away deleted the patch, snapping the line back to
+   * where it started with nothing on screen to say why. Where the line is
+   * is part of "exactly as the document has it".
+   *
    * With no existing patch there is simply nothing to record. With one,
    * leaving it in place would keep painting a cover over text identical to
    * what is underneath -- a visible flat rectangle achieving nothing.
    */
-  if (draft.value === originalText.value && matchesDocument(l)) {
+  if (draft.value === originalText.value && matchesDocument(l) && !isMoved.value) {
     if (existing) edits.applyOp({ type: 'deleteObject', id: existing }, 'Undo text edit')
     cancel()
     return
@@ -459,8 +505,8 @@ defineExpose({ begin })
           ? 'hidden'
           : 'border-accent/40 hover:bg-accent/10'"
         :style="{
-          left: `${Math.min(...l.chars.map((c) => c.quad[0])) * props.zoom}px`,
-          top: `${Math.min(...l.chars.map((c) => c.quad[1])) * props.zoom}px`,
+          left: `${(Math.min(...l.chars.map((c) => c.quad[0])) + offsetOf(i).dx) * props.zoom}px`,
+          top: `${(Math.min(...l.chars.map((c) => c.quad[1])) + offsetOf(i).dy) * props.zoom}px`,
           width: `${targetWidth(
             i,
             Math.max(...l.chars.map((c) => c.quad[2])) - Math.min(...l.chars.map((c) => c.quad[0])),
@@ -483,9 +529,15 @@ defineExpose({ begin })
         typed, that information would simply be gone -- so it is drawn
         explicitly. It is what the fit setting below is about: text past this
         mark is what gets shrunk, cut, or allowed to run.
+
+        Not drawn for a line that has been MOVED. The fit rules measure
+        against the box the line came from, and a moved patch always
+        overflows precisely because it is no longer in that box -- so the
+        mark would claim a constraint that has stopped applying, at a
+        position the text is not at.
       -->
       <div
-        v-if="originalWidth > 0"
+        v-if="originalWidth > 0 && !isMoved"
         data-patch-guide
         aria-hidden="true"
         class="pointer-events-none absolute border-r-2 border-dashed border-accent/50"

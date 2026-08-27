@@ -368,6 +368,121 @@ describe('PatchEditor', () => {
     })
   })
 
+  /**
+   * Editing a line that has been DRAGGED away from where the document put
+   * it.
+   *
+   * Everything in this editor is positioned from `lineBox`, which is the
+   * line's box in the SOURCE -- the box the cover is painted over, and
+   * after a move no longer the box the text is in. So the field, the fit
+   * guide and the click target all stayed behind at the empty space the
+   * line had left, while the text the user could see had no target at all.
+   */
+  describe('a line that has been moved', () => {
+    const OFFSET = { dx: 200, dy: 60 }
+
+    /** The patch the Move button leaves behind: unchanged but relocated. */
+    const moved = (over: Partial<TextPatchObject> = {}): TextPatchObject => ({
+      id: 'tp1', pageId: 'p1', kind: 'textPatch',
+      lineIndex: 0,
+      originalHash: hashText('Original line'),
+      originalText: 'Original line',
+      text: 'Original line',
+      fontFamily: 'Inter', bold: false, italic: false, fontSize: 12, baseline: 114,
+      color: [0, 0, 0], background: [1, 1, 1], backgroundConfidence: 1,
+      fit: 'overflow',
+      rect: { x: 40, y: 100, w: 120, h: 18 },
+      offset: OFFSET,
+      rotation: 0, z: 1, locked: false, opacity: 1,
+      ...over,
+    })
+
+    const withMoved = (over: Partial<TextPatchObject> = {}) => {
+      const edits = seed()
+      vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+      edits.applyOp({ type: 'addObject', object: moved(over) as never }, 'add')
+      return { edits, w: mountEditor(INDEX) }
+    }
+
+    it('puts the click target on the moved text, not on the space it left', () => {
+      const { w } = withMoved()
+      const target = w.get('[data-patch-target="0"]').attributes('style')
+      // The line sits at x 40, y 100; moved, it is at 240, 160.
+      expect(target).toContain('left: 240px')
+      expect(target).toContain('top: 160px')
+    })
+
+    it('opens the field where the text is now', async () => {
+      const { w } = withMoved()
+      await w.get('[data-patch-target="0"]').trigger('click')
+      const style = w.get('[data-patch-input]').attributes('style')
+      expect(style).toContain('left: 240px')
+      expect(style).toContain('top: 160px')
+    })
+
+    /**
+     * THE DATA-LOSS BUG. A moved-but-unedited patch has the line's own
+     * words and the line's own style, so the "they typed the original
+     * back, undo the edit" test matched it -- and merely opening the field
+     * and clicking away deleted the move. The line snapped back to where
+     * the document had it and the user's work was gone, with nothing on
+     * screen to say why.
+     */
+    it('does not discard the move when the field is closed unchanged', async () => {
+      const { edits, w } = withMoved()
+      await w.get('[data-patch-target="0"]').trigger('click')
+      await w.get('[data-patch-input]').trigger('keydown.enter')
+      expect(patches(edits)).toHaveLength(1)
+      expect(patches(edits)[0]!.offset).toEqual(OFFSET)
+    })
+
+    it('does not discard it on blur either, which is the commoner way out', async () => {
+      const { edits, w } = withMoved()
+      await w.get('[data-patch-target="0"]').trigger('click')
+      await w.get('[data-patch-input]').trigger('blur')
+      expect(patches(edits)).toHaveLength(1)
+    })
+
+    it('keeps the move when the text is edited', async () => {
+      const { edits, w } = withMoved()
+      await w.get('[data-patch-target="0"]').trigger('click')
+      await w.get('[data-patch-input]').setValue('Retyped')
+      await w.get('[data-patch-input]').trigger('keydown.enter')
+      expect(patches(edits)[0]!.text).toBe('Retyped')
+      expect(patches(edits)[0]!.offset).toEqual(OFFSET)
+    })
+
+    /**
+     * The guide marks where the original line ended, which is what the fit
+     * rules measure against -- and a moved patch always overflows, because
+     * it is no longer in that box. Drawing it would claim a constraint
+     * that has stopped applying, at a position the text is not at.
+     */
+    it('hides the fit guide, which describes a box the text has left', async () => {
+      const { w } = withMoved()
+      await w.get('[data-patch-target="0"]').trigger('click')
+      expect(w.find('[data-patch-guide]').exists()).toBe(false)
+    })
+
+    /** An unmoved line keeps every one of those behaviours. */
+    it('leaves an unmoved line exactly as it was', async () => {
+      const { w } = withMoved({ offset: { dx: 0, dy: 0 } })
+      const target = w.get('[data-patch-target="0"]').attributes('style')
+      expect(target).toContain('left: 40px')
+      await w.get('[data-patch-target="0"]').trigger('click')
+      expect(w.get('[data-patch-input]').attributes('style')).toContain('left: 40px')
+      expect(w.find('[data-patch-guide]').exists()).toBe(true)
+    })
+
+    it('still undoes the edit when an unmoved patch is typed back', async () => {
+      const { edits, w } = withMoved({ offset: { dx: 0, dy: 0 }, text: 'Changed' })
+      await w.get('[data-patch-target="0"]').trigger('click')
+      await w.get('[data-patch-input]').setValue('Original line')
+      await w.get('[data-patch-input]').trigger('keydown.enter')
+      expect(patches(edits)).toHaveLength(0)
+    })
+  })
+
   it('handles a page whose text has not been extracted yet', () => {
     expect(mountEditor(undefined).findAll('[data-patch-target]')).toHaveLength(0)
   })
