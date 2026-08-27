@@ -3,9 +3,11 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useMagicKeys, whenever } from '@vueuse/core'
 import { combosFor } from '@/features/help/shortcuts'
 import { useFocusTrap } from '@/lib/useFocusTrap'
+import { usePaletteStore } from '@/stores/palette'
 import { useCommands, filterCommands, type Command } from './commands'
 
-const open = ref(false)
+const palette = usePaletteStore()
+const open = computed(() => palette.open)
 const query = ref('')
 const highlighted = ref(0)
 const surface = ref<HTMLElement | null>(null)
@@ -41,17 +43,27 @@ whenever(keys['Meta+k']!, () => toggle())
 for (const combo of combosFor('palette')) whenever(keys[combo]!, () => toggle())
 
 function toggle(): void {
-  open.value = !open.value
-  if (open.value) {
-    query.value = ''
-    highlighted.value = 0
-    void nextTick(() => input.value?.focus())
-  }
+  palette.toggle()
 }
 
 function close(): void {
-  open.value = false
+  palette.close()
 }
+
+/**
+ * Reset and focus on the way OPEN, wherever the open came from.
+ *
+ * This used to sit inside `toggle()`, which was fine while the keyboard was
+ * the only way in. Now the top bar opens it too, and a palette opened by
+ * pointer would otherwise come up carrying the previous query with nothing
+ * focused.
+ */
+watch(open, (isOpen) => {
+  if (!isOpen) return
+  query.value = ''
+  highlighted.value = 0
+  void nextTick(() => input.value?.focus())
+})
 
 // A filtered list can be shorter than the highlight; without this, Enter
 // after typing runs nothing at all.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Download, Sun, Moon, Monitor, PanelLeft, Undo2, Redo2, ShieldCheck } from 'lucide-vue-next'
+import { Download, Sun, Moon, Monitor, PanelLeft, Undo2, Redo2, ShieldCheck, Search } from 'lucide-vue-next'
 import Button from '@/ui/Button.vue'
 import IconButton from '@/ui/IconButton.vue'
 import Tooltip from '@/ui/Tooltip.vue'
@@ -9,6 +9,9 @@ import { useEditsStore } from '@/stores/edits'
 import { useAutosaveStore } from '@/stores/autosave'
 import { useFieldsStore } from '@/stores/fields'
 import { useTheme } from '@/lib/theme'
+import { usePaletteStore } from '@/stores/palette'
+import { shortcut } from '@/features/help/shortcuts'
+import { shortcutLabel } from '@/lib/platform'
 import { getPdfClient } from '@/workers/pdfClient'
 import { downloadBytes, pdfFileName } from '@/lib/exportFile'
 import { fontsForExport, facesUsed } from '@/lib/fonts'
@@ -33,6 +36,19 @@ const hasForms = computed(() =>
 )
 const { choice, cycle } = useTheme()
 const icon = { light: Sun, dark: Moon, system: Monitor }
+
+/**
+ * Every command in the app lives behind ⌘K, and until now nothing on screen
+ * said so. The key was printed in one place -- the help panel -- which is
+ * itself only reachable through the palette, so the shortcut documented the
+ * menu you needed the shortcut to find.
+ *
+ * Read from the shortcut catalogue and rendered in this machine's modifiers,
+ * rather than typed here as a string: a hardcoded "⌘K" is how a chip in the
+ * toolbar comes to name a different key than the one that is bound.
+ */
+const palette = usePaletteStore()
+const paletteKeys = shortcutLabel(shortcut('palette').display)
 
 const saving = ref(false)
 
@@ -140,6 +156,39 @@ async function download(): Promise<void> {
     </span>
 
     <div class="flex-1" />
+
+    <!--
+      A button AND a visible key, not a tooltip.
+
+      A tooltip only teaches someone who already hovered, and nobody hovers a
+      thing they do not know exists. The chip states the shortcut without
+      being asked, and the button means the discovery does not depend on the
+      keyboard at all -- which is also what makes the palette reachable on a
+      phone, where there is no ⌘ to press.
+    -->
+    <button
+      type="button"
+      data-open-palette
+      class="flex h-8 items-center gap-2 rounded-control border border-border bg-surface-sunken
+             px-2.5 text-[12px] text-text-muted transition-colors duration-fast
+             hover:border-border-strong hover:text-text"
+      :aria-label="`Commands (${paletteKeys})`"
+      @click="palette.show()"
+    >
+      <Search :size="14" :stroke-width="1.5" aria-hidden="true" />
+      <template v-if="!props.compact">
+        <span>Commands</span>
+        <!--
+          aria-hidden because the accessible name above already says the
+          shortcut; without it a screen reader reads "Commands Ctrl K" twice.
+        -->
+        <kbd
+          data-palette-shortcut
+          aria-hidden="true"
+          class="rounded border border-border bg-surface px-1 py-0.5 font-sans text-[11px] text-text-subtle"
+        >{{ paletteKeys }}</kbd>
+      </template>
+    </button>
 
     <Tooltip :content="`Theme: ${choice}`" side="bottom">
       <IconButton size="sm" :label="`Theme: ${choice}`" @click="cycle()">
