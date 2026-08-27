@@ -57,25 +57,49 @@ const onPage = computed(() =>
 )
 
 /**
- * Everything drawn in raw PDF space -- minus whatever is being edited.
+ * Everything on the page, in z order, cut into runs of ONE coordinate
+ * space.
  *
- * A text object under the caret is drawn by TextEditor as a real
- * contenteditable in the DOM. Leaving the SVG copy up as well drew the same
- * string twice, a couple of pixels apart, which reads exactly like a drop
- * shadow and vanished the moment the editor closed.
+ * Markup, redaction and text patches carry MuPDF PAGE space (top-down),
+ * unlike every other object's raw bottom-up rect, so they must render
+ * OUTSIDE the y-flipped root <g> -- inside it they land at the mirror
+ * image of what they mark, which is the bug the export path's
+ * markup.test.ts pins from the other side.
+ *
+ * That used to be expressed as two lists rendered one after the other, and
+ * the cost was hidden in the word "after": PAINTING ORDER WAS DECIDED BY
+ * COORDINATE SPACE, and `z` only sorted within each pile. Every patch sat
+ * above every drawn object no matter what either one's z said, and Bring
+ * to front could not help because nothing consulted z across the two.
+ *
+ * Invisible while a patch could only sit on the line it replaced -- there
+ * was never anything else there. The moment a patch could be MOVED it
+ * became: drag a line somewhere, put a text box in the same spot, and the
+ * text box is behind it.
+ *
+ * So the list is walked ONCE in z order and cut wherever the space
+ * changes. A page whose objects are all one space is still a single group,
+ * which is the ordinary case; interleaving costs one <g> per run and buys
+ * a painting order that matches the z the rest of the app talks about.
+ *
+ * A text object under the caret is left out entirely: TextEditor draws it
+ * as a real contenteditable in the DOM, and leaving the SVG copy up as
+ * well drew the same string twice a couple of pixels apart -- which reads
+ * exactly like a drop shadow and vanished the moment the editor closed.
  */
-const objects = computed(() =>
-  onPage.value.filter((o) => !isMarkup(o.kind) && o.id !== tools.editingId),
-)
+type Band = { space: 'pdf' | 'page'; objects: EditObject[] }
 
-/**
- * Markup objects render OUTSIDE the y-flipped root <g>: their quads are in
- * MuPDF PAGE space (top-down), unlike every other object's raw bottom-up
- * rect. Putting them inside would flip them onto the mirror image of the
- * text they mark -- which is precisely the bug the export path's
- * markup.test.ts pins on the other side.
- */
-const markup = computed(() => onPage.value.filter((o) => isMarkup(o.kind)))
+const bands = computed<Band[]>(() => {
+  const out: Band[] = []
+  for (const o of onPage.value) {
+    if (o.id === tools.editingId) continue
+    const space = isMarkup(o.kind) ? 'page' : 'pdf'
+    const last = out[out.length - 1]
+    if (last && last.space === space) last.objects.push(o)
+    else out.push({ space, objects: [o] })
+  }
+  return out
+})
 
 const tools = useToolsStore()
 const docStore = useDocumentStore()
@@ -229,39 +253,57 @@ const draft = computed(() => {
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      <g :transform="rootTransform">
+      <!--
+        One group per RUN of same-space objects, in z order across the whole
+        page -- see `bands`. Rendering all of one space and then all of the
+        other made painting order a property of the coordinate system
+        instead of a property of z.
+      -->
+      <template v-for="(band, i) in bands" :key="i">
         <!--
+          Raw PDF space, so it goes inside the page transform.
+
           Hit-testing lives here rather than on the <svg>: ObjectLayer's <g>
           is pointer-events-auto inside a pointer-events-none <svg>, so a
           pointerdown that reaches this handler landed on an object's own
           painted geometry. Everywhere else stays transparent to the canvas,
           text selection, and scrolling beneath.
         -->
-        <ObjectLayer
-          v-for="o in objects"
+        <g v-if="band.space === 'pdf'" :transform="rootTransform">
+          <ObjectLayer
+            v-for="o in band.objects"
+            :key="o.id"
+            :object="o"
+            @pointerdown="edits.select([o.id])"
+            @dblclick="o.kind === 'text' && tools.startEditing(o.id)"
+          />
+        </g>
+        <!--
+          MuPDF page space, which is what the viewBox already describes, so
+          NO page transform: applying it would put these at the mirror image
+          of the text they mark.
+        -->
+        <g
+          v-for="o in band.objects"
+          v-else
           :key="o.id"
-          :object="o"
+          :data-object-id="o.id"
+          :opacity="o.opacity"
+          class="pointer-events-auto"
           @pointerdown="edits.select([o.id])"
-          @dblclick="o.kind === 'text' && tools.startEditing(o.id)"
-        />
-        <ObjectLayer v-if="draft" :object="draft" />
-      </g>
+        >
+          <RedactionObject v-if="o.kind === 'redaction'" :object="(o as never)" />
+          <TextPatchObject v-else-if="o.kind === 'textPatch'" :object="(o as never)" />
+          <MarkupObject v-else :object="(o as never)" />
+        </g>
+      </template>
       <!--
-        OUTSIDE the root <g>: these quads are already in MuPDF page space,
-        which is what the viewBox describes. Inside, the page transform would
-        be applied to them a second time.
+        The in-flight shape, above everything committed. It is what the
+        pointer is doing right now, and nothing already on the page should
+        hide it.
       -->
-      <g
-        v-for="o in markup"
-        :key="o.id"
-        :data-object-id="o.id"
-        :opacity="o.opacity"
-        class="pointer-events-auto"
-        @pointerdown="edits.select([o.id])"
-      >
-        <RedactionObject v-if="o.kind === 'redaction'" :object="(o as never)" />
-        <TextPatchObject v-else-if="o.kind === 'textPatch'" :object="(o as never)" />
-        <MarkupObject v-else :object="(o as never)" />
+      <g v-if="draft" :transform="rootTransform">
+        <ObjectLayer :object="draft" />
       </g>
       <TextSelectionLayer :page="props.page" />
       <!--

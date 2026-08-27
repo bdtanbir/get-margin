@@ -616,6 +616,38 @@ describe('a moved text patch', () => {
    * box it is no longer in, so fitting to it cuts text for no reason the
    * user can see. A moved patch overflows instead.
    */
+  /**
+   * Z DECIDES, across kinds.
+   *
+   * The writer sorts a page's objects by z in one flat pass and branches
+   * on kind only to pick a writer, so this has always held here. It is
+   * pinned because the OVERLAY had a second implementation of painting
+   * order that did not: it drew every raw-PDF object and then every
+   * page-space one, so a moved patch sat above a text box whatever their
+   * z said, and the preview disagreed with the file it was previewing.
+   * Two implementations of one rule is the thing that drifts; this is the
+   * half that says what the rule is.
+   */
+  it('lets a later object cover a moved patch, and an earlier one not', () => {
+    const cover = (z: number): EditObject => ({
+      id: `c${z}`, pageId: 'p0', kind: 'rect',
+      // Raw bottom-up PDF space, generously around where the moved text
+      // lands: page-space y 360..420 is PDF y 372..432 on a 792pt page.
+      rect: { x: 90, y: 372, w: 240, h: 60 },
+      rotation: 0, z, locked: false, opacity: 1,
+      stroke: null, strokeWidth: 0, fill: [1, 1, 1],
+    } as unknown as EditObject)
+
+    const patched = patch({ id: 'p', text: 'Relocated', fit: 'overflow', offset: OFFSET, z: 5 })
+    const where = boxOf(lineOf(write([patched as EditObject]), 'Relocated'))
+
+    const above = write([patched as EditObject, cover(9)])
+    const below = write([patched as EditObject, cover(1)])
+
+    expect(inkFraction(above, where)).toBe(0)
+    expect(inkFraction(below, where)).toBeGreaterThan(0.05)
+  })
+
   it('stops fitting to the original line’s width once it has moved', () => {
     const long = 'A replacement long enough that it will not fit on that line'
     const fitted = write([
