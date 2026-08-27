@@ -45,6 +45,20 @@ export const useToolsStore = defineStore('tools', () => {
    * from a zoom or scroll change does not silently close the editor.
    */
   const editingId = ref<string | undefined>(undefined)
+  /**
+   * The text patch being dragged right now, if any.
+   *
+   * Set for the duration of one gesture and cleared when the pointer comes
+   * up, so the alignment rails appear only while a line is actually in
+   * flight -- a page permanently overlaid with dashed guides is a page
+   * nobody can read.
+   *
+   * It lives here rather than inside `SelectionChrome` because the chrome
+   * owns the drag and `PageOverlay` owns the SVG the rails have to be drawn
+   * in, and they are siblings. Transient like everything else in this
+   * store: which object is mid-drag is not an undoable step.
+   */
+  const movingPatchId = ref<string | undefined>(undefined)
 
   function setTool(id: ToolId): void {
     if (id === active.value) return
@@ -63,16 +77,22 @@ export const useToolsStore = defineStore('tools', () => {
   function startEditing(id: string): void { editingId.value = id }
   function stopEditing(): void { editingId.value = undefined }
 
+  function startMovingPatch(id: string): void { movingPatchId.value = id }
+  function stopMovingPatch(): void { movingPatchId.value = undefined }
+
   return {
     active: computed(() => active.value),
     fieldType: computed(() => fieldType.value),
     setFieldType(type: FieldType): void { fieldType.value = type },
     draft: computed(() => draft.value),
     editingId: computed(() => editingId.value),
+    movingPatchId: computed(() => movingPatchId.value),
     setTool,
     setDraft,
     clearDraft,
     startEditing,
     stopEditing,
+    startMovingPatch,
+    stopMovingPatch,
   }
 })

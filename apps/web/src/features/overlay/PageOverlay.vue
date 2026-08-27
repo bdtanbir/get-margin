@@ -11,6 +11,7 @@ import TextEditor from './TextEditor.vue'
 import InkCanvas from './InkCanvas.vue'
 import CropOverlay from '@/features/pages/CropOverlay.vue'
 import TextSelectionLayer from './TextSelectionLayer.vue'
+import AlignmentGuides from './AlignmentGuides.vue'
 import MarkupObject from './objects/MarkupObject.vue'
 import RedactionObject from './objects/RedactionObject.vue'
 import TextPatchObject from './objects/TextPatchObject.vue'
@@ -263,6 +264,13 @@ const draft = computed(() => {
         <MarkupObject v-else :object="(o as never)" />
       </g>
       <TextSelectionLayer :page="props.page" />
+      <!--
+        Above the patches, so a rail is not hidden under the line it is
+        there to help align, and outside the root <g> because its
+        coordinates come from the extraction like theirs do. Draws nothing
+        unless a line on THIS page is mid-drag.
+      -->
+      <AlignmentGuides :page="props.page" :index="quadIndex" />
       <!--
         Above the text selection layer and below the objects: a search
         result is a thing the DOCUMENT contains, so it should not obscure

@@ -93,11 +93,21 @@ function commit(viewRect: { x: number; y: number; w: number; h: number }): void 
  * and would close the transaction the moment the move listeners were
  * registered, before a single drag frame had been applied.
  */
-function gesture(label: string, onMove: (d: { dx: number; dy: number }) => void, e: PointerEvent): void {
+function gesture(
+  label: string,
+  onMove: (d: { dx: number; dy: number }) => void,
+  e: PointerEvent,
+  onEnd?: () => void,
+): void {
   edits.beginTransaction(label)
   const { onPointerDown } = useDragGesture({
     onMove,
-    onEnd: () => edits.endTransaction(),
+    onEnd: () => {
+      edits.endTransaction()
+      // Runs on pointercancel as well as pointerup -- see useDragGesture --
+      // so nothing a gesture raised can outlive the gesture.
+      onEnd?.()
+    },
   })
   onPointerDown(e)
 }
@@ -180,13 +190,16 @@ function startMove(e: PointerEvent): void {
 function startMovePatch(e: PointerEvent, o: TextPatchObject): void {
   const from = { dx: o.offset?.dx ?? 0, dy: o.offset?.dy ?? 0 }
   const id = o.id
+  // Raises the alignment rails, which are feedback for THIS gesture and
+  // come back down with it.
+  tools.startMovingPatch(id)
   gesture('Move', ({ dx, dy }) => {
     // Page space is top-down like the screen, so no sign flips -- the only
     // conversion is out of CSS pixels. That is the writer's job to invert.
     const d = viewDeltaToPage({ x: dx, y: dy }, props.page.geometry, props.zoom)
     const offset = { dx: from.dx + d.x, dy: from.dy + d.y }
     edits.applyOp({ type: 'updateObject', id, patch: { offset } }, 'Move')
-  }, e)
+  }, e, () => tools.stopMovingPatch())
 }
 
 function startResize(e: PointerEvent, handle: Handle): void {

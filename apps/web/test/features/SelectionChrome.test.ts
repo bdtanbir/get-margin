@@ -316,6 +316,43 @@ describe('SelectionChrome', () => {
       expect(patched().pageId).toBe('p1')
     })
 
+    /**
+     * The rails are feedback for a gesture in progress, so they go up when
+     * the pointer goes down and come back down when it lifts -- including
+     * when the gesture is cancelled, or they outlive the drag that raised
+     * them and stay on the page for good.
+     */
+    it('raises the alignment rails for the drag and lowers them after', () => {
+      const tools = useToolsStore()
+      const w = mount(SelectionChrome, { props: { page, zoom: 1 } })
+      w.find('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
+      expect(tools.movingPatchId).toBe('tp1')
+      move(10, 10)
+      expect(tools.movingPatchId).toBe('tp1')
+      up()
+      expect(tools.movingPatchId).toBeUndefined()
+    })
+
+    it('lowers them on a cancelled gesture too', () => {
+      const tools = useToolsStore()
+      const w = mount(SelectionChrome, { props: { page, zoom: 1 } })
+      w.find('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
+      const e = new Event('pointercancel', { bubbles: true })
+      Object.assign(e, { clientX: 0, clientY: 0, pointerId: 1 })
+      window.dispatchEvent(e)
+      expect(tools.movingPatchId).toBeUndefined()
+    })
+
+    /** Dragging anything else must not raise them. */
+    it('does not raise them for an ordinary object', () => {
+      const tools = useToolsStore()
+      edits.select(['o1'])
+      const w = mount(SelectionChrome, { props: { page, zoom: 1 } })
+      w.find('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
+      expect(tools.movingPatchId).toBeUndefined()
+      up()
+    })
+
     it('leaves a locked patch untouched', () => {
       edits.applyOp({ type: 'updateObject', id: 'tp1', patch: { locked: true } }, 'lock')
       drag(1, 30, 10)
