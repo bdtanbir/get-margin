@@ -6,6 +6,7 @@ import { useFocusTrap } from '@/lib/useFocusTrap'
 import { shortcutsByGroup } from './shortcuts'
 import { MAX_BYTES, MAX_PAGES } from '@/lib/limits'
 import { conversionAvailable } from '@/features/convert/useJob'
+import { useDialogsStore } from '@/stores/dialogs'
 import MadeBy from '@/ui/MadeBy.vue'
 
 /**
@@ -21,6 +22,7 @@ const emit = defineEmits<{ close: [] }>()
 const surface = ref<HTMLElement | null>(null)
 useFocusTrap(surface, { onEscape: () => emit('close') })
 
+const dialogs = useDialogsStore()
 const groups = shortcutsByGroup()
 const canConvert = conversionAvailable()
 const mb = (bytes: number): string => `${Math.round(bytes / 1048576)} MB`
@@ -95,6 +97,25 @@ const mb = (bytes: number): string => `${Math.round(bytes / 1048576)} MB`
         a privacy claim is two things to keep true, and the page is already
         the one that changes with the build.
       -->
+      <!--
+        Replaces this panel rather than opening on top of it. The dialogs
+        store holds one id, which is what keeps "at most one modal" free --
+        and focus trapping already assumes it.
+      -->
+      <section class="flex flex-col gap-2">
+        <h3 class="text-[14px] font-medium">What the tools do</h3>
+        <p class="text-[13px] text-text-muted">
+          Every tool in the toolbar, in order, with what it is for and how to
+          use it.
+        </p>
+        <button
+          type="button"
+          data-open-tools-guide
+          class="self-start text-[13px] text-accent underline underline-offset-2 hover:text-accent-hover"
+          @click="dialogs.show('tools-guide')"
+        >Open the tool guide</button>
+      </section>
+
       <section class="flex flex-col gap-2">
         <h3 class="text-[14px] font-medium">Anything else</h3>
         <p class="text-[13px] text-text-muted">

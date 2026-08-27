@@ -15,6 +15,10 @@ import { ref, computed } from 'vue'
  */
 export type DialogId =
   | 'stamp' | 'protect' | 'metadata' | 'compress' | 'find' | 'images' | 'help'
+  // Separate from 'help' rather than a section inside it: the shortcut
+  // table and eighteen tool descriptions are different questions, and
+  // stacking them made one dialog nobody scrolls to the bottom of.
+  | 'tools-guide'
 
 export const useDialogsStore = defineStore('dialogs', () => {
   const open = ref<DialogId | null>(null)

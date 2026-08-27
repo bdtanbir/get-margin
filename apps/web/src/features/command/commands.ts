@@ -116,6 +116,16 @@ export function useCommands(): ComputedRef<Command[]> {
         run: () => dialogs.show('compress'),
       },
       {
+        id: 'app:tools',
+        label: 'What each tool does…',
+        group: 'App',
+        // Available with no document open, for the same reason as help:
+        // "what can this thing actually do" is a question asked BEFORE
+        // committing a file to it.
+        available: () => true,
+        run: () => dialogs.show('tools-guide'),
+      },
+      {
         id: 'app:help',
         label: 'Help and keyboard shortcuts…',
         group: 'App',

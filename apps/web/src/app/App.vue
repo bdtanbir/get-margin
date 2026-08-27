@@ -15,6 +15,7 @@ import CompressDialog from '@/features/compress/CompressDialog.vue'
 import ImageExport from '@/features/export/ImageExport.vue'
 import TelemetryConsent from '@/features/settings/TelemetryConsent.vue'
 import HelpPanel from '@/features/help/HelpPanel.vue'
+import ToolsGuide from '@/features/help/ToolsGuide.vue'
 import FindPanel from '@/features/find/FindPanel.vue'
 import { shouldAskForTelemetry } from '@/lib/telemetry/analytics'
 import { useDialogsStore } from '@/stores/dialogs'
@@ -107,6 +108,7 @@ function record(err: Error): void {
     <CompressDialog v-if="dialogs.isOpen('compress')" @close="dialogs.close()" />
     <ImageExport v-if="dialogs.isOpen('images')" @close="dialogs.close()" />
     <HelpPanel v-if="dialogs.isOpen('help')" @close="dialogs.close()" />
+    <ToolsGuide v-if="dialogs.isOpen('tools-guide')" @close="dialogs.close()" />
     <!--
       Shown only when an endpoint is configured AND nothing has been chosen
       yet. In the default build `shouldAskForTelemetry()` is false, because

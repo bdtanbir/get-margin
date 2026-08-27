@@ -55,6 +55,21 @@ test.describe('accessibility', () => {
     expect(violations.length, `\n${report(violations)}`).toBe(0)
   })
 
+  /**
+   * A modal with a focus trap, eighteen headings and a list, reachable from
+   * the empty state without opening a file. Audited here rather than left to
+   * the unit test, which mounts it in jsdom and so measures no contrast and
+   * builds no accessibility tree.
+   */
+  test('the tool guide has no violations', async ({ page }) => {
+    await page.goto('/')
+    await page.click('[data-open-tools-from-empty]')
+    await expect(page.locator('[data-tools-guide]')).toBeVisible()
+
+    const violations = await audit(page)
+    expect(violations.length, `\n${report(violations)}`).toBe(0)
+  })
+
   test('an open document has no violations', async ({ page }) => {
     await page.goto('/')
     await page.setInputFiles('input[type=file]', FIXTURE)
@@ -63,6 +78,22 @@ test.describe('accessibility', () => {
     await expect(page.getByRole('img', { name: 'Page 1', exact: true })).toBeVisible({
       timeout: 30_000,
     })
+
+    const violations = await audit(page)
+    expect(violations.length, `\n${report(violations)}`).toBe(0)
+  })
+
+  /**
+   * With a document OPEN, which the unit tests cannot reach: the rail only
+   * exists inside a shell, and the shell only renders once a document is
+   * ready. This is the path the user actually walks.
+   */
+  test('the tool guide is reachable from the rail with a document open', async ({ page }) => {
+    await page.goto('/')
+    await page.setInputFiles('input[type=file]', FIXTURE)
+    await expect(page.locator('[data-open-tools-guide-rail]')).toBeVisible()
+    await page.click('[data-open-tools-guide-rail]')
+    await expect(page.locator('[data-tools-guide]')).toBeVisible()
 
     const violations = await audit(page)
     expect(violations.length, `\n${report(violations)}`).toBe(0)

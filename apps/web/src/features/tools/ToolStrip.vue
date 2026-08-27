@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { CircleHelp } from 'lucide-vue-next'
 import IconButton from '@/ui/IconButton.vue'
 import { useToolsStore } from '@/stores/tools'
+import { useDialogsStore } from '@/stores/dialogs'
 import { TOOLS } from './toolList'
 
 const tools = useToolsStore()
+const dialogs = useDialogsStore()
 </script>
 
 <template>
@@ -30,19 +33,37 @@ const tools = useToolsStore()
     21 rejected for ZoomPill (see MobileShell.vue).
   -->
   <nav
-    class="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto scrollbar-none
-           border-r border-border bg-surface py-2"
+    class="flex w-12 shrink-0 flex-col items-center border-r border-border bg-surface py-2"
     aria-label="Tools"
   >
-    <IconButton
-      v-for="t in TOOLS"
-      :key="t.id"
-      size="sm"
-      :label="t.label"
-      :active="tools.active === t.id"
-      @click="tools.setTool(t.id)"
-    >
-      <component :is="t.icon" :size="18" :stroke-width="1.5" />
-    </IconButton>
+    <!--
+      The tools scroll and the help button does not, as in ToolRail. On a
+      phone the column ALWAYS overflows -- eighteen 32px buttons need more
+      height than any handset has -- so a guide appended to the list would
+      be permanently below the fold rather than merely sometimes.
+    -->
+    <div class="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto scrollbar-none">
+      <IconButton
+        v-for="t in TOOLS"
+        :key="t.id"
+        size="sm"
+        :label="t.label"
+        :active="tools.active === t.id"
+        @click="tools.setTool(t.id)"
+      >
+        <component :is="t.icon" :size="18" :stroke-width="1.5" />
+      </IconButton>
+    </div>
+
+    <div class="mt-1 shrink-0 border-t border-border pt-1.5">
+      <IconButton
+        size="sm"
+        label="What each tool does"
+        data-open-tools-guide-rail
+        @click="dialogs.show('tools-guide')"
+      >
+        <CircleHelp :size="18" :stroke-width="1.5" />
+      </IconButton>
+    </div>
   </nav>
 </template>

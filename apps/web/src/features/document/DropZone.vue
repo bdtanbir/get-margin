@@ -6,10 +6,18 @@ import Button from '@/ui/Button.vue'
 import { useDocumentStore } from '@/stores/document'
 import { MAX_BYTES, MAX_PAGES } from '@/lib/limits'
 import PrivacyPage from './PrivacyPage.vue'
+import ToolsGuide from '@/features/help/ToolsGuide.vue'
 import MadeBy from '@/ui/MadeBy.vue'
 
 const doc = useDocumentStore()
 const privacyOpen = ref(false)
+/**
+ * Mounted here rather than driven by the dialogs store, exactly as
+ * PrivacyPage is. App.vue's dialogs live inside the branch that renders
+ * once a document is ready, so a guide reached only through that store
+ * would be unreachable from the one screen a visitor actually starts on.
+ */
+const toolsOpen = ref(false)
 const zone = ref<HTMLElement | null>(null)
 const input = ref<HTMLInputElement | null>(null)
 
@@ -117,15 +125,25 @@ function onInput(e: Event): void {
           Your file stays on this device.
         </p>
 
-        <button
-          type="button"
-          data-open-privacy-from-empty
-          class="text-[12px] text-accent underline underline-offset-2 hover:text-accent-hover"
-          @click="privacyOpen = true"
-        >What is stored on this device?</button>
+        <div class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          <button
+            type="button"
+            data-open-tools-from-empty
+            class="text-[12px] text-accent underline underline-offset-2 hover:text-accent-hover"
+            @click="toolsOpen = true"
+          >What can I do with it?</button>
+          <span aria-hidden="true" class="text-[12px] text-text-subtle">·</span>
+          <button
+            type="button"
+            data-open-privacy-from-empty
+            class="text-[12px] text-accent underline underline-offset-2 hover:text-accent-hover"
+            @click="privacyOpen = true"
+          >What is stored on this device?</button>
+        </div>
       </div>
 
       <PrivacyPage v-if="privacyOpen" @close="privacyOpen = false" />
+      <ToolsGuide v-if="toolsOpen" @close="toolsOpen = false" />
 
       <!--
         Given a box of its own rather than left as red text on the card. An
