@@ -220,6 +220,109 @@ describe('SelectionChrome', () => {
     expect(edits.doc.objects.o1?.rotation).toBe(270)
   })
 
+  /**
+   * Dragging an edited line.
+   *
+   * A patch is not moved by rewriting its rect, the way every other object
+   * is. Its rect is the line it REPLACES -- the cover is drawn from it and
+   * the cover must not move, or the document's own glyphs reappear from
+   * underneath. So the drag writes `offset`, and the rect stays put.
+   */
+  describe('dragging an edited line', () => {
+    const patch = (over: Record<string, unknown> = {}): EditObject => ({
+      id: 'tp1', pageId: 'p1', kind: 'textPatch',
+      rect: { x: 100, y: 600, w: 80, h: 12 },
+      rotation: 0, z: 3, locked: false, opacity: 1,
+      lineIndex: 3, originalHash: 'h', originalText: 'Total Amount', text: 'Total TK',
+      fontFamily: 'Helvetica', fontSize: 0, color: [0, 0, 0], background: [1, 1, 1],
+      backgroundConfidence: 1, fit: 'shrink',
+      ...over,
+    } as unknown as EditObject)
+
+    const drag = (zoom: number, dx: number, dy: number): void => {
+      const w = mount(SelectionChrome, { props: { page, zoom } })
+      w.find('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
+      move(dx, dy)
+      up()
+    }
+
+    const patched = () => edits.doc.objects.tp1 as unknown as {
+      rect: { x: number; y: number }
+      offset?: { dx: number; dy: number }
+      pageId: string
+    }
+
+    beforeEach(() => {
+      edits.applyOp({ type: 'addObject', object: patch() }, 'add')
+      edits.select(['tp1'])
+    })
+
+    it('writes an offset rather than a rect', () => {
+      drag(1, 30, 10)
+      // Page space is top-down like the screen, so a downward drag is
+      // POSITIVE dy -- no inversion, unlike the PDF-space case above.
+      expect(patched().offset).toEqual({ dx: 30, dy: 10 })
+    })
+
+    it('leaves the rect on the line, so the cover stays where the glyphs are', () => {
+      drag(1, 30, 10)
+      expect(patched().rect).toEqual({ x: 100, y: 600, w: 80, h: 12 })
+    })
+
+    it('converts the drag out of view pixels', () => {
+      drag(2, 30, 10)
+      expect(patched().offset).toEqual({ dx: 15, dy: 5 })
+    })
+
+    it('adds to an offset the patch already had', () => {
+      edits.applyOp(
+        { type: 'updateObject', id: 'tp1', patch: { offset: { dx: 5, dy: 7 } } as never },
+        'seed',
+      )
+      drag(1, 30, 10)
+      expect(patched().offset).toEqual({ dx: 35, dy: 17 })
+    })
+
+    it('records the whole drag as one undo step', () => {
+      const before = edits.historySize
+      const w = mount(SelectionChrome, { props: { page, zoom: 1 } })
+      w.find('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
+      for (let i = 1; i <= 20; i++) move(i, i)
+      up()
+      expect(edits.historySize).toBe(before + 1)
+      edits.undo()
+      expect(patched().offset).toBeUndefined()
+    })
+
+    /**
+     * A patch has no size of its own -- its box is the line's -- and no
+     * rotation the writer would honour, since the replacement is drawn on
+     * the line's own baseline. Offering handles for either is offering an
+     * edit that silently does nothing.
+     */
+    it('offers no resize or rotate handles', () => {
+      const w = mount(SelectionChrome, { props: { page, zoom: 1 } })
+      expect(w.findAll('[data-handle]')).toHaveLength(0)
+      expect(w.find('[data-rotate-handle]').exists()).toBe(false)
+    })
+
+    /**
+     * A patch is addressed by (pageId, lineIndex) into ONE page's
+     * extraction. Dropped on another page it would point at a line that
+     * hashes differently, and the export would refuse the whole document.
+     */
+    it('stays on its own page', () => {
+      drag(1, 30, 900)
+      expect(patched().pageId).toBe('p1')
+    })
+
+    it('leaves a locked patch untouched', () => {
+      edits.applyOp({ type: 'updateObject', id: 'tp1', patch: { locked: true } }, 'lock')
+      drag(1, 30, 10)
+      expect(patched().offset).toBeUndefined()
+    })
+  })
+
   it('leaves a locked object untouched by a drag', () => {
     edits.applyOp({ type: 'updateObject', id: 'o1', patch: { locked: true } }, 'lock')
     edits.select(['o1'])

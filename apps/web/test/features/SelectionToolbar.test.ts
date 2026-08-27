@@ -362,6 +362,123 @@ describe('SelectionToolbar style actions', () => {
  * objects, one per line, rather than one box that also covers the text
  * either side of the selection on the lines between.
  */
+/**
+ * Arming a move on a line the document itself drew.
+ *
+ * The drag lives in `SelectionChrome` and needs an OBJECT to drag. A line
+ * the user has not edited is not one -- it is text in the page bitmap. So
+ * this button's whole job is to make the line into a patch and hand it to
+ * the chrome; the movement happens there.
+ */
+describe('SelectionToolbar move action', () => {
+  let edits: ReturnType<typeof useEditsStore>
+  let selection: ReturnType<typeof useSelectionStore>
+
+  const lineAt = (row: number, text: string) => ({
+    bbox: [10, 100 + row * 30, 30, 120 + row * 30] as [number, number, number, number],
+    text,
+    font: 'Helvetica',
+    bold: false,
+    italic: false,
+    color: [0, 0, 0] as Color,
+    size: 10,
+    baseline: 116 + row * 30,
+    chars: [...text].map((char, i) => ({
+      char,
+      quad: [
+        10 + i * 10, 100 + row * 30, 20 + i * 10, 100 + row * 30,
+        10 + i * 10, 120 + row * 30, 20 + i * 10, 120 + row * 30,
+      ] as never,
+    })),
+  })
+
+  const twoLines = { lines: [lineAt(0, 'ab'), lineAt(1, 'cd')] }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    edits = useEditsStore()
+    selection = useSelectionStore()
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'],
+      { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
+  })
+
+  const mountFor = () => mount(SelectionToolbar, { props: { page, zoom: 1 } })
+
+  const patches = (): TextPatchObject[] =>
+    Object.values(edits.doc.objects).filter(
+      (o): o is TextPatchObject => o.kind === 'textPatch',
+    )
+
+  const selectLines = (from: { line: number; char: number }, to: { line: number; char: number }) => {
+    selection.begin('p1', twoLines, from)
+    selection.extend(to)
+  }
+
+  it('offers Move over a single line', () => {
+    selectLines({ line: 0, char: 0 }, { line: 0, char: 1 })
+    expect(mountFor().get('[data-move-line]').attributes('aria-label')).toBe('Move line')
+  })
+
+  /**
+   * A patch is one line and the chrome drags one object, so a button
+   * offered over a paragraph would promise a group move that neither the
+   * format nor the gesture can express.
+   */
+  it('does not offer Move across several lines', () => {
+    selectLines({ line: 0, char: 0 }, { line: 1, char: 1 })
+    expect(mountFor().find('[data-move-line]').exists()).toBe(false)
+  })
+
+  it('turns the line into a patch and selects it, ready to drag', async () => {
+    selectLines({ line: 0, char: 0 }, { line: 0, char: 1 })
+    await mountFor().get('[data-move-line]').trigger('click')
+    expect(patches()).toHaveLength(1)
+    const made = patches()[0]!
+    // Unchanged in every way but its position, which is what a move is.
+    expect(made.text).toBe('ab')
+    expect(made.lineIndex).toBe(0)
+    expect(edits.selection).toEqual([made.id])
+  })
+
+  /**
+   * ONE PATCH PER LINE is load-bearing, not tidiness: two patches on a line
+   * each cover the other, and whichever drew second would silently discard
+   * the first edit.
+   */
+  it('reuses the patch a line already has', async () => {
+    selectLines({ line: 0, char: 0 }, { line: 0, char: 1 })
+    const w = mountFor()
+    await w.get('[data-style-bold]').trigger('click')
+    const existing = patches()[0]!
+    selectLines({ line: 0, char: 0 }, { line: 0, char: 1 })
+    await mountFor().get('[data-move-line]').trigger('click')
+    expect(patches()).toHaveLength(1)
+    expect(edits.selection).toEqual([existing.id])
+    // Arming a move must not undo the styling that was already there.
+    expect(patches()[0]!.bold).toBe(true)
+  })
+
+  /**
+   * The two selections are mutually exclusive -- the markup toolbar anchors
+   * to selected text, the chrome to a selected object -- so a move that
+   * left the text selected would show both and drag neither.
+   */
+  it('clears the text selection, handing the line to the chrome', async () => {
+    selectLines({ line: 0, char: 0 }, { line: 0, char: 1 })
+    await mountFor().get('[data-move-line]').trigger('click')
+    expect(selection.hasSelection).toBe(false)
+  })
+
+  it('is one undo step, and undoing it leaves no patch behind', async () => {
+    selectLines({ line: 0, char: 0 }, { line: 0, char: 1 })
+    const before = edits.historySize
+    await mountFor().get('[data-move-line]').trigger('click')
+    expect(edits.historySize).toBe(before + 1)
+    edits.undo()
+    expect(patches()).toHaveLength(0)
+  })
+})
+
 describe('SelectionToolbar link action', () => {
   let edits: ReturnType<typeof useEditsStore>
   let selection: ReturnType<typeof useSelectionStore>

@@ -23,7 +23,20 @@ import type { EditObject } from '@margin/pdf-core'
  * image of the line it replaces.
  */
 export function objectViewRect(o: EditObject, g: PageGeometry, zoom: number): ViewRect {
-  return o.kind === 'textPatch'
-    ? pageRectToView(o.rect, g, zoom)
-    : pdfRectToView(o.rect, g, zoom)
+  if (o.kind !== 'textPatch') return pdfRectToView(o.rect, g, zoom)
+  /**
+   * A patch's rect is the line it REPLACES, and stays there however far the
+   * replacement has been dragged -- the cover is drawn from it, and the
+   * cover does not move (write/objects/patch.ts). So the offset is added
+   * here rather than folded into the rect at rest: this function answers
+   * "where is the thing the user sees", and after a move that is the text,
+   * not the cover it left behind.
+   *
+   * Page space is top-down, so a positive dy adds to y. The writer
+   * subtracts the same number for the same movement because a content
+   * stream is bottom-up; both signs are pinned by tests.
+   */
+  const { dx = 0, dy = 0 } = o.offset ?? {}
+  const at = { ...o.rect, x: o.rect.x + dx, y: o.rect.y + dy }
+  return pageRectToView(at, g, zoom)
 }

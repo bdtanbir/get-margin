@@ -39,3 +39,38 @@ describe('objectViewRect', () => {
     expect(objectViewRect(obj({ kind: 'image' }), LETTER, 2).y).toBe((792 - 50) * 2)
   })
 })
+
+/**
+ * A dragged patch.
+ *
+ * Its `rect` stays on the line it replaces -- that is what the cover is
+ * drawn from, and the cover does not move. So every surface that asks
+ * "where is this object on screen" has to add the offset itself, or the
+ * selection box, the layers list and the floating toolbar all stay pinned
+ * to the original line while the text the user is looking at is elsewhere.
+ */
+describe('objectViewRect for a moved text patch', () => {
+  const moved = (offset: { dx: number; dy: number }): EditObject =>
+    obj({ kind: 'textPatch', offset })
+
+  it('follows the text, not the cover', () => {
+    expect(objectViewRect(moved({ dx: 15, dy: 25 }), LETTER, 1))
+      .toEqual({ x: 115, y: 65, w: 80, h: 10 })
+  })
+
+  it('scales the offset by zoom, like everything else in view space', () => {
+    expect(objectViewRect(moved({ dx: 15, dy: 25 }), LETTER, 2))
+      .toEqual({ x: 230, y: 130, w: 160, h: 20 })
+  })
+
+  it('leaves an unmoved patch exactly where it was', () => {
+    expect(objectViewRect(obj({ kind: 'textPatch' }), LETTER, 1))
+      .toEqual(objectViewRect(moved({ dx: 0, dy: 0 }), LETTER, 1))
+  })
+
+  /** An offset on any other kind is meaningless and must not be read. */
+  it('ignores an offset on a kind that does not have one', () => {
+    expect(objectViewRect(obj({ kind: 'image', offset: { dx: 15, dy: 25 } }), LETTER, 1))
+      .toEqual(objectViewRect(obj({ kind: 'image' }), LETTER, 1))
+  })
+})

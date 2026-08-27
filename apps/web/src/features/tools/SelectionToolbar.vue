@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { nanoid } from 'nanoid'
 import {
   Copy, Trash2, BringToFront, SendToBack, Lock, LockOpen,
-  Highlighter, Underline, Strikethrough, SquareSlash, Bold, Italic, Link2,
+  Highlighter, Underline, Strikethrough, SquareSlash, Bold, Italic, Link2, Move,
 } from 'lucide-vue-next'
 import { objectViewRect } from '@/features/overlay/objectViewRect'
 import IconButton from '@/ui/IconButton.vue'
@@ -349,6 +349,61 @@ function toggleStyle(axis: 'bold' | 'italic'): void {
   })
 }
 
+/**
+ * Arm a move on a line the document itself drew.
+ *
+ * The drag lives in `SelectionChrome` and needs an OBJECT. An unedited line
+ * is not one -- it is glyphs in the page bitmap, addressable but not
+ * draggable -- so this makes the line into a patch and hands it over. The
+ * patch it creates is a pure carrier: same words, same style, no offset
+ * yet. Only the drag that follows changes anything visible.
+ *
+ * ONE LINE ONLY, which is why the button hides over a multi-line selection:
+ * a patch covers exactly one line and the chrome drags exactly one object,
+ * so a group move is something neither the format nor the gesture can
+ * express, and offering it would be a promise this cannot keep.
+ *
+ * Reuses the line's existing patch when it has one. Two patches on a line
+ * each cover the other and the second silently discards the first -- see
+ * `patchOnLine`.
+ */
+const movableLine = computed(() => (touchedLines.value.length === 1 ? touchedLines.value[0] : undefined))
+
+function moveLine(): void {
+  const target = movableLine.value
+  if (!target) return
+  const { index, line } = target
+
+  edits.withTransaction('Move line', () => {
+    const existing = patchOnLine(Object.values(edits.doc.objects), props.page.id, index)
+    if (existing) {
+      edits.select([existing.id])
+    } else {
+      const bitmap = vp.bitmapFor(props.page.id)
+      const object = buildLinePatch({
+        pageId: props.page.id,
+        lineIndex: index,
+        line,
+        fontFamily: DEFAULT_FAMILY,
+        style: documentStyle(line),
+        background: sampleBackground(bitmap, lineBox(line), bitmap ? bitmap.scale : 1),
+        z: edits.nextZ(),
+        // A moved patch is drawn outside the box it was fitted to, so
+        // fitting to that box would cut text to a constraint that has
+        // stopped applying. The writer enforces this too; matching here
+        // keeps the stored object honest about what it will do.
+        fit: 'overflow',
+      })
+      edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Move line')
+      edits.select([object.id])
+    }
+    // The two selections are mutually exclusive: the markup toolbar anchors
+    // to selected text and the chrome to a selected object. Leaving the
+    // text selected would show both toolbars and drag neither.
+    selection.clear()
+  })
+}
+
 function toggleLock(): void {
   const o = selected.value
   if (!o) return
@@ -415,6 +470,20 @@ function toggleLock(): void {
     </IconButton>
     <IconButton size="sm" label="Link" data-link @click="addLink()">
       <Link2 :size="16" :stroke-width="1.5" />
+    </IconButton>
+    <!--
+      Hidden rather than disabled over a multi-line selection. A disabled
+      control says "not now"; this one is never available for a paragraph,
+      because a patch is one line and the chrome drags one object.
+    -->
+    <IconButton
+      v-if="movableLine"
+      size="sm"
+      label="Move line"
+      data-move-line
+      @click="moveLine()"
+    >
+      <Move :size="16" :stroke-width="1.5" />
     </IconButton>
     <!--
       Separated and coloured, because it is the one control here that

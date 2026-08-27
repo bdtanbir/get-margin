@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { viewRectToPdf } from '@margin/transform'
+import { viewRectToPdf, viewDeltaToPage } from '@margin/transform'
+import type { TextPatchObject } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
@@ -122,6 +123,7 @@ function startMove(e: PointerEvent): void {
   const o = selected.value
   const start = box.value
   if (!o || !start || o.locked) return
+  if (o.kind === 'textPatch') return startMovePatch(e, o)
   const boxes = pageBoxes()
   const origin = boxes.find((b) => b.id === props.page.id)
   const id = o.id
@@ -152,6 +154,38 @@ function startMove(e: PointerEvent): void {
     const patch = drop.id === owner ? { rect } : { pageId: drop.id, rect }
     owner = drop.id
     edits.applyOp({ type: 'updateObject', id, patch }, 'Move')
+  }, e)
+}
+
+/**
+ * Drag an EDITED LINE, which moves differently from everything else.
+ *
+ * Two departures from `startMove`, and both are forced:
+ *
+ * The rect is not rewritten. A patch's rect is the line it REPLACES; the
+ * cover is drawn from it, and the cover has to stay where the document's
+ * own glyphs are or they reappear from underneath the replacement. So the
+ * drag accumulates into `offset`, which moves the text alone.
+ *
+ * It cannot change pages. A patch is addressed by (pageId, lineIndex) into
+ * one page's extraction and guarded by a hash of that line's text; dropped
+ * on another page it would point at a line that hashes differently and the
+ * export would refuse the whole document rather than mispatch it. So this
+ * never consults `pageBoxes`.
+ *
+ * The offset is read at the START of the gesture, not per frame: the drag
+ * reports deltas from where it began, and adding them to a value this same
+ * drag is rewriting would compound it.
+ */
+function startMovePatch(e: PointerEvent, o: TextPatchObject): void {
+  const from = { dx: o.offset?.dx ?? 0, dy: o.offset?.dy ?? 0 }
+  const id = o.id
+  gesture('Move', ({ dx, dy }) => {
+    // Page space is top-down like the screen, so no sign flips -- the only
+    // conversion is out of CSS pixels. That is the writer's job to invert.
+    const d = viewDeltaToPage({ x: dx, y: dy }, props.page.geometry, props.zoom)
+    const offset = { dx: from.dx + d.x, dy: from.dy + d.y }
+    edits.applyOp({ type: 'updateObject', id, patch: { offset } }, 'Move')
   }, e)
 }
 
@@ -220,7 +254,13 @@ function startRotate(e: PointerEvent): void {
     @pointerdown.stop="startMove"
     @dblclick.stop="editText"
   >
-    <template v-if="!selected.locked">
+    <!--
+      An edited line has neither handle. Its box is the line's, not a size
+      of its own, and the writer sits the replacement on the line's own
+      baseline whatever `rotation` says -- so both controls would offer an
+      edit that silently does nothing.
+    -->
+    <template v-if="!selected.locked && selected.kind !== 'textPatch'">
       <button
         v-for="h in HANDLES"
         :key="h"

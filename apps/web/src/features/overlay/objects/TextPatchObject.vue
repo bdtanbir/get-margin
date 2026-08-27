@@ -30,6 +30,22 @@ import { rgb } from './svgPaint'
  */
 const props = defineProps<{ object: TextPatchObject }>()
 
+/**
+ * How far the replacement has been dragged from the line it replaces.
+ *
+ * ADDED to y here, where the writer SUBTRACTS it: this component renders
+ * outside the overlay's y-flipped root, in page space, which is already
+ * top-down -- while a content stream is bottom-up. Two opposite signs for
+ * the same movement, and `TextPatchObject.test.ts` holds them together.
+ *
+ * It moves the TEXT only. The cover below keeps the un-offset rect, because
+ * the document's own glyphs are still under it and dragging the cover along
+ * would uncover them.
+ */
+const dx = computed(() => props.object.offset?.dx ?? 0)
+const dy = computed(() => props.object.offset?.dy ?? 0)
+const moved = computed(() => dx.value !== 0 || dy.value !== 0)
+
 /** Matches the writer: glyph quads sit tight against the ink, so cover a little wider. */
 const bleed = computed(() => Math.max(1, props.object.rect.h * 0.12))
 
@@ -55,7 +71,12 @@ const laid = computed(() => {
   let text = o.text
   const advance = (): number => measureText(text, o.fontFamily, size, o)
 
-  if (o.fit === 'shrink') {
+  // A moved patch overflows whatever `fit` says, because both fit rules
+  // measure against `w` -- the width of the line being replaced -- and the
+  // text is no longer in that box. The writer does the same.
+  if (moved.value) {
+    // Nothing: 'overflow' semantics.
+  } else if (o.fit === 'shrink') {
     while (size > 4 && advance() > w) size -= 0.5
   } else if (o.fit === 'truncate') {
     while (text.length > 1 && advance() > w) text = text.slice(0, -1)
@@ -85,7 +106,7 @@ const laid = computed(() => {
  * whatever the user had already laid out.
  */
 const baseline = computed(() =>
-  props.object.baseline ?? props.object.rect.y + laid.value.size * ASCENT_RATIO,
+  (props.object.baseline ?? props.object.rect.y + laid.value.size * ASCENT_RATIO) + dy.value,
 )
 
 const background = computed(() => rgb(props.object.background))
@@ -113,7 +134,7 @@ const slope = computed(() => cssStyle(props.object.italic))
     -->
     <text
       v-if="laid.text !== ''"
-      :x="props.object.rect.x"
+      :x="props.object.rect.x + dx"
       :y="baseline"
       :fill="fill"
       :font-family="family"

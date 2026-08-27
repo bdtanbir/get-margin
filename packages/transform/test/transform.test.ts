@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import fc from 'fast-check'
 import {
   pageSizePt, pageViewSize, pdfToView, viewToPdf, pdfRectToView, viewRectToPdf, pageRectToView,
+  viewDeltaToPage,
   svgViewBox, svgRootTransform, normalizeRotation, rectFromPoints, directedRect,
   type PageGeometry, type Rotation,
 } from '../src/index.js'
@@ -403,5 +404,41 @@ describe('directedRect', () => {
     const d = directedRect(a, b)
     expect({ x: Math.min(d.x, d.x + d.w), y: Math.min(d.y, d.y + d.h), w: Math.abs(d.w), h: Math.abs(d.h) })
       .toEqual(rectFromPoints(a, b))
+  })
+})
+
+/**
+ * Dragging something whose geometry is MuPDF page space -- today, a text
+ * patch, whose rect comes from the extraction rather than from a stored
+ * PDF rect.
+ */
+describe('viewDeltaToPage', () => {
+  it('divides by zoom and nothing else', () => {
+    expect(viewDeltaToPage({ x: 30, y: 10 }, LETTER, 1)).toEqual({ x: 30, y: 10 })
+    expect(viewDeltaToPage({ x: 30, y: 10 }, LETTER, 2)).toEqual({ x: 15, y: 5 })
+  })
+
+  /**
+   * Page space is top-down, like the screen. A downward drag must stay
+   * positive -- flipping it here would move a dragged patch the right
+   * distance the wrong way, which looks intentional.
+   */
+  it('keeps a downward drag positive', () => {
+    expect(viewDeltaToPage({ x: 0, y: 40 }, LETTER, 1).y).toBe(40)
+  })
+
+  /**
+   * A delta has no origin. Routing it through viewToPdf would add the
+   * CropBox origin to what is only a distance.
+   */
+  it('is unaffected by a non-zero CropBox origin', () => {
+    const shifted: PageGeometry = { cropBox: [20, 30, 632, 822], rotate: 0 }
+    expect(viewDeltaToPage({ x: 30, y: 10 }, shifted, 1)).toEqual({ x: 30, y: 10 })
+  })
+
+  /** /Rotate is already baked into page space, exactly as pageRectToView assumes. */
+  it('is unaffected by page rotation', () => {
+    const turned: PageGeometry = { cropBox: [0, 0, 612, 792], rotate: 90 }
+    expect(viewDeltaToPage({ x: 30, y: 10 }, turned, 1)).toEqual({ x: 30, y: 10 })
   })
 })

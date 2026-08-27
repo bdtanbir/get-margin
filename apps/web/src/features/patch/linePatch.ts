@@ -119,16 +119,28 @@ export function patchOnLine(
   return undefined
 }
 
+/** Whether a patch has been dragged away from the line it replaces. */
+export function isMoved(patch: TextPatchObject): boolean {
+  return (patch.offset?.dx ?? 0) !== 0 || (patch.offset?.dy ?? 0) !== 0
+}
+
 /**
  * Whether a patch draws exactly what the document already draws.
  *
  * Such a patch is worth deleting rather than keeping: it paints a flat
  * rectangle over the line and redraws it identically, which achieves
  * nothing visible and leaves a scar wherever the background was not flat.
+ *
+ * THE POSITION COUNTS, not just the words and the style. A pure move
+ * changes neither of those, so a check that read only them called a dragged
+ * line a no-op -- and `SelectionToolbar` deletes what this calls pristine.
+ * Pressing Bold on and off again over a line the user had moved would have
+ * put it silently back.
  */
 export function isPristine(patch: TextPatchObject, line: LineRun): boolean {
   return (
     patch.text === line.text &&
+    !isMoved(patch) &&
     sameStyle(styleOf(patch), documentStyle(line))
   )
 }

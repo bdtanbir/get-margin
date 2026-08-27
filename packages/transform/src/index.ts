@@ -131,6 +131,24 @@ export function pageRectToView(r: Rect, _g: PageGeometry, zoom: number): ViewRec
   return { x: r.x * zoom, y: r.y * zoom, w: r.w * zoom, h: r.h * zoom }
 }
 
+/**
+ * A drag measured in CSS pixels, expressed in MuPDF page space.
+ *
+ * Zoom is the ONLY thing between the two: page space has already absorbed
+ * the CropBox origin, the y-flip and /Rotate, which is the same reason
+ * `pageRectToView` above ignores `g`. In particular there is no sign flip,
+ * because page space runs top-down like the screen -- the caller that
+ * eventually writes into a bottom-up content stream is the one that owes a
+ * negation, and it does it there.
+ *
+ * A delta rather than a point: an offset has no origin to translate, so
+ * routing one through `viewToPdf` would add the CropBox origin to a
+ * distance.
+ */
+export function viewDeltaToPage(d: Point, _g: PageGeometry, zoom: number): Point {
+  return { x: d.x / zoom, y: d.y / zoom }
+}
+
 export function viewRectToPdf(r: ViewRect, g: PageGeometry, zoom: number): Rect {
   const a = viewToPdf({ x: r.x, y: r.y }, g, zoom)
   const b = viewToPdf({ x: r.x + r.w, y: r.y + r.h }, g, zoom)

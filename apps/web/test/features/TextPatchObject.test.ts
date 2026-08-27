@@ -96,3 +96,60 @@ describe('TextPatchObject', () => {
     expect(faceOf(patch())).toEqual({ weight: '400', style: 'normal' })
   })
 })
+
+/**
+ * A patch that has been dragged away from the line it replaces.
+ *
+ * The invariant is the same one the whole component exists for -- the
+ * preview agrees with the export -- applied to the one thing about a move
+ * that is easy to get backwards. The writer subtracts `dy` because the
+ * content stream is bottom-up; this component ADDS it, because it renders
+ * outside the overlay's y-flipped root in a space that is already top-down.
+ * Two opposite signs expressing the same movement, which is exactly the
+ * pair a test has to hold together.
+ */
+describe('a moved text patch', () => {
+  const drawn = (o: TextPatchObject) => {
+    const w = mount(TextPatchObjectView, { props: { object: o } })
+    const t = w.get('text')
+    const r = w.get('rect')
+    return {
+      text: { x: Number(t.attributes('x')), y: Number(t.attributes('y')), content: t.text() },
+      cover: { x: Number(r.attributes('x')), y: Number(r.attributes('y')) },
+    }
+  }
+
+  it('draws the text dx right and dy DOWN, matching the writer', () => {
+    const still = drawn(patch())
+    const moved = drawn(patch({ offset: { dx: 25, dy: 40 } }))
+    expect(moved.text.x - still.text.x).toBe(25)
+    expect(moved.text.y - still.text.y).toBe(40)
+  })
+
+  /**
+   * The cover hides the document's own glyphs, which have not gone
+   * anywhere. Dragging it along with the text would uncover them and the
+   * original line would reappear under the replacement.
+   */
+  it('leaves the cover over the original line', () => {
+    expect(drawn(patch({ offset: { dx: 25, dy: 40 } })).cover)
+      .toEqual(drawn(patch()).cover)
+  })
+
+  it('treats an absent offset as no move, which is what every stored patch means', () => {
+    expect(drawn(patch({ offset: { dx: 0, dy: 0 } })).text)
+      .toEqual(drawn(patch()).text)
+  })
+
+  /**
+   * Mirrors the writer's rule: both fit modes measure against the width of
+   * the line being replaced, and a moved patch is no longer in that box.
+   */
+  it('stops fitting to the original line’s width once it has moved', () => {
+    const long = 'A replacement far too long to fit inside that line'
+    const fitted = drawn(patch({ text: long, fit: 'truncate' }))
+    const moved = drawn(patch({ text: long, fit: 'truncate', offset: { dx: 0, dy: 40 } }))
+    expect(fitted.text.content.length).toBeLessThan(long.length)
+    expect(moved.text.content).toBe(long)
+  })
+})

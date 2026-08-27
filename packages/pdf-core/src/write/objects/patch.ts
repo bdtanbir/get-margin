@@ -148,6 +148,18 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
   const w = lx1 - lx0
   const h = ly1 - ly0
 
+  /**
+   * Where the replacement is drawn, relative to the line it replaces.
+   *
+   * Page space is top-down and the content stream is bottom-up, so `dy`
+   * SUBTRACTS from the baseline below. Getting that flip wrong moves the
+   * text exactly as far the wrong way, which reads as deliberate rather
+   * than as a bug -- `patch.test.ts` asserts the direction for that reason.
+   */
+  const dx = o.offset?.dx ?? 0
+  const dy = o.offset?.dy ?? 0
+  const moved = dx !== 0 || dy !== 0
+
   const face = faceKey(o.fontFamily, o)
   const font = ctx.fonts.resolve(face)
   addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
@@ -176,7 +188,19 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
     let text = o.text
     const advance = () => ctx.measure(text, face, size)
 
-    if (o.fit === 'shrink') {
+    /**
+     * A MOVED patch always overflows, whatever `fit` says.
+     *
+     * Both fit rules measure against `w`, the width of the line being
+     * replaced. Once the text is drawn somewhere else, that width describes
+     * a box the text is no longer in -- so shrinking or cutting to it
+     * damages the replacement to fit a constraint that has stopped
+     * existing, and the user sees characters disappear for no reason
+     * visible on the page.
+     */
+    if (moved) {
+      // Nothing: 'overflow' semantics.
+    } else if (o.fit === 'shrink') {
       // Only ever shrink: growing text to fill a box is not what was asked
       // for and would look like a different edit.
       while (size > 4 && advance() > w) size -= 0.5
@@ -209,7 +233,7 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
       fillColor(o.color),
       'BT',
       `/${font.name} ${num(size)} Tf`,
-      `1 0 0 1 ${num(x)} ${num(baseline)} Tm`,
+      `1 0 0 1 ${num(x + dx)} ${num(baseline - dy)} Tm`,
       `${pdfString(text)} Tj`,
       'ET',
     )

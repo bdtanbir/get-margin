@@ -302,6 +302,29 @@ export type TextPatchObject = BaseObject & {
   backgroundConfidence: number
   /** Wider replacement text: shrink to fit, let it run, or cut it short. */
   fit: 'shrink' | 'overflow' | 'truncate'
+  /**
+   * How far the replacement is drawn FROM the line it replaces, in points,
+   * MuPDF page space -- top-down, the same space `rect` and `baseline` use
+   * for this kind. Positive dy is down the page.
+   *
+   * A relative offset rather than a destination rect, and that is the whole
+   * design. The writer does not read this object's geometry: it re-extracts
+   * the line from the assembled page at export, because the hash guard is
+   * only meaningful against what is actually there. A stored destination
+   * would be a second source of truth that could disagree with that
+   * re-extraction; an offset composes with whatever it finds.
+   *
+   * Only the TEXT moves. The cover stays over the original line, because
+   * the document's own glyphs are still underneath it -- see
+   * `write/objects/patch.ts`. Moving both would be a no-op and moving
+   * neither would be a copy.
+   *
+   * Optional, and absent means 0,0 -- which is what every patch written
+   * before this meant, so no stored document needs migrating and the schema
+   * version did not have to move. Same reasoning as `bold` above and
+   * `PageEntry.tabOrder`.
+   */
+  offset?: { dx: number; dy: number }
 }
 
 export type SignatureObject = BaseObject & {

@@ -9,7 +9,7 @@ import {
   emptyEditDocument, type EditDocument, type EditObject, type TextPatchObject,
 } from '../../src/write/types.js'
 import { generateFixtures, fixturePath } from '../fixtures/index.js'
-import { PdfDocument } from '../../src/index.js'
+import { PdfDocument, renderPage } from '../../src/index.js'
 import { buildQuadIndex } from '../../src/text/index.js'
 
 beforeAll(async () => { await generateFixtures() }, 60_000)
@@ -505,5 +505,126 @@ describe('a style-only patch', () => {
   it('leaves the original extractable, because covering is not removing', () => {
     const out = write([patch({ text: original(), bold: true, fit: 'overflow' }) as EditObject])
     expect(linesOf(out).filter((l) => l.includes('Hello margin'))).toHaveLength(2)
+  })
+})
+
+/**
+ * Moving a line of the document's own text.
+ *
+ * The feature is one decomposition: the COVER stays where the original line
+ * is, because the original glyphs are still in the page underneath and have
+ * to stay hidden; the REDRAW happens somewhere else. Anything that moves
+ * both is a no-op, and anything that moves neither is a copy.
+ *
+ * The offset is MuPDF page space -- top-down, the same space the patch's
+ * `rect` and `baseline` are in -- while the content stream it ends up in is
+ * bottom-up. That sign flip is the one thing here that can be silently
+ * wrong: it would put the text the same distance the WRONG WAY up the page,
+ * which looks deliberate. Hence a test that asserts the direction and not
+ * merely the distance.
+ */
+describe('a moved text patch', () => {
+  /** Well clear of the fixture's second line, which sits at y 120..135. */
+  const OFFSET = { dx: 40, dy: 300 }
+
+  const lineOf = (pdf: Uint8Array, needle: string) => {
+    const d = PdfDocument.open(pdf)
+    try {
+      const line = buildQuadIndex(d, 0).lines.find((l) => l.text.includes(needle))
+      if (!line) throw new Error(`no line containing "${needle}"`)
+      return line
+    } finally { d.close() }
+  }
+
+  /**
+   * How much of a page-space box is ink, rendered at 1:1.
+   *
+   * Extraction cannot answer "is the original still visible", because
+   * covering does not remove and the covered glyphs stay extractable
+   * forever. Pixels can.
+   */
+  const inkFraction = (
+    pdf: Uint8Array,
+    box: { x0: number; y0: number; x1: number; y1: number },
+  ): number => {
+    const d = PdfDocument.open(pdf)
+    try {
+      const { rgba, width } = renderPage(d, 0, 1)
+      let dark = 0
+      let total = 0
+      for (let y = Math.floor(box.y0); y < Math.ceil(box.y1); y++) {
+        for (let x = Math.floor(box.x0); x < Math.ceil(box.x1); x++) {
+          const i = (y * width + x) * 4
+          // Any channel well below white. The fixture is black on white and
+          // the cover is white, so a generous threshold is enough.
+          if (rgba[i]! < 200 || rgba[i + 1]! < 200 || rgba[i + 2]! < 200) dark++
+          total++
+        }
+      }
+      return total === 0 ? 0 : dark / total
+    } finally { d.close() }
+  }
+
+  const boxOf = (line: { bbox: [number, number, number, number] }) => ({
+    x0: line.bbox[0], y0: line.bbox[1], x1: line.bbox[2], y1: line.bbox[3],
+  })
+
+  it('draws the replacement dx to the right and dy DOWN the page', () => {
+    const still = write([patch({ id: 'a', text: 'Anchored', fit: 'overflow' }) as EditObject])
+    const moved = write([
+      patch({ id: 'b', text: 'Anchored', fit: 'overflow', offset: OFFSET }) as EditObject,
+    ])
+    const a = lineOf(still, 'Anchored')
+    const b = lineOf(moved, 'Anchored')
+    expect(b.bbox[0] - a.bbox[0]).toBeCloseTo(OFFSET.dx, 1)
+    // Page space is top-down, so a positive dy GROWS the baseline. Getting
+    // the flip wrong subtracts 300 instead and sails off the top of the page.
+    expect(b.baseline - a.baseline).toBeCloseTo(OFFSET.dy, 1)
+  })
+
+  it('leaves the cover behind, over the line the text came from', () => {
+    const original = boxOf(lineOf(src(), 'Hello margin'))
+    // The fixture really does have ink there -- otherwise the assertion
+    // below passes for the wrong reason.
+    expect(inkFraction(src(), original)).toBeGreaterThan(0.05)
+
+    const moved = write([
+      patch({ id: 'm', text: 'Relocated', fit: 'overflow', offset: OFFSET }) as EditObject,
+    ])
+    expect(inkFraction(moved, original)).toBe(0)
+    expect(inkFraction(moved, boxOf(lineOf(moved, 'Relocated')))).toBeGreaterThan(0.05)
+  })
+
+  it('is a no-op when the offset is absent, which is what every stored patch means', () => {
+    const before = lineOf(
+      write([patch({ id: 'n1', text: 'Unmoved', fit: 'overflow' }) as EditObject]),
+      'Unmoved',
+    )
+    const after = lineOf(
+      write([
+        patch({ id: 'n2', text: 'Unmoved', fit: 'overflow', offset: { dx: 0, dy: 0 } }) as EditObject,
+      ]),
+      'Unmoved',
+    )
+    expect(after.bbox[0]).toBeCloseTo(before.bbox[0], 5)
+    expect(after.baseline).toBeCloseTo(before.baseline, 5)
+  })
+
+  /**
+   * `shrink` and `truncate` measure against the width of the line being
+   * replaced. Once the text is drawn somewhere else that width describes a
+   * box it is no longer in, so fitting to it cuts text for no reason the
+   * user can see. A moved patch overflows instead.
+   */
+  it('stops fitting to the original line’s width once it has moved', () => {
+    const long = 'A replacement long enough that it will not fit on that line'
+    const fitted = write([
+      patch({ id: 'f', text: long, fontSize: 10, fit: 'truncate' }) as EditObject,
+    ])
+    const moved = write([
+      patch({ id: 'g', text: long, fontSize: 10, fit: 'truncate', offset: OFFSET }) as EditObject,
+    ])
+    expect(textOf(fitted, 'A replacement').length).toBeLessThan(long.length)
+    expect(textOf(moved, 'A replacement')).toBe(long)
   })
 })
