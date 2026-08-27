@@ -8,6 +8,7 @@ import { useEditsStore } from '@/stores/edits'
 import { useViewportStore as useVp } from '@/stores/viewport'
 import { DEFAULT_FAMILY } from '@/lib/fonts'
 import { sampleBackground } from '@/features/patch/sampleBackground'
+import { patchOnLine } from '@/features/patch/linePatch'
 import { buildReplacements } from './buildReplacements'
 import type { PageMatch } from '@/stores/find'
 
@@ -108,6 +109,16 @@ function apply(matches: PageMatch[], label: string): void {
   const plan = buildReplacements(matches, replacement.value, {
     pageIdFor,
     sampleFor,
+    /**
+     * Whether the user has already edited, styled or moved this line.
+     *
+     * The same lookup `PatchEditor` and `SelectionToolbar` use, so all
+     * three agree about which patch covers a line -- a second answer would
+     * let them add one each, which is exactly the duplicate that made a
+     * replace over an edited line discard the edit.
+     */
+    patchOnLine: (pageId, lineIndex) =>
+      patchOnLine(Object.values(edits.doc.objects), pageId, lineIndex),
     fontFamily: DEFAULT_FAMILY,
     nextZ: () => edits.nextZ(),
   })
@@ -117,6 +128,13 @@ function apply(matches: PageMatch[], label: string): void {
   edits.withTransaction(label, () => {
     for (const patch of plan.patches) {
       edits.applyOp({ type: 'addObject', object: patch }, label)
+    }
+    // UPDATES, not additions. A line that already had a patch gets the
+    // replacement folded into it: adding a second one would leave two
+    // covers on the line, and whichever the writer reached last would
+    // silently discard the other.
+    for (const { id, text } of plan.updates) {
+      edits.applyOp({ type: 'updateObject', id, patch: { text } }, label)
     }
   })
 

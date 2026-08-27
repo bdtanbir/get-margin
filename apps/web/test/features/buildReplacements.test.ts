@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { buildReplacements } from '@/features/find/buildReplacements'
 import type { PageMatch } from '@/stores/find'
-import type { Quad } from '@margin/pdf-core'
+import type { Quad, TextPatchObject } from '@margin/pdf-core'
 
 const quad = (i: number): Quad => [i * 10, 0, i * 10 + 10, 0, i * 10, 18, i * 10 + 10, 18]
 
@@ -29,9 +29,121 @@ function match(over: Partial<PageMatch> = {}): PageMatch {
 const ctx = (over: Partial<Parameters<typeof buildReplacements>[2]> = {}) => ({
   pageIdFor: (p: number) => `p${p}`,
   sampleFor: () => ({ color: [1, 1, 1] as [number, number, number], confidence: 1, samples: 100 }),
+  // The default is "nothing on this line yet", which is what every case
+  // below except the already-patched block is about.
+  patchOnLine: () => undefined,
   fontFamily: 'Inter',
   nextZ: () => 1,
   ...over,
+})
+
+/**
+ * A patch already on the line the search matched.
+ *
+ * ONE PATCH PER LINE is the invariant this whole module exists to keep,
+ * and it was only ever kept WITHIN a run: two matches on one line made one
+ * patch, and a match on a line the user had already edited made a second
+ * patch on top of the first. Both cover the whole line and redraw it, so
+ * whichever the writer reached second won -- silently discarding the
+ * other, on screen and in the export.
+ */
+describe('buildReplacements over a line that is already patched', () => {
+  const existing = (over: Partial<TextPatchObject> = {}): TextPatchObject => ({
+    id: 'tp1', pageId: 'p0', kind: 'textPatch',
+    lineIndex: 0,
+    originalHash: 'h', originalText: 'the cat sat on the mat',
+    text: 'the cat sat on the mat',
+    fontFamily: 'Inter', bold: true, italic: false, fontSize: 12, baseline: 14,
+    color: [0, 0, 0], background: [1, 1, 1], backgroundConfidence: 1,
+    fit: 'overflow',
+    rect: { x: 0, y: 0, w: 220, h: 18 },
+    rotation: 0, z: 1, locked: false, opacity: 1,
+    ...over,
+  })
+
+  const withExisting = (patch: TextPatchObject | undefined) =>
+    ctx({ patchOnLine: () => patch })
+
+  it('adds no second patch to the line', () => {
+    const plan = buildReplacements([match()], 'a', withExisting(existing()))
+    expect(plan.patches).toHaveLength(0)
+  })
+
+  /**
+   * A patch whose text is still the document's own -- a pure MOVE, or a
+   * style-only edit -- was matched at offsets that are still valid,
+   * because the string the search read is the string the patch holds. So
+   * the replacement goes into that patch, and everything the user did to
+   * it survives.
+   */
+  it('puts the replacement into a patch that has only been moved', () => {
+    const plan = buildReplacements([match()], 'a', withExisting(existing({
+      offset: { dx: 40, dy: 20 },
+    })))
+    expect(plan.updates).toEqual([{ id: 'tp1', text: 'a cat sat on the mat' }])
+    expect(plan.skipped).toHaveLength(0)
+  })
+
+  it('substitutes every match on the line, right to left, as it does for a new patch', () => {
+    const plan = buildReplacements(
+      [match({ start: 0, end: 3 }), match({ start: 15, end: 18 })],
+      'a',
+      withExisting(existing()),
+    )
+    expect(plan.updates).toEqual([{ id: 'tp1', text: 'a cat sat on a mat' }])
+  })
+
+  /**
+   * The offsets came from the SOURCE line. Once the user has retyped it
+   * they address characters of a string that is no longer there, so
+   * applying them would cut the replacement into the wrong place -- and
+   * quietly, since nothing about the result would look wrong.
+   */
+  it('refuses a line whose text the user has already changed', () => {
+    const plan = buildReplacements([match()], 'a', withExisting(existing({
+      text: 'something else entirely',
+    })))
+    expect(plan.patches).toHaveLength(0)
+    expect(plan.updates).toHaveLength(0)
+    expect(plan.skipped).toHaveLength(1)
+    expect(plan.skipped[0]!.reason).toMatch(/already been edited/i)
+  })
+
+  it('reports one skip per match, so the count the user was shown reconciles', () => {
+    const plan = buildReplacements(
+      [match({ start: 0, end: 3 }), match({ start: 15, end: 18 })],
+      'a',
+      withExisting(existing({ text: 'something else entirely' })),
+    )
+    expect(plan.skipped).toHaveLength(2)
+  })
+
+  /** An updated patch was never re-sampled, so it cannot be newly risky. */
+  it('does not count an update as a low-confidence cover', () => {
+    const plan = buildReplacements([match()], 'a', ctx({
+      patchOnLine: () => existing(),
+      sampleFor: () => undefined,
+    }))
+    expect(plan.lowConfidence).toBe(0)
+  })
+
+  it('leaves a line with no patch on the ordinary path', () => {
+    const plan = buildReplacements([match()], 'a', withExisting(undefined))
+    expect(plan.patches).toHaveLength(1)
+    expect(plan.updates).toHaveLength(0)
+  })
+
+  /** Same line index, different page: a different line entirely. */
+  it('asks about the line on the page the match is actually on', () => {
+    const asked: Array<[string, number]> = []
+    buildReplacements([match({ page: 1, lineIndex: 4 })], 'a', ctx({
+      patchOnLine: (pageId: string, lineIndex: number) => {
+        asked.push([pageId, lineIndex])
+        return undefined
+      },
+    }))
+    expect(asked).toEqual([['p1', 4]])
+  })
 })
 
 describe('buildReplacements', () => {

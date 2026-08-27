@@ -381,6 +381,74 @@ describe('replace', () => {
     expect((patches(edits)[0] as { text: string }).text).toBe(' cat')
   })
 
+  /**
+   * Replace over a line the user has already touched. Two patches on one
+   * line each cover the other and the second wins, so the first edit --
+   * or the move -- disappears without a word.
+   */
+  describe('over a line that is already patched', () => {
+    const seedPatch = (over: Record<string, unknown> = {}) => {
+      const edits = useEditsStore()
+      edits.applyOp({
+        type: 'addObject',
+        object: {
+          id: 'tp1', pageId: 'p0', kind: 'textPatch',
+          lineIndex: 0, originalHash: 'h', originalText: 'the cat', text: 'the cat',
+          fontFamily: 'Inter', bold: true, italic: false, fontSize: 12, baseline: 14,
+          color: [0, 0, 0], background: [1, 1, 1], backgroundConfidence: 1,
+          fit: 'overflow', rect: { x: 0, y: 0, w: 70, h: 18 },
+          offset: { dx: 40, dy: 20 },
+          rotation: 0, z: 1, locked: false, opacity: 1,
+          ...over,
+        } as never,
+      }, 'seed')
+      return edits
+    }
+
+    const replaceAll = async () => {
+      const w = await open([{ ...match(0), lineText: 'the cat', start: 0, end: 3 }])
+      await w.get('[data-find-replacement]').setValue('a')
+      await w.get('[data-find-replace-all]').trigger('click')
+      return w
+    }
+
+    it('leaves one patch on the line, not two', async () => {
+      const edits = seedPatch()
+      await replaceAll()
+      expect(patches(edits)).toHaveLength(1)
+    })
+
+    it('folds the replacement into the patch that was there', async () => {
+      const edits = seedPatch()
+      await replaceAll()
+      expect((patches(edits)[0] as { text: string }).text).toBe('a cat')
+    })
+
+    it('keeps the move and the styling the user had applied', async () => {
+      const edits = seedPatch()
+      await replaceAll()
+      const kept = patches(edits)[0] as { offset?: unknown; bold?: boolean }
+      expect(kept.offset).toEqual({ dx: 40, dy: 20 })
+      expect(kept.bold).toBe(true)
+    })
+
+    it('is still one undo entry', async () => {
+      const edits = seedPatch()
+      const before = edits.historySize
+      await replaceAll()
+      expect(edits.historySize).toBe(before + 1)
+    })
+
+    /** Retyped: the search's offsets no longer address that string. */
+    it('refuses a line the user has retyped, and says so in the count', async () => {
+      const edits = seedPatch({ text: 'something else' })
+      const w = await replaceAll()
+      expect((patches(edits)[0] as { text: string }).text).toBe('something else')
+      expect(w.get('[data-find-report]').text()).toContain('Replaced 0 of 1')
+      expect(w.get('[data-find-report]').text()).toContain('1 skipped')
+    })
+  })
+
   it('does nothing with no matches', async () => {
     find.mockResolvedValue({ matches: [], capped: false })
     const w = mount(FindPanel)
