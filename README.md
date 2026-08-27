@@ -1,5 +1,10 @@
 # Get Margin
 
+**[Try it live →](https://get-margin-seven.vercel.app/)**
+
+A PDF editor that runs entirely in a browser tab. Annotate, sign, reorder,
+redact, fill forms and export — the file never leaves your device.
+
 ## Requirements
 
 - Node.js `>=22`
