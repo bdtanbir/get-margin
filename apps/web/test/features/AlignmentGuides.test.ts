@@ -93,6 +93,67 @@ describe('AlignmentGuides', () => {
     expect(mountFor().findAll('line')).toHaveLength(0)
   })
 
+  /**
+   * Which rail the line is actually ON, marked so the user can see what
+   * the snap caught. Derived from the line's live position rather than
+   * reported by the snapper: the rail highlighted is then the one the line
+   * genuinely coincides with, including an alignment the user hit by hand
+   * without the snap being involved.
+   */
+  describe('marking the rail the line is on', () => {
+    const active = (w: ReturnType<typeof mountFor>) =>
+      w.findAll('line').filter((l) => l.attributes('data-active') !== undefined)
+
+    it('marks none while the line is not on a rail', () => {
+      tools.startMovingPatch('tp1')
+      expect(active(mountFor())).toHaveLength(0)
+    })
+
+    it('marks the vertical rail the left edge has landed on', () => {
+      // The patch's left edge is x 72; +228 puts it exactly on the rail at 300.
+      edits.applyOp(
+        { type: 'updateObject', id: 'tp1', patch: { offset: { dx: 228, dy: 0 } } as never },
+        'move',
+      )
+      tools.startMovingPatch('tp1')
+      const marked = active(mountFor())
+      expect(marked).toHaveLength(1)
+      expect(marked[0]!.attributes('x1')).toBe('300')
+    })
+
+    it('marks it for the right edge too', () => {
+      // Right edge 72 + 128 = 200; +200 puts it on the rail at 400.
+      edits.applyOp(
+        { type: 'updateObject', id: 'tp1', patch: { offset: { dx: 200, dy: 0 } } as never },
+        'move',
+      )
+      tools.startMovingPatch('tp1')
+      expect(active(mountFor())[0]!.attributes('x1')).toBe('400')
+    })
+
+    it('marks the horizontal rail the baseline has landed on', () => {
+      // The patch's baseline is 100; +100 puts it on the rail at 200.
+      edits.applyOp(
+        { type: 'updateObject', id: 'tp1', patch: { offset: { dx: 0, dy: 100 } } as never },
+        'move',
+      )
+      tools.startMovingPatch('tp1')
+      const marked = active(mountFor())
+      expect(marked).toHaveLength(1)
+      expect(marked[0]!.attributes('y1')).toBe('200')
+    })
+
+    /** Float error from the snap arithmetic must not un-mark a real hit. */
+    it('tolerates the rounding the snap leaves behind', () => {
+      edits.applyOp(
+        { type: 'updateObject', id: 'tp1', patch: { offset: { dx: 228.0000000001, dy: 0 } } as never },
+        'move',
+      )
+      tools.startMovingPatch('tp1')
+      expect(active(mountFor())).toHaveLength(1)
+    })
+  })
+
   it('draws nothing before the page’s text has been extracted', () => {
     tools.startMovingPatch('tp1')
     expect(mount(AlignmentGuides, { props: { page } }).findAll('line')).toHaveLength(0)

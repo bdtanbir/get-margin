@@ -311,7 +311,7 @@ const draft = computed(() => {
       same box, so its DOM handles get ordinary Tailwind, focus, and mobile
       keyboard behaviour.
     -->
-    <SelectionChrome :page="props.page" :zoom="props.zoom" />
+    <SelectionChrome :page="props.page" :zoom="props.zoom" :index="quadIndex" />
     <SelectionToolbar :page="props.page" :zoom="props.zoom" />
     <TextEditor :page="props.page" :zoom="props.zoom" />
     <InkCanvas :page="props.page" :zoom="props.zoom" />

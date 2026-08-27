@@ -233,9 +233,9 @@ describe('SelectionChrome', () => {
       id: 'tp1', pageId: 'p1', kind: 'textPatch',
       rect: { x: 100, y: 600, w: 80, h: 12 },
       rotation: 0, z: 3, locked: false, opacity: 1,
-      lineIndex: 3, originalHash: 'h', originalText: 'Total Amount', text: 'Total TK',
-      fontFamily: 'Helvetica', fontSize: 0, color: [0, 0, 0], background: [1, 1, 1],
-      backgroundConfidence: 1, fit: 'shrink',
+      lineIndex: 0, originalHash: 'h', originalText: 'Total Amount', text: 'Total TK',
+      fontFamily: 'Helvetica', fontSize: 0, baseline: 612, color: [0, 0, 0],
+      background: [1, 1, 1], backgroundConfidence: 1, fit: 'shrink',
       ...over,
     } as unknown as EditObject)
 
@@ -351,6 +351,96 @@ describe('SelectionChrome', () => {
       w.find('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
       expect(tools.movingPatchId).toBeUndefined()
       up()
+    })
+
+    /**
+     * Snapping, which needs the page's text to have rails to snap to. The
+     * arithmetic itself is `snapOffset`'s; what these pin is that the
+     * chrome hands it the right numbers and converts the threshold out of
+     * view pixels.
+     */
+    describe('snapping to the page’s rails', () => {
+      // One other line, giving a vertical rail at x 300 and a horizontal
+      // one at its baseline, 216.
+      const index = {
+        lines: [
+          {
+            bbox: [100, 600, 180, 612], text: 'ab', font: 'Helvetica',
+            bold: false, italic: false, color: [0, 0, 0], size: 10, baseline: 610,
+            chars: [{ char: 'a', quad: [100, 600, 180, 600, 100, 612, 180, 612] }],
+          },
+          {
+            bbox: [300, 204, 380, 216], text: 'cd', font: 'Helvetica',
+            bold: false, italic: false, color: [0, 0, 0], size: 10, baseline: 216,
+            chars: [{ char: 'c', quad: [300, 204, 380, 204, 300, 216, 380, 216] }],
+          },
+        ],
+      }
+
+      const dragWith = (zoom: number, dx: number, dy: number): void => {
+        const w = mount(SelectionChrome, { props: { page, zoom, index: index as never } })
+        w.find('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
+        move(dx, dy)
+        up()
+      }
+
+      it('pulls the line onto a rail it lands near', () => {
+        // The patch's left edge is x 100; a drag of 198 puts it at 298,
+        // two points from the rail at 300.
+        dragWith(1, 198, 0)
+        expect(patched().offset?.dx).toBe(200)
+      })
+
+      it('leaves it where it was dropped when no rail is near', () => {
+        dragWith(1, 50, 0)
+        expect(patched().offset?.dx).toBe(50)
+      })
+
+      /**
+       * The threshold is view pixels, so it feels the same at every zoom.
+       * At 4x, the same 6px reach is 1.5pt of page -- and a drag that
+       * would have snapped at 100% no longer does.
+       */
+      /**
+       * The threshold is view pixels, so it feels the same at every zoom --
+       * which means the same page distance stops snapping as you zoom in.
+       * Separate cases because a drag leaves its offset behind, and a
+       * second one in the same test would start from it.
+       */
+      it('still snaps at 4x when the gap is inside the reach in pixels', () => {
+        // 796 view px at 4x is 199pt, putting the left edge one point from
+        // the rail. The 6px reach is 1.5pt here, so it still snaps.
+        dragWith(4, 796, 0)
+        expect(patched().offset?.dx).toBe(200)
+      })
+
+      it('stops snapping at 4x for a gap that would have snapped at 1x', () => {
+        // 788 at 4x is 197pt: three points out, outside 1.5pt -- while the
+        // same three points at 1x is well inside six.
+        dragWith(4, 788, 0)
+        expect(patched().offset?.dx).toBe(197)
+      })
+
+      /** The line's own rails are excluded, or it would snap to itself. */
+      it('does not snap the line to where it already was', () => {
+        dragWith(1, 2, 0)
+        expect(patched().offset?.dx).toBe(2)
+      })
+
+      it('snaps the baseline to another line’s baseline', () => {
+        // The patch's baseline is 612; the other line's is 216, so a drag
+        // of -394 lands two points away.
+        dragWith(1, 0, -394)
+        expect(patched().offset?.dy).toBe(-396)
+      })
+
+      it('snaps nothing before the page’s text has been extracted', () => {
+        const w = mount(SelectionChrome, { props: { page, zoom: 1 } })
+        w.find('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
+        move(198, 0)
+        up()
+        expect(patched().offset?.dx).toBe(198)
+      })
     })
 
     it('leaves a locked patch untouched', () => {

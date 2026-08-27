@@ -1,16 +1,25 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { viewRectToPdf, viewDeltaToPage } from '@margin/transform'
-import type { TextPatchObject } from '@margin/pdf-core'
+import type { PageQuadIndex, TextPatchObject } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { useDocumentStore } from '@/stores/document'
+import { ASCENT_RATIO } from '@/lib/fonts'
 import { useDragGesture } from './useDragGesture'
 import { pageBoxes, pageAtPoint } from './pageBoxes'
 import { objectViewRect } from './objectViewRect'
+import { alignmentRails } from './alignmentRails'
+import { snapOffset } from './snapOffset'
 
-const props = defineProps<{ page: PageState; zoom: number }>()
+/**
+ * `index` is the page's quad index, when it has been fetched. Only the
+ * patch drag uses it, and only to build alignment rails -- everything else
+ * here works without it, which is why it is optional rather than something
+ * the drag waits for.
+ */
+const props = defineProps<{ page: PageState; zoom: number; index?: PageQuadIndex | undefined }>()
 const edits = useEditsStore()
 const tools = useToolsStore()
 const doc = useDocumentStore()
@@ -26,6 +35,17 @@ type Handle = (typeof HANDLES)[number]
  * is a rotation that is silently off by a few degrees.
  */
 const ROTATE_OFFSET_PX = 24
+
+/**
+ * How near a rail a dragged line has to come before it is pulled onto it,
+ * in CSS PIXELS.
+ *
+ * View pixels rather than points so the reach feels identical at every
+ * zoom. It also means the threshold shrinks to almost nothing when zoomed
+ * far in, which is the behaviour you want: someone working at 800% is
+ * placing something precisely and does not want to be nudged.
+ */
+const SNAP_PX = 6
 
 const selected = computed(() => {
   const id = edits.selection[0]
@@ -190,6 +210,27 @@ function startMove(e: PointerEvent): void {
 function startMovePatch(e: PointerEvent, o: TextPatchObject): void {
   const from = { dx: o.offset?.dx ?? 0, dy: o.offset?.dy ?? 0 }
   const id = o.id
+  const rect = { ...o.rect }
+  /**
+   * The line's own baseline, or the same approximation the renderer falls
+   * back to for patches stored before it was recorded. Snapping has to aim
+   * at the number the user can SEE, and that is whichever of the two the
+   * overlay drew with.
+   */
+  const baseline = o.baseline ?? o.rect.y + o.rect.h * ASCENT_RATIO
+  /**
+   * Built once, at the start of the gesture. The rails are the page's
+   * layout, which does not change while a pointer is down, and rebuilding
+   * them per frame would walk every line on the page sixty times a second.
+   *
+   * The moving line's own rails are excluded: it cannot be aligned to
+   * itself, and its rails would sit exactly where it started -- a snap
+   * target that only ever means "put it back".
+   */
+  const rails = props.index
+    ? alignmentRails(props.index, { exclude: o.lineIndex })
+    : { xs: [], ys: [] }
+
   // Raises the alignment rails, which are feedback for THIS gesture and
   // come back down with it.
   tools.startMovingPatch(id)
@@ -197,7 +238,14 @@ function startMovePatch(e: PointerEvent, o: TextPatchObject): void {
     // Page space is top-down like the screen, so no sign flips -- the only
     // conversion is out of CSS pixels. That is the writer's job to invert.
     const d = viewDeltaToPage({ x: dx, y: dy }, props.page.geometry, props.zoom)
-    const offset = { dx: from.dx + d.x, dy: from.dy + d.y }
+    const offset = snapOffset({
+      rect,
+      baseline,
+      offset: { dx: from.dx + d.x, dy: from.dy + d.y },
+      rails,
+      // The reach is a screen distance; the rails are points.
+      tolerance: SNAP_PX / props.zoom,
+    })
     edits.applyOp({ type: 'updateObject', id, patch: { offset } }, 'Move')
   }, e, () => tools.stopMovingPatch())
 }
