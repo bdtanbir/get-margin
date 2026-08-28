@@ -1,6 +1,7 @@
 import { useMagicKeys, whenever } from '@vueuse/core'
 import { combosFor } from '@/features/help/shortcuts'
 import { useEditsStore } from '@/stores/edits'
+import { deleteOpFor } from '@/features/patch/patchDelete'
 import { useToolsStore } from '@/stores/tools'
 import { useSelectionStore } from '@/stores/selection'
 import { useDialogsStore } from '@/stores/dialogs'
@@ -119,7 +120,11 @@ export function useEditShortcuts(): string[] {
     // A locked object is locked against deletion too -- unlock is a
     // deliberate act, and Backspace is not.
     if (!object || object.locked) return
-    edits.applyOp({ type: 'deleteObject', id }, 'Delete')
-    edits.clearSelection()
+    // The same rule the toolbar's trash follows: a patch carrying a copy
+    // loses the copy first, so the thing on screen actually goes. See
+    // `deleteOpFor`.
+    const op = deleteOpFor(object)
+    edits.applyOp(op, 'Delete')
+    if (op.type === 'deleteObject') edits.clearSelection()
   }
 }

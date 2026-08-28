@@ -113,7 +113,7 @@ export const TOOL_DOCS: Record<ToolId, ToolDoc> = {
   },
   editImage: {
     does: 'Move or take out a picture, logo or barcode the document came with, matching the colour of the paper behind it.',
-    how: 'Outlined targets show every picture on the page. Click one to cover it, click it again to bring it back, or drag it to move it somewhere else. An amber outline means the area behind it is not a flat colour.',
+    how: 'Outlined targets show every picture on the page. Click one to pick it up — it then behaves like anything else you have added, so you can move it, duplicate it, or press Delete to take it out. An amber outline means the area behind it is not a flat colour.',
     caution: 'This covers the picture, it does not delete it from the file — someone opening the PDF with the right tools could still recover it. To add your own picture, use Image.',
   },
   lift: {

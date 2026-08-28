@@ -7,6 +7,7 @@ import type {
 } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
+import { useToolsStore } from '@/stores/tools'
 import { useViewportStore } from '@/stores/viewport'
 import { getPdfClient } from '@/workers/pdfClient'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
@@ -21,12 +22,22 @@ import { plainColor } from './linePatch'
  * because a permanent layer of hit targets over every page would swallow
  * every other interaction.
  *
- * CLICK REMOVES, DRAG MOVES. One gesture each, on the same target, told
+ * CLICK SELECTS, DRAG MOVES. One gesture each, on the same target, told
  * apart by whether the pointer travelled -- which is how every direct
- * manipulation surface people already use behaves. Clicking a removed
- * image brings it back, because the cover is cosmetic and reversible and a
- * tool whose only feedback is "the thing you clicked is gone" is a tool
- * people are afraid to try.
+ * manipulation surface people already use behaves.
+ *
+ * Clicking used to REMOVE the image outright, and that was wrong twice
+ * over. It destroyed something on a single click with no confirmation and
+ * no visible route back, and it left the user with no way to reach the
+ * ordinary object controls -- duplicate, order, lock, delete -- that every
+ * other thing on the page has. Those controls already exist and already
+ * work; the image simply had no object for them to point at until it had
+ * been dragged.
+ *
+ * So a click now LIFTS the image in place -- a cover with a copy of the
+ * image drawn exactly where it already was, which changes nothing anybody
+ * can see -- and hands over the select tool with it selected. Removing it
+ * is then the same Delete as everywhere else in the app.
  */
 const props = defineProps<{
   page: PageState
@@ -35,6 +46,7 @@ const props = defineProps<{
 }>()
 
 const edits = useEditsStore()
+const tools = useToolsStore()
 const vp = useViewportStore()
 
 /**
@@ -142,13 +154,26 @@ function buildPatch(place: ImagePlacement, extra: Partial<ImagePatchObject> = {}
   }
 }
 
-function toggle(place: ImagePlacement): void {
+/**
+ * Hand the object to the select tool.
+ *
+ * The next thing anybody does with something they clicked is act on it,
+ * and every action lives on the selection toolbar.
+ */
+function handOver(id: string): void {
+  tools.setTool('select')
+  edits.select([id])
+}
+
+/** Click: select the image, lifting it first if it is not an object yet. */
+async function selectOrLift(place: ImagePlacement): Promise<void> {
   const existing = patchOn(place.index)
   if (existing) {
-    edits.applyOp({ type: 'deleteObject', id: existing.id }, 'Restore image')
+    handOver(existing.id)
     return
   }
-  edits.applyOp({ type: 'addObject', object: buildPatch(place) as EditObject }, 'Remove image')
+  const id = await lift(place)
+  if (id) handOver(id)
 }
 
 /**
@@ -168,12 +193,12 @@ async function lift(place: ImagePlacement): Promise<string | undefined> {
   if (existing) {
     edits.applyOp(
       { type: 'updateObject', id: existing.id, patch: { data: crop.data, mime: 'image/png' } },
-      'Move image',
+      'Select image',
     )
     return existing.id
   }
   const object = buildPatch(place, { data: crop.data, mime: 'image/png' })
-  edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Move image')
+  edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Select image')
   return object.id
 }
 
@@ -201,6 +226,8 @@ function onPointerDown(place: ImagePlacement, e: PointerEvent): void {
   let dragging = false
   let id: string | undefined
   let latest = { dx: 0, dy: 0 }
+  /** The in-flight lift, so `end` can wait for it rather than race it. */
+  let lifting: Promise<string | undefined> | undefined
 
   const target = e.currentTarget as Element | null
   try {
@@ -232,7 +259,8 @@ function onPointerDown(place: ImagePlacement, e: PointerEvent): void {
     if (!dragging) {
       if (Math.hypot(latest.dx, latest.dy) < DRAG_THRESHOLD_PX) return
       dragging = true
-      void lift(place).then((lifted) => {
+      lifting = lift(place)
+      void lifting.then((lifted) => {
         id = lifted
         apply()
       })
@@ -250,8 +278,13 @@ function onPointerDown(place: ImagePlacement, e: PointerEvent): void {
     } catch {
       // Already released, or never captured.
     }
-    // A press that never travelled is a click, and a click removes.
-    if (!dragging) toggle(place)
+    if (!dragging) {
+      void selectOrLift(place)
+      return
+    }
+    // A drag ends the same way a click does: with the thing selected and
+    // the select tool in hand, so the toolbar is there to act on it.
+    void lifting?.then((lifted) => { if (lifted) handOver(lifted) })
   }
 
   window.addEventListener('pointermove', move)
@@ -291,15 +324,10 @@ function onPointerDown(place: ImagePlacement, e: PointerEvent): void {
         height: `${(place.bbox[3] - place.bbox[1]) * props.zoom}px`,
       }"
       :data-image-target="place.index"
-      :title="patchOn(place.index)
-        ? 'Drag to move it, or click to bring it back'
-        : risky(place.bbox)
-          ? 'Drag to move, or click to remove — the area behind it is not a flat colour, so the cover may show'
-          : 'Drag to move it, or click to remove it'"
-      :aria-label="patchOn(place.index)
-        ? `Bring back image ${place.index + 1}`
-        : `Remove image ${place.index + 1}`"
-      :aria-pressed="patchOn(place.index) ? 'true' : 'false'"
+      :title="risky(place.bbox)
+        ? 'Click to select it, or drag to move it — the area behind it is not a flat colour, so removing it may leave a mark'
+        : 'Click to select it, or drag to move it'"
+      :aria-label="`Select image ${place.index + 1}`"
       @pointerdown="(e) => onPointerDown(place, e)"
     />
   </div>

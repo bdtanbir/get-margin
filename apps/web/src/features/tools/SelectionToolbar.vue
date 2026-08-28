@@ -18,6 +18,7 @@ import { sampleBackground } from '@/features/patch/sampleBackground'
 import {
   buildLinePatch, documentStyle, isPristine, lineBox, patchOnLine, styleOf,
 } from '@/features/patch/linePatch'
+import { deleteOpFor } from '@/features/patch/patchDelete'
 import type {
   LineRun, LinkObject, MarkupObject, RedactionObject, EditObject,
 } from '@margin/pdf-core'
@@ -52,15 +53,32 @@ const siblings = computed(() =>
   Object.values(edits.doc.objects).filter((o) => o.pageId === props.page.id),
 )
 
+/**
+ * The kinds whose `rect` is the thing they COVER rather than where their
+ * own content is drawn. A copy of one is displaced by its offset, never by
+ * its rect -- moving the rect would move the cover off the thing it is
+ * there to hide.
+ */
+const COVERING_KINDS = ['imagePatch', 'regionPatch']
+
 function duplicate(): void {
   const o = selected.value
   if (!o) return
-  const copy = {
-    ...o,
-    id: nanoid(10),
-    rect: { ...o.rect, x: o.rect.x + DUPLICATE_OFFSET_PT, y: o.rect.y - DUPLICATE_OFFSET_PT },
-    z: edits.nextZ(),
+  let nudge: Record<string, unknown>
+  if (COVERING_KINDS.includes(o.kind)) {
+    const from = (o as { offset?: { dx: number; dy: number } }).offset ?? { dx: 0, dy: 0 }
+    // Page space is top-down, so BOTH are positive to land down and to the
+    // right -- unlike the rect below, which is bottom-up PDF space and
+    // subtracts to go down.
+    nudge = {
+      offset: { dx: from.dx + DUPLICATE_OFFSET_PT, dy: from.dy + DUPLICATE_OFFSET_PT },
+    }
+  } else {
+    nudge = {
+      rect: { ...o.rect, x: o.rect.x + DUPLICATE_OFFSET_PT, y: o.rect.y - DUPLICATE_OFFSET_PT },
+    }
   }
+  const copy = { ...o, id: nanoid(10), ...nudge, z: edits.nextZ() } as typeof o
   edits.applyOp({ type: 'addObject', object: copy }, 'Duplicate')
   edits.select([copy.id])
 }
@@ -68,8 +86,14 @@ function duplicate(): void {
 function remove(): void {
   const o = selected.value
   if (!o) return
-  edits.applyOp({ type: 'deleteObject', id: o.id }, 'Delete')
-  edits.clearSelection()
+  // Not always `deleteObject`: a patch carrying a copy loses the copy and
+  // keeps the cover, or the logo the user just asked to delete comes
+  // straight back. See `deleteOpFor`.
+  const op = deleteOpFor(o)
+  edits.applyOp(op, 'Delete')
+  // The object survives a peeled copy, so it stays selected -- pressing
+  // Delete again removes the edit itself.
+  if (op.type === 'deleteObject') edits.clearSelection()
 }
 
 function bringToFront(): void {

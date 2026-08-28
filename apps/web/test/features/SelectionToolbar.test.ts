@@ -618,3 +618,102 @@ describe('SelectionToolbar link action', () => {
     expect(edits.selection).toEqual(links().map((l) => l.id))
   })
 })
+
+/**
+ * A patch is a cover over the document's own content plus, once it has
+ * been picked up, a copy of that content on top. That makes the two
+ * buttons that assume "the object IS its own content" behave wrongly
+ * unless they are told otherwise.
+ */
+describe('the toolbar over one of the document’s own images', () => {
+  const patch = (over: Record<string, unknown> = {}): EditObject => ({
+    id: 'ip1', pageId: 'p1', kind: 'imagePatch',
+    imageIndex: 0, originalHash: 'aaaa1111',
+    background: [1, 1, 1], backgroundConfidence: 1,
+    rect: { x: 100, y: 200, w: 80, h: 40 },
+    rotation: 0, z: 9, locked: false, opacity: 1,
+    data: new Uint8Array([1, 2, 3]), mime: 'image/png',
+    ...over,
+  } as unknown as EditObject)
+
+  let edits: ReturnType<typeof useEditsStore>
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    edits = useEditsStore()
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'],
+      { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
+  })
+
+  const select = (o: EditObject) => {
+    edits.applyOp({ type: 'addObject', object: o }, 'add')
+    edits.select([o.id])
+    return mount(SelectionToolbar, { props: { page, zoom: 1 } })
+  }
+
+  /**
+   * Deleting the object outright would take the COVER with it and put the
+   * document's own logo straight back -- so Delete would look broken.
+   */
+  it('Delete takes the picture away and leaves the cover', async () => {
+    const w = select(patch())
+    await w.get('[aria-label="Delete"]').trigger('click')
+    const after = edits.doc.objects.ip1 as { data?: Uint8Array } | undefined
+    expect(after).toBeDefined()
+    expect(after!.data).toBeUndefined()
+  })
+
+  it('Delete a second time removes the edit, putting the page back', async () => {
+    const w = select(patch())
+    await w.get('[aria-label="Delete"]').trigger('click')
+    await w.get('[aria-label="Delete"]').trigger('click')
+    expect(edits.doc.objects.ip1).toBeUndefined()
+  })
+
+  it('keeps it selected while there is still something to take off', async () => {
+    const w = select(patch())
+    await w.get('[aria-label="Delete"]').trigger('click')
+    expect(edits.selection).toEqual(['ip1'])
+  })
+
+  it('drops the offset with the copy', async () => {
+    const w = select(patch({ offset: { dx: 30, dy: 10 } }))
+    await w.get('[aria-label="Delete"]').trigger('click')
+    expect((edits.doc.objects.ip1 as { offset?: unknown }).offset).toBeUndefined()
+  })
+
+  /**
+   * A duplicate is displaced by its OFFSET, never by its rect: the rect is
+   * the thing being covered, and moving it would slide the cover off what
+   * it is there to hide.
+   */
+  it('Duplicate offsets the copy and leaves the cover where it is', async () => {
+    const w = select(patch())
+    await w.get('[aria-label="Duplicate"]').trigger('click')
+    const copies = Object.values(edits.doc.objects)
+      .filter((o) => o.kind === 'imagePatch') as unknown as Array<{
+        rect: { x: number; y: number }
+        offset?: { dx: number; dy: number }
+      }>
+    expect(copies).toHaveLength(2)
+    for (const c of copies) expect(c.rect).toEqual({ x: 100, y: 200, w: 80, h: 40 })
+    const moved = copies.find((c) => c.offset)
+    expect(moved!.offset!.dx).toBeGreaterThan(0)
+    expect(moved!.offset!.dy).toBeGreaterThan(0)
+  })
+
+  it('Duplicate adds to an offset the original already had', async () => {
+    const w = select(patch({ offset: { dx: 100, dy: 50 } }))
+    await w.get('[aria-label="Duplicate"]').trigger('click')
+    const copy = Object.values(edits.doc.objects)
+      .find((o) => o.id !== 'ip1') as unknown as { offset: { dx: number; dy: number } }
+    expect(copy.offset.dx).toBeGreaterThan(100)
+    expect(copy.offset.dy).toBeGreaterThan(50)
+  })
+
+  it('leaves an ordinary object deleted outright, as before', async () => {
+    const w = select(obj('r9'))
+    await w.get('[aria-label="Delete"]').trigger('click')
+    expect(edits.doc.objects.r9).toBeUndefined()
+    expect(edits.selection).toEqual([])
+  })
+})

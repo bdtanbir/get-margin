@@ -66,6 +66,22 @@ const KIND_ICONS: Record<ObjectKind, Component> = {
  * through one row at a time to find anything, so an object that says
  * something identifies itself with what it says.
  */
+/**
+ * What a patch is CARRYING, which is what distinguishes one row from
+ * another in a list of them.
+ *
+ * "Edited image" told the user nothing about which of the two states a row
+ * was in -- hiding the document's own picture, or holding a copy of it
+ * that has been moved. Those look completely different on the page, and a
+ * list that calls them the same thing is a list you have to click through.
+ */
+function patchState(o: EditObject): string | undefined {
+  if (o.kind !== 'imagePatch' && o.kind !== 'regionPatch') return undefined
+  const carrying = (o.data?.length ?? 0) > 0
+  if (o.kind === 'imagePatch') return carrying ? 'Image' : 'Hidden image'
+  return carrying ? 'Lifted area' : 'Hidden area'
+}
+
 function ownWords(o: EditObject): string | undefined {
   switch (o.kind) {
     case 'text':
@@ -90,7 +106,7 @@ function ownWords(o: EditObject): string | undefined {
  */
 export function layerLabel(o: EditObject): string {
   const words = ownWords(o)?.replace(/\s+/g, ' ').trim()
-  if (!words) return KIND_NAMES[o.kind]
+  if (!words) return patchState(o) ?? KIND_NAMES[o.kind]
   return words.length > LABEL_MAX ? `${words.slice(0, LABEL_MAX)}…` : words
 }
 

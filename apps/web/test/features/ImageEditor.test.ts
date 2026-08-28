@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import ImageEditor from '@/features/patch/ImageEditor.vue'
 import { useEditsStore } from '@/stores/edits'
+import { useToolsStore } from '@/stores/tools'
 import { useViewportStore } from '@/stores/viewport'
 import type { ImagePatchObject, PageImageIndex } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
@@ -108,11 +109,38 @@ describe('ImageEditor', () => {
     expect(first.attributes('style')).toContain('width: 400px')
   })
 
-  it('covers the image that was clicked', async () => {
+  it('picks up the image that was clicked', async () => {
     const edits = seed()
     await click(mountIt(), 0)
     expect(patches(edits)).toHaveLength(1)
     expect(patches(edits)[0]!.imageIndex).toBe(0)
+  })
+
+  /**
+   * A click LIFTS, it does not remove. Removing on a single click destroyed
+   * something with no confirmation and no visible way back, and left the
+   * user unable to reach the ordinary object controls -- duplicate, order,
+   * lock, delete -- that everything else on the page has.
+   */
+  it('leaves the image exactly where it was, carrying a copy of itself', async () => {
+    const edits = seed()
+    await click(mountIt(), 0)
+    expect(patches(edits)[0]!.data).toEqual(new Uint8Array([1, 2, 3]))
+    expect(patches(edits)[0]!.offset).toBeUndefined()
+  })
+
+  /**
+   * The whole point of the change: the selection toolbar is what carries
+   * duplicate, order, lock and delete, and it only appears for a selected
+   * object under the select tool.
+   */
+  it('hands over the select tool with the image selected', async () => {
+    const edits = seed()
+    const tools = useToolsStore()
+    tools.setTool('editImage')
+    await click(mountIt(), 0)
+    expect(tools.active).toBe('select')
+    expect(edits.selection).toEqual([patches(edits)[0]!.id])
   })
 
   /**
@@ -132,16 +160,17 @@ describe('ImageEditor', () => {
     expect(patches(edits)[0]!.rect).toEqual({ x: 50, y: 50, w: 200, h: 100 })
   })
 
-  it('is a toggle: clicking a covered image brings it back', async () => {
+  it('selects the image again rather than picking up a second copy', async () => {
     const edits = seed()
     const editor = mountIt()
     await click(editor, 0)
-    expect(patches(edits)).toHaveLength(1)
+    const first = patches(edits)[0]!.id
     await click(editor, 0)
-    expect(patches(edits)).toHaveLength(0)
+    expect(patches(edits)).toHaveLength(1)
+    expect(edits.selection).toEqual([first])
   })
 
-  it('covers one image without touching the other', async () => {
+  it('picks up one image without touching the other', async () => {
     const edits = seed()
     const editor = mountIt()
     await click(editor, 0)
@@ -149,16 +178,11 @@ describe('ImageEditor', () => {
     expect(patches(edits).map((p) => p.imageIndex).sort()).toEqual([0, 1])
   })
 
-  it('says in its label which state a target is in', async () => {
+  it('says what a target does', () => {
     seed()
-    const editor = mountIt()
-    const target = editor.find('[data-image-target="0"]')
-    expect(target.attributes('aria-label')).toBe('Remove image 1')
-    expect(target.attributes('aria-pressed')).toBe('false')
-    await click(editor, 0)
-    expect(editor.find('[data-image-target="0"]').attributes('aria-label'))
-      .toBe('Bring back image 1')
-    expect(editor.find('[data-image-target="0"]').attributes('aria-pressed')).toBe('true')
+    const target = mountIt().find('[data-image-target="0"]')
+    expect(target.attributes('aria-label')).toBe('Select image 1')
+    expect(target.attributes('title')).toContain('Click to select')
   })
 
   it('each removal is one undoable step', async () => {
@@ -222,14 +246,23 @@ describe('ImageEditor', () => {
       expect(patches(edits)[0]!.rect).toEqual({ x: 50, y: 50, w: 200, h: 100 })
     })
 
-    it('moves an image that had already been removed, without adding a second patch', async () => {
+    it('moves an image that was already picked up, without adding a second patch', async () => {
       const edits = seed()
       const editor = mountIt()
       await click(editor, 0)
-      expect(patches(edits)[0]!.data).toBeUndefined()
+      expect(patches(edits)).toHaveLength(1)
       await drag(editor, 0, 60, 40)
       expect(patches(edits)).toHaveLength(1)
-      expect(patches(edits)[0]!.data).toEqual(new Uint8Array([1, 2, 3]))
+      expect(patches(edits)[0]!.offset).toEqual({ dx: 60, dy: 40 })
+    })
+
+    it('hands over the select tool once the drag ends', async () => {
+      const edits = seed()
+      const tools = useToolsStore()
+      tools.setTool('editImage')
+      await drag(mountIt(), 0, 60, 40)
+      expect(tools.active).toBe('select')
+      expect(edits.selection).toEqual([patches(edits)[0]!.id])
     })
 
     it('accumulates a second drag onto the first', async () => {
@@ -249,9 +282,8 @@ describe('ImageEditor', () => {
       const edits = seed()
       await drag(mountIt(), 0, 2, 1)
       expect(patches(edits)).toHaveLength(1)
-      expect(patches(edits)[0]!.data).toBeUndefined()
+      // Picked up in place, not dragged: a trackpad wobble is not a move.
       expect(patches(edits)[0]!.offset).toBeUndefined()
-      expect(imageCrop).not.toHaveBeenCalled()
     })
 
     /**
