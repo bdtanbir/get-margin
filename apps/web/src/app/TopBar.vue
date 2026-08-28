@@ -161,10 +161,10 @@ async function download(): Promise<void> {
       A button AND a visible key, not a tooltip.
 
       A tooltip only teaches someone who already hovered, and nobody hovers a
-      thing they do not know exists. The chip states the shortcut without
-      being asked, and the button means the discovery does not depend on the
-      keyboard at all -- which is also what makes the palette reachable on a
-      phone, where there is no ⌘ to press.
+      thing they do not know exists. The magnifier and the chip say search and
+      shortcut without being asked, and the button means the discovery does
+      not depend on the keyboard at all -- which is also what makes the palette
+      reachable on a phone, where there is no ⌘ to press.
     -->
     <button
       type="button"
@@ -176,18 +176,16 @@ async function download(): Promise<void> {
       @click="palette.show()"
     >
       <Search :size="14" :stroke-width="1.5" aria-hidden="true" />
-      <template v-if="!props.compact">
-        <span>Commands</span>
-        <!--
-          aria-hidden because the accessible name above already says the
-          shortcut; without it a screen reader reads "Commands Ctrl K" twice.
-        -->
-        <kbd
-          data-palette-shortcut
-          aria-hidden="true"
-          class="rounded border border-border bg-surface px-1 py-0.5 font-sans text-[11px] text-text-subtle"
-        >{{ paletteKeys }}</kbd>
-      </template>
+      <!--
+        aria-hidden because the accessible name above already says the
+        shortcut; without it a screen reader reads "Commands Ctrl K" twice.
+      -->
+      <kbd
+        v-if="!props.compact"
+        data-palette-shortcut
+        aria-hidden="true"
+        class="rounded border border-border bg-surface px-1 py-0.5 font-sans text-[11px] text-text-subtle"
+      >{{ paletteKeys }}</kbd>
     </button>
 
     <Tooltip :content="`Theme: ${choice}`" side="bottom">
