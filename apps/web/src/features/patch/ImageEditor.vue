@@ -104,6 +104,30 @@ function patchOn(imageIndex: number): ImagePatchObject | undefined {
 const placements = computed(() => props.index?.images ?? [])
 
 /**
+ * Where an image ACTUALLY IS: its box in the source page, plus whatever
+ * the user has dragged it by.
+ *
+ * Everything the user points at goes through this. Reading the raw
+ * placement instead left the target behind on the blank rectangle a moved
+ * logo had vacated -- the logo they could see had no target at all, and
+ * clicking where it now sat grabbed nothing. `PatchEditor` carries the
+ * same function for the same reason; this tool was written without it.
+ *
+ * The COVER does not move, and neither does the placement -- the
+ * document's own image is still where it always was, underneath. This is
+ * the copy's position, which is the only one anybody can see.
+ */
+function targetBox(place: ImagePlacement): { x: number; y: number; w: number; h: number } {
+  const { dx = 0, dy = 0 } = patchOn(place.index)?.offset ?? {}
+  return {
+    x: place.bbox[0] + dx,
+    y: place.bbox[1] + dy,
+    w: place.bbox[2] - place.bbox[0],
+    h: place.bbox[3] - place.bbox[1],
+  }
+}
+
+/**
  * What is behind an image, sampled from the page AS RENDERED.
  *
  * Done here rather than in the writer for the same reason the text patch
@@ -318,10 +342,10 @@ function onPointerDown(place: ImagePlacement, e: PointerEvent): void {
           ? 'border-warning/70 hover:bg-warning/20'
           : 'border-accent/40 hover:bg-accent/15'"
       :style="{
-        left: `${place.bbox[0] * props.zoom}px`,
-        top: `${place.bbox[1] * props.zoom}px`,
-        width: `${(place.bbox[2] - place.bbox[0]) * props.zoom}px`,
-        height: `${(place.bbox[3] - place.bbox[1]) * props.zoom}px`,
+        left: `${targetBox(place).x * props.zoom}px`,
+        top: `${targetBox(place).y * props.zoom}px`,
+        width: `${targetBox(place).w * props.zoom}px`,
+        height: `${targetBox(place).h * props.zoom}px`,
       }"
       :data-image-target="place.index"
       :title="risky(place.bbox)

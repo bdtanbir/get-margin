@@ -101,6 +101,75 @@ describe('ImageEditor', () => {
     expect(first.attributes('style')).toContain('height: 100px')
   })
 
+  /**
+   * A TARGET HAS TO BE WHERE THE THING IS.
+   *
+   * The same bug `PatchEditor` already carries a paragraph about: its line
+   * targets used to stay behind at the empty space a moved line had left,
+   * so the text the user could see had no target and clicking where it was
+   * grabbed nothing. This tool had it too -- move the logo to the middle of
+   * the page, come back to the tool, and the outline is still sitting on
+   * the blank rectangle the logo used to occupy.
+   */
+  describe('once an image has been moved', () => {
+    const moved = (offset: { dx: number; dy: number }) => {
+      const edits = useEditsStore()
+      edits.applyOp({
+        type: 'addObject',
+        object: {
+          id: 'ip1', pageId: 'p1', kind: 'imagePatch',
+          imageIndex: 0, originalHash: 'aaaa1111',
+          background: [1, 1, 1], backgroundConfidence: 1,
+          data: new Uint8Array([1, 2, 3]), mime: 'image/png',
+          offset,
+          rect: { x: 50, y: 50, w: 200, h: 100 },
+          rotation: 0, z: 1, locked: false, opacity: 1,
+        } as never,
+      }, 'add')
+      return edits
+    }
+
+    it('its target follows it', () => {
+      seed()
+      moved({ dx: 60, dy: 40 })
+      const target = mountIt().find('[data-image-target="0"]')
+      expect(target.attributes('style')).toContain('left: 110px')
+      expect(target.attributes('style')).toContain('top: 90px')
+    })
+
+    it('and is still the size of the image', () => {
+      seed()
+      moved({ dx: 60, dy: 40 })
+      const target = mountIt().find('[data-image-target="0"]')
+      expect(target.attributes('style')).toContain('width: 200px')
+      expect(target.attributes('style')).toContain('height: 100px')
+    })
+
+    it('the move scales with the zoom like everything else', () => {
+      seed()
+      moved({ dx: 60, dy: 40 })
+      const target = mount(ImageEditor, { props: { page, zoom: 2, index: INDEX } })
+        .find('[data-image-target="0"]')
+      expect(target.attributes('style')).toContain('left: 220px')
+    })
+
+    it('clicking it selects the image it has become, not a second copy', async () => {
+      const edits = seed()
+      moved({ dx: 60, dy: 40 })
+      await click(mountIt(), 0)
+      expect(patches(edits)).toHaveLength(1)
+      expect(edits.selection).toEqual(['ip1'])
+    })
+
+    /** An untouched image has nowhere else to be. */
+    it('leaves an image that has not moved where it is', () => {
+      seed()
+      const target = mountIt().find('[data-image-target="0"]')
+      expect(target.attributes('style')).toContain('left: 50px')
+      expect(target.attributes('style')).toContain('top: 50px')
+    })
+  })
+
   it('scales the targets with the zoom', () => {
     seed()
     const first = mount(ImageEditor, { props: { page, zoom: 2, index: INDEX } })
