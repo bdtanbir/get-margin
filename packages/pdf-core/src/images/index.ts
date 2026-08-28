@@ -68,7 +68,22 @@ export function placementHash(
  * rotates sends the corner that was the minimum to the maximum, and
  * reading only (0,0) and (1,1) then produces a box with negative width.
  */
-function unitSquareBox(ctm: number[]): [number, number, number, number] {
+/** A box in page space: [x0, y0, x1, y1]. */
+type Box = [number, number, number, number]
+
+/** No clip in force. Intersecting with it changes nothing. */
+const UNCLIPPED: Box = [-Infinity, -Infinity, Infinity, Infinity]
+
+function intersect(a: Box, b: Box): Box {
+  return [
+    Math.max(a[0], b[0]), Math.max(a[1], b[1]),
+    Math.min(a[2], b[2]), Math.min(a[3], b[3]),
+  ]
+}
+
+const isEmpty = (b: Box): boolean => b[2] <= b[0] || b[3] <= b[1]
+
+function unitSquareBox(ctm: number[]): Box {
   const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0] = ctm
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
   for (const [u, v] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
@@ -99,17 +114,41 @@ function unitSquareBox(ctm: number[]): [number, number, number, number] {
  * not page content: it moves with the annotation, and covering the page
  * beneath it would leave it exactly where it was.
  *
- * `clipImageMask` is deliberately NOT counted. It is the stencil half of
- * the `clipImageMask` + `fillImage` pair that draws a transparent image --
- * counting it would report the e-ticket's logo twice, once for its own
- * mask. `fillImageMask` IS counted: a stencil filled with a colour is a
- * visible image in its own right, not the setup for one.
+ * `clipImageMask` is deliberately NOT counted as an image. It is the
+ * stencil half of the `clipImageMask` + `fillImage` pair that draws a
+ * transparent image -- counting it would report the e-ticket's logo twice,
+ * once for its own mask. It DOES push a clip, like every other clip
+ * operator. `fillImageMask` IS counted: a stencil filled with a colour is
+ * a visible image in its own right, not the setup for one.
+ *
+ * THE CLIP IN FORCE IS PART OF THE ANSWER -- see `clips` below.
  */
 export function pageImages(page: mupdf.PDFPage): ImagePlacement[] {
   const found: ImagePlacement[] = []
 
+  /**
+   * The clip stack, each entry already intersected with the one below it,
+   * so the top is always the region currently visible.
+   *
+   * WITHOUT THIS the walk reports where an image WOULD land rather than
+   * what actually shows. Page 2 of a real US-Bangla e-ticket draws its
+   * icon grid through a clip: the matrix describes a 360.8x119.5pt box and
+   * the clip trims it to 258.7x106.7pt, so the untrimmed box ran 15pt off
+   * the right edge of the page. On screen that put the selection target
+   * over the wrong content; on export it would have made the cover wipe
+   * out a 50pt strip of the margin either side.
+   */
+  const clips: Box[] = [UNCLIPPED]
+  const clip = (): Box => clips[clips.length - 1]!
+  const pushClip = (box: Box): void => { clips.push(intersect(clip(), box)) }
+  const popClip = (): void => { if (clips.length > 1) clips.pop() }
+
   const record = (image: mupdf.Image, ctm: number[]): void => {
-    const bbox = unitSquareBox(ctm)
+    const bbox = intersect(unitSquareBox(ctm), clip())
+    // Clipped away entirely: it is not on the page, so it is not offered.
+    // The writer re-walks with this same function, so both ends agree
+    // about what the indices mean.
+    if (isEmpty(bbox)) return
     found.push({
       index: found.length,
       bbox,
@@ -120,6 +159,26 @@ export function pageImages(page: mupdf.PDFPage): ImagePlacement[] {
   }
 
   const device = new mupdf.Device({
+    clipPath: (path: mupdf.Path, _evenOdd: boolean, ctm: number[]) => {
+      pushClip(path.getBounds(null as never, ctm as never) as Box)
+    },
+    clipStrokePath: (path: mupdf.Path, stroke: mupdf.StrokeState, ctm: number[]) => {
+      pushClip(path.getBounds(stroke, ctm as never) as Box)
+    },
+    /**
+     * Text and stencil clips still have to PUSH, even where the bounds are
+     * not worth computing, or the `popClip` that closes them would pop
+     * somebody else's clip and widen it.
+     *
+     * A text clip narrows nothing here: glyph outlines are not a rectangle,
+     * and the tightest honest rectangle around them is the one already in
+     * force.
+     */
+    clipText: () => { pushClip(clip()) },
+    clipImageMask: (_image: mupdf.Image, ctm: number[]) => {
+      pushClip(unitSquareBox(ctm))
+    },
+    popClip: () => { popClip() },
     fillImage: (image: mupdf.Image, ctm: number[]) => record(image, ctm),
     fillImageMask: (image: mupdf.Image, ctm: number[]) => record(image, ctm),
   } as never)

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import * as mupdf from 'mupdf'
 import { PDFDocument, PDFName, PDFOperator, PDFNumber } from 'pdf-lib'
-import { pageImages } from '../../src/images/index.js'
+import { pageImages, placementHash } from '../../src/images/index.js'
 
 const open = (b: Uint8Array) =>
   mupdf.PDFDocument.openDocument(b, 'application/pdf') as mupdf.PDFDocument
@@ -61,6 +61,35 @@ async function shadingOnly(): Promise<Uint8Array> {
     PDFOperator.of('re' as never, [36, 400, 540, 300].map((n) => PDFNumber.of(n)) as never),
     PDFOperator.of('W' as never), PDFOperator.of('n' as never),
     PDFOperator.of('sh' as never, [PDFName.of('Sh0') as never]),
+    PDFOperator.of('Q' as never),
+  )
+  return doc.save()
+}
+
+/**
+ * An image drawn through a CLIP that shows only part of it.
+ *
+ * Not contrived: page 2 of a real US-Bangla e-ticket draws its
+ * dangerous-goods icon grid exactly this way. The placement matrix
+ * describes a 360.8x119.5pt box, an active clip trims it to
+ * 258.7x106.7pt, and the untrimmed box runs 15pt off the right edge of
+ * the page.
+ *
+ * The image is placed at 100,300..300,500 and clipped to 100,300..200,400,
+ * so only its bottom-left quarter is visible.
+ */
+async function clippedImage(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([612, 792])
+  const img = await doc.embedJpg(jpeg(400, 200))
+  const name = page.node.newXObject('Image', img.ref)
+  const nums = (...n: number[]) => n.map((v) => PDFNumber.of(v)) as never
+  page.pushOperators(
+    PDFOperator.of('q' as never),
+    PDFOperator.of('re' as never, nums(100, 300, 100, 100)),
+    PDFOperator.of('W' as never), PDFOperator.of('n' as never),
+    PDFOperator.of('cm' as never, nums(200, 0, 0, 200, 100, 300)),
+    PDFOperator.of('Do' as never, [name] as never),
     PDFOperator.of('Q' as never),
   )
   return doc.save()
@@ -134,6 +163,44 @@ describe('pageImages', () => {
     expect(images).toHaveLength(2)
     images.forEach((img, i) => {
       img.bbox.forEach((v, k) => expect(v).toBeCloseTo(blocks[i]![k]!, 0))
+    })
+  })
+
+  /**
+   * THE CLIP IS PART OF THE PLACEMENT.
+   *
+   * An image's matrix says where it would land; a clip in force says how
+   * much of that actually shows. Reading the matrix alone gives a box
+   * bigger than the image on screen -- which draws a selection target over
+   * content the user cannot see is included, and makes the cover that
+   * removes it wipe out whatever sits in the margin around it.
+   */
+  describe('clipped images', () => {
+    it('reports the VISIBLE box, not the placement matrix', async () => {
+      const [image] = withPage(await clippedImage(), pageImages)
+      // Placed at 100,300..300,500 bottom-up, clipped to 100,300..200,400.
+      // Top-down on a 792pt page that is 100,392..200,492.
+      const [x0, y0, x1, y1] = image!.bbox
+      expect(x0).toBeCloseTo(100, 0)
+      expect(y0).toBeCloseTo(392, 0)
+      expect(x1).toBeCloseTo(200, 0)
+      expect(y1).toBeCloseTo(492, 0)
+    })
+
+    it('agrees with structured text about a clipped image', async () => {
+      const bytes = await clippedImage()
+      const [images, blocks] = withPage(bytes, (p) => [pageImages(p), structTextBoxes(p)] as const)
+      expect(blocks).toHaveLength(1)
+      images[0]!.bbox.forEach((v, k) => expect(v).toBeCloseTo(blocks[0]![k]!, 0))
+    })
+
+    it('still finds the image at all', async () => {
+      expect(withPage(await clippedImage(), pageImages)).toHaveLength(1)
+    })
+
+    it('hashes the visible box, so the guard follows what the user saw', async () => {
+      const image = withPage(await clippedImage(), pageImages)[0]!
+      expect(image.hash).toBe(placementHash(image.width, image.height, image.bbox))
     })
   })
 
