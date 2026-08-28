@@ -31,10 +31,13 @@ function carriesACopy(o: EditObject): boolean {
  * area, brought back later, arrives already displaced by a drag with
  * nothing on screen to explain it.
  *
- * NOTE the deliberate difference from the layers list, which deletes a row
- * outright. There the user is looking at a list of EDITS and the row is
- * the edit; here they are looking at the page and the selection is the
- * thing on it. Same word, two honest referents.
+ * EVERY delete goes through here -- the selection toolbar's trash, the
+ * Delete key, and the layers panel's row button. The panel briefly did
+ * not, on the reasoning that a row in a list of edits IS the edit; but
+ * that made one word mean two things depending on where it was pressed,
+ * and the meaning it had there was the one that looks on the page like
+ * nothing happened. A row renames itself between the two presses
+ * ("Image", then "Hidden image") so the second is not a mystery.
  */
 export function deleteOpFor(o: EditObject): Op {
   if (!carriesACopy(o)) return { type: 'deleteObject', id: o.id }

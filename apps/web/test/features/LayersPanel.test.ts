@@ -165,3 +165,62 @@ describe('LayersPanel', () => {
     expect(vp.scrollRequest).toBeNull()
   })
 })
+
+/**
+ * The row's trash follows the SAME rule as the toolbar's and the Delete
+ * key: it removes what the object is carrying.
+ *
+ * The panel used to delete a patch outright, which took the cover with it
+ * and put the document's own picture straight back. That made one word
+ * mean two things depending on where it was pressed -- and the one it
+ * meant here was the one that looked, on the page, like nothing had
+ * happened.
+ */
+describe('deleting one of the document’s own images from its row', () => {
+  const imagePatch = (over: Record<string, unknown> = {}): EditObject => ({
+    ...base, id: 'ip-1', pageId: 'p1', kind: 'imagePatch', z: 7,
+    rect: { x: 50, y: 50, w: 200, h: 100 },
+    imageIndex: 0, originalHash: 'aaaa1111',
+    background: [1, 1, 1], backgroundConfidence: 1,
+    data: new Uint8Array([1, 2, 3]), mime: 'image/png',
+    ...over,
+  } as unknown as EditObject)
+
+  const panelWith = (o: EditObject) => {
+    const edits = useEditsStore()
+    edits.applyOp({ type: 'addObject', object: o }, 'add')
+    return { edits, w: mount(LayersPanel) }
+  }
+
+  it('takes the picture away and keeps the cover', async () => {
+    const { edits, w } = panelWith(imagePatch())
+    await w.find('[data-layer-delete="ip-1"]').trigger('click')
+    const after = edits.doc.objects['ip-1'] as { data?: Uint8Array } | undefined
+    expect(after).toBeDefined()
+    expect(after!.data).toBeUndefined()
+  })
+
+  it('removes the row on the second press, putting the page back', async () => {
+    const { edits, w } = panelWith(imagePatch())
+    await w.find('[data-layer-delete="ip-1"]').trigger('click')
+    await w.find('[data-layer-delete="ip-1"]').trigger('click')
+    expect(edits.doc.objects['ip-1']).toBeUndefined()
+  })
+
+  /**
+   * The row has to SAY which state it is in, or the second press looks
+   * like the first one failed.
+   */
+  it('renames the row once the picture is gone', async () => {
+    const { w } = panelWith(imagePatch())
+    expect(w.text()).toContain('Image')
+    await w.find('[data-layer-delete="ip-1"]').trigger('click')
+    expect(w.text()).toContain('Hidden image')
+  })
+
+  it('still deletes an ordinary object outright', async () => {
+    const { edits, w } = panelWith(text)
+    await w.find('[data-layer-delete="text-1"]').trigger('click')
+    expect(edits.doc.objects['text-1']).toBeUndefined()
+  })
+})

@@ -7,6 +7,7 @@ import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
 import { objectViewRect } from '@/features/overlay/objectViewRect'
 import { layerLabel, layerIcon } from './layerLabel'
+import { deleteOpFor } from '@/features/patch/patchDelete'
 
 const doc = useDocumentStore()
 const edits = useEditsStore()
@@ -58,9 +59,17 @@ function go(object: EditObject, pageIndex: number): void {
  * Deleting is not selecting. Without stopping the click here it would also
  * run the row's own handler, dragging the viewport to an object that is
  * about to stop existing.
+ *
+ * The SAME rule as the toolbar's trash and the Delete key: remove what the
+ * object is carrying. This panel used to delete a patch outright, which
+ * took the cover with it and put the document's own picture straight back
+ * -- so one word meant two things depending on where it was pressed, and
+ * the meaning it had here was the one that looked, on the page, like
+ * nothing had happened. The row renames itself between the two presses
+ * ("Image" then "Hidden image") so the second one is not a mystery.
  */
-function remove(id: string): void {
-  edits.applyOp({ type: 'deleteObject', id }, 'Delete')
+function remove(object: EditObject): void {
+  edits.applyOp(deleteOpFor(object), 'Delete')
 }
 </script>
 
@@ -104,7 +113,7 @@ function remove(id: string): void {
           type="button"
           :aria-label="`Delete ${layerLabel(o)}`"
           class="shrink-0 rounded-control p-1 text-text-subtle opacity-0 hover:text-text focus-visible:opacity-100 group-hover:opacity-100"
-          @click.stop="remove(o.id)"
+          @click.stop="remove(o)"
         >
           <Trash2 :size="14" :stroke-width="1.5" />
         </button>
