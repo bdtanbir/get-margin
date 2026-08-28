@@ -152,6 +152,102 @@ describe('imagePatch writer', () => {
   })
 
   /**
+   * A moved image is the cover PLUS a copy drawn somewhere else. Both
+   * halves matter: without the cover it is a duplicate, without the copy
+   * it is a deletion.
+   */
+  describe('moving', () => {
+    /** A solid green block, standing in for the crop of a real image. */
+    const green = (): Uint8Array => {
+      const px = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 40, 20], false)
+      const buf = px.getPixels()
+      for (let i = 0; i < buf.length; i += 3) {
+        buf[i] = 20; buf[i + 1] = 200; buf[i + 2] = 20
+      }
+      const out = px.asPNG()
+      px.destroy()
+      return out
+    }
+
+    const isGreen = (p: { r: number; g: number; b: number }) => p.g > 150 && p.r < 120
+
+    it('leaves the original position covered', () => {
+      const out = write([patch({ data: green(), mime: 'image/png', offset: { dx: 0, dy: -200 } })])
+      expect(isWhite(pixel(out, ...RED_CENTRE))).toBe(true)
+    })
+
+    it('draws the copy where it was dragged to', () => {
+      // 200pt UP the page in page space is dy = -200; the red image's
+      // centre is at y 642, so the copy lands around y 442.
+      const out = write([patch({ data: green(), mime: 'image/png', offset: { dx: 0, dy: -200 } })])
+      expect(isGreen(pixel(out, 150, 442))).toBe(true)
+    })
+
+    /**
+     * THE SIGN. Page space is top-down and a content stream is bottom-up,
+     * so the writer subtracts what the overlay adds. Getting this backwards
+     * moves the image exactly as far the wrong way, which reads as
+     * deliberate rather than as a bug -- so it is pinned here, as the text
+     * patch's is.
+     */
+    it('a positive dy moves the copy DOWN the page', () => {
+      const out = write([patch({ data: green(), mime: 'image/png', offset: { dx: 0, dy: 100 } })])
+      expect(isGreen(pixel(out, 150, 742))).toBe(true)
+      expect(isGreen(pixel(out, 150, 542))).toBe(false)
+    })
+
+    it('a positive dx moves the copy RIGHT', () => {
+      const out = write([patch({ data: green(), mime: 'image/png', offset: { dx: 150, dy: 0 } })])
+      expect(isGreen(pixel(out, 300, 642))).toBe(true)
+      expect(isGreen(pixel(out, 20, 642))).toBe(false)
+    })
+
+    it('draws the copy at the original size', () => {
+      const out = write([patch({ data: green(), mime: 'image/png', offset: { dx: 0, dy: -200 } })])
+      // The image is 200x100pt; the copy's box runs x 50..250, y 392..492.
+      expect(isGreen(pixel(out, 55, 397))).toBe(true)
+      expect(isGreen(pixel(out, 245, 487))).toBe(true)
+      expect(isGreen(pixel(out, 260, 442))).toBe(false)
+    })
+
+    it('with no offset the copy sits exactly over the cover', () => {
+      const out = write([patch({ data: green(), mime: 'image/png' })])
+      expect(isGreen(pixel(out, ...RED_CENTRE))).toBe(true)
+    })
+
+    it('still refuses when the page has changed under it', () => {
+      expect(() => write([patch({
+        data: green(), mime: 'image/png', offset: { dx: 0, dy: -200 }, originalHash: 'deadbeef',
+      })])).toThrow(/has changed since it was edited/)
+    })
+
+    /**
+     * Two moved images on one page each land in their own place.
+     *
+     * The CTM that places an image is cumulative, so this is the shape of
+     * edit that a leaked transform would break -- though the isolation is
+     * `appendContent`'s, which brackets every fragment it appends, not
+     * this writer's own.
+     */
+    it('places two moved images on one page independently', () => {
+      const second = placements(source)[1]!
+      const out = write([
+        patch({ data: green(), mime: 'image/png', offset: { dx: 0, dy: -200 } }),
+        patch({
+          id: 'ip2', imageIndex: 1, originalHash: second.hash, z: 2,
+          data: green(), mime: 'image/png', offset: { dx: 0, dy: 200 },
+          rect: {
+            x: second.bbox[0], y: second.bbox[1],
+            w: second.bbox[2] - second.bbox[0], h: second.bbox[3] - second.bbox[1],
+          },
+        }),
+      ])
+      // The second copy belongs 200pt below the blue image's centre at 142.
+      expect(isGreen(pixel(out, 150, 342))).toBe(true)
+    })
+  })
+
+  /**
    * A SPECIFICATION, not an oversight -- the same one whiteout.test.ts
    * pins. This covers; it does not remove. Redaction is a different
    * primitive with a different guarantee, and a "delete" that quietly left

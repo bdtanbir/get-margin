@@ -88,11 +88,12 @@ export const writeImagePatch: ObjectWriter = (ctx, object) => {
 
     // An image XObject's own space is the unit square with its origin at
     // the bottom-left, so the CTM carries both position and size.
+    // No q/Q around this: `appendContent` already brackets every fragment
+    // it appends, and the `cm` is the last thing this one emits. The same
+    // reason `writeImage` does not bracket its own placement either.
     ops.push(
-      'q',
       `${num(w)} 0 0 ${num(h)} ${num(x + dx)} ${num(y - dy)} cm`,
       `/${name} Do`,
-      'Q',
     )
   }
 

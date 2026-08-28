@@ -50,5 +50,5 @@ export {
 // Task 36. Per-page text geometry for selection, in MuPDF page space.
 export { buildQuadIndex } from './text/index.js'
 export type { Quad, CharQuad, LineRun, PageQuadIndex } from './text/index.js'
-export { pageImages, placementHash, buildImageIndex } from './images/index.js'
+export { pageImages, placementHash, buildImageIndex, cropImage } from './images/index.js'
 export type { ImagePlacement, PageImageIndex } from './images/index.js'

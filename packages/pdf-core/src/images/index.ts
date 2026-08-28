@@ -156,3 +156,69 @@ export function buildImageIndex(doc: PdfDocument, pageIndex: number): PageImageI
     page.destroy()
   }
 }
+
+/**
+ * One of the page's images, as pixels, cropped to where it sits.
+ *
+ * WHY A RASTER AND NOT THE ORIGINAL STREAM. Probing a real e-ticket found
+ * its images nested inside form XObjects rather than the page's own
+ * resources, drawn through a `clipImageMask` stencil that carries the
+ * transparency the image itself does not, one of them in an Indexed CMYK
+ * space that `compress.ts` documents as failing to round-trip through a
+ * pixmap. Re-referencing the original XObject at a new position would have
+ * to solve the nesting, rebuild the stencil, and survive the colour space
+ * -- and getting the stencil wrong paints a black box behind the logo.
+ *
+ * Asking the renderer for the pixels a READER would see solves all three
+ * at once, because it is the same path that draws the page on screen.
+ *
+ * The cost is resolution: a crop is only as fine as `scale`. The caller
+ * picks it from the ratio between the image's source pixels and the points
+ * it occupies -- the ticket's logo is 1200px in 207.8pt, so a scale of 6
+ * loses nothing visible.
+ *
+ * ONE WALK for the pixels and the hash. Two could disagree, and a patch
+ * whose bytes are one image and whose hash is another refuses at export
+ * for no reason the user can see.
+ */
+export function cropImage(
+  doc: PdfDocument,
+  pageIndex: number,
+  imageIndex: number,
+  scale: number,
+): { data: Uint8Array; hash: string; bbox: [number, number, number, number] } | undefined {
+  doc.pageGeometry(pageIndex)
+  const page = doc._raw().loadPage(pageIndex) as mupdf.PDFPage
+  try {
+    const place = pageImages(page)[imageIndex]
+    if (!place) return undefined
+
+    const [x0, y0, x1, y1] = place.bbox
+    // The pixmap's own box is in DEVICE space -- page space times the
+    // scale -- so the render lands in it with no further translation, and
+    // only the image's own area is ever rasterised.
+    const box: [number, number, number, number] = [
+      Math.floor(x0 * scale), Math.floor(y0 * scale),
+      Math.ceil(x1 * scale), Math.ceil(y1 * scale),
+    ]
+    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, box, false)
+    let device: mupdf.DrawDevice | undefined
+    try {
+      // White, so anything the page leaves untouched inside the box reads
+      // as paper rather than as the uninitialised memory it would be.
+      pixmap.clear(255)
+      device = new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap)
+      // Page CONTENTS, matching pageImages: the index is built from the
+      // same run, so an annotation drawn over the image is not baked into
+      // a crop of it.
+      page.runPageContents(device, mupdf.Matrix.scale(scale, scale))
+      device.close()
+      return { data: pixmap.asPNG(), hash: place.hash, bbox: place.bbox }
+    } finally {
+      device?.destroy()
+      pixmap.destroy()
+    }
+  } finally {
+    page.destroy()
+  }
+}

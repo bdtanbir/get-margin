@@ -1,11 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import ImageEditor from '@/features/patch/ImageEditor.vue'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
 import type { ImagePatchObject, PageImageIndex } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
+
+const imageCrop = vi.fn<
+  (...args: unknown[]) => Promise<{ data: Uint8Array; hash: string } | undefined>
+>()
+vi.mock('@/workers/pdfClient', () => ({
+  getPdfClient: () => ({ imageCrop }),
+  closeSharedDocument: vi.fn(),
+}))
 
 const page: PageState = {
   id: 'p1', sourceId: 'src-0', sourceIndex: 0,
@@ -33,7 +41,44 @@ const mountIt = (index: PageImageIndex | undefined = INDEX) =>
 const patches = (edits: ReturnType<typeof useEditsStore>): ImagePatchObject[] =>
   Object.values(edits.doc.objects).filter((o): o is ImagePatchObject => o.kind === 'imagePatch')
 
-beforeEach(() => { setActivePinia(createPinia()) })
+function movePointer(x: number, y: number): void {
+  const e = new Event('pointermove', { bubbles: true }) as PointerEvent
+  Object.assign(e, { clientX: x, clientY: y, pointerId: 1 })
+  window.dispatchEvent(e)
+}
+
+function releasePointer(): void {
+  const e = new Event('pointerup', { bubbles: true }) as PointerEvent
+  Object.assign(e, { clientX: 0, clientY: 0, pointerId: 1 })
+  window.dispatchEvent(e)
+}
+
+/** Press and release without travelling: the gesture that removes. */
+async function click(editor: ReturnType<typeof mountIt>, index: number): Promise<void> {
+  await editor.find(`[data-image-target="${index}"]`)
+    .trigger('pointerdown', { button: 0, clientX: 0, clientY: 0, pointerId: 1 })
+  releasePointer()
+  await flushPromises()
+}
+
+/** Press, travel to (x, y), release: the gesture that moves. */
+async function drag(
+  editor: ReturnType<typeof mountIt>, index: number, x: number, y: number,
+): Promise<void> {
+  await editor.find(`[data-image-target="${index}"]`)
+    .trigger('pointerdown', { button: 0, clientX: 0, clientY: 0, pointerId: 1 })
+  movePointer(x, y)
+  await flushPromises()
+  movePointer(x, y)
+  releasePointer()
+  await flushPromises()
+}
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+  imageCrop.mockReset()
+  imageCrop.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), hash: 'aaaa1111' })
+})
 
 describe('ImageEditor', () => {
   it('offers one target per image the page draws', () => {
@@ -65,7 +110,7 @@ describe('ImageEditor', () => {
 
   it('covers the image that was clicked', async () => {
     const edits = seed()
-    await mountIt().find('[data-image-target="0"]').trigger('click')
+    await click(mountIt(), 0)
     expect(patches(edits)).toHaveLength(1)
     expect(patches(edits)[0]!.imageIndex).toBe(0)
   })
@@ -77,30 +122,30 @@ describe('ImageEditor', () => {
    */
   it('records the placement hash the writer will check against', async () => {
     const edits = seed()
-    await mountIt().find('[data-image-target="1"]').trigger('click')
+    await click(mountIt(), 1)
     expect(patches(edits)[0]!.originalHash).toBe('bbbb2222')
   })
 
   it('stores the image box as the patch rect, in page space', async () => {
     const edits = seed()
-    await mountIt().find('[data-image-target="0"]').trigger('click')
+    await click(mountIt(), 0)
     expect(patches(edits)[0]!.rect).toEqual({ x: 50, y: 50, w: 200, h: 100 })
   })
 
   it('is a toggle: clicking a covered image brings it back', async () => {
     const edits = seed()
     const editor = mountIt()
-    await editor.find('[data-image-target="0"]').trigger('click')
+    await click(editor, 0)
     expect(patches(edits)).toHaveLength(1)
-    await editor.find('[data-image-target="0"]').trigger('click')
+    await click(editor, 0)
     expect(patches(edits)).toHaveLength(0)
   })
 
   it('covers one image without touching the other', async () => {
     const edits = seed()
     const editor = mountIt()
-    await editor.find('[data-image-target="0"]').trigger('click')
-    await editor.find('[data-image-target="1"]').trigger('click')
+    await click(editor, 0)
+    await click(editor, 1)
     expect(patches(edits).map((p) => p.imageIndex).sort()).toEqual([0, 1])
   })
 
@@ -110,7 +155,7 @@ describe('ImageEditor', () => {
     const target = editor.find('[data-image-target="0"]')
     expect(target.attributes('aria-label')).toBe('Remove image 1')
     expect(target.attributes('aria-pressed')).toBe('false')
-    await target.trigger('click')
+    await click(editor, 0)
     expect(editor.find('[data-image-target="0"]').attributes('aria-label'))
       .toBe('Bring back image 1')
     expect(editor.find('[data-image-target="0"]').attributes('aria-pressed')).toBe('true')
@@ -119,11 +164,122 @@ describe('ImageEditor', () => {
   it('each removal is one undoable step', async () => {
     const edits = seed()
     const editor = mountIt()
-    await editor.find('[data-image-target="0"]').trigger('click')
+    await click(editor, 0)
     edits.undo()
     expect(patches(edits)).toHaveLength(0)
     edits.redo()
     expect(patches(edits)).toHaveLength(1)
+  })
+
+  describe('dragging', () => {
+    it('lifts the image and gives its patch a raster of itself', async () => {
+      const edits = seed()
+      await drag(mountIt(), 0, 60, 40)
+      expect(patches(edits)).toHaveLength(1)
+      expect(patches(edits)[0]!.data).toEqual(new Uint8Array([1, 2, 3]))
+      expect(patches(edits)[0]!.mime).toBe('image/png')
+    })
+
+    it('records how far it was dragged, in points', async () => {
+      const edits = seed()
+      await drag(mountIt(), 0, 60, 40)
+      expect(patches(edits)[0]!.offset).toEqual({ dx: 60, dy: 40 })
+    })
+
+    it('converts the drag out of view pixels at the current zoom', async () => {
+      const edits = seed()
+      const editor = mount(ImageEditor, { props: { page, zoom: 2, index: INDEX } })
+      await drag(editor, 0, 60, 40)
+      // 60 view pixels at 2x is 30 points.
+      expect(patches(edits)[0]!.offset).toEqual({ dx: 30, dy: 20 })
+    })
+
+    it('asks for the crop at the image\'s own pixel density', async () => {
+      seed()
+      // Image 0 is 800px wide in 200pt: 4x oversampled.
+      await drag(mountIt(), 0, 60, 40)
+      expect(imageCrop).toHaveBeenCalledWith('src-0', 0, 0, 4)
+    })
+
+    it('clamps the crop scale for an image with little detail to keep', async () => {
+      seed()
+      // Image 1 is 200px in 80pt: 2.5x, ceilinged to 3.
+      await drag(mountIt(), 1, 60, 40)
+      expect(imageCrop).toHaveBeenCalledWith('src-0', 0, 1, 3)
+    })
+
+    it('keeps the guard hash the writer will check against', async () => {
+      const edits = seed()
+      await drag(mountIt(), 0, 60, 40)
+      expect(patches(edits)[0]!.originalHash).toBe('aaaa1111')
+    })
+
+    it('leaves the cover where the image was', async () => {
+      const edits = seed()
+      await drag(mountIt(), 0, 60, 40)
+      // The rect is the ORIGINAL box; only the offset moves. The document's
+      // own image is still under the cover, so moving it would uncover it.
+      expect(patches(edits)[0]!.rect).toEqual({ x: 50, y: 50, w: 200, h: 100 })
+    })
+
+    it('moves an image that had already been removed, without adding a second patch', async () => {
+      const edits = seed()
+      const editor = mountIt()
+      await click(editor, 0)
+      expect(patches(edits)[0]!.data).toBeUndefined()
+      await drag(editor, 0, 60, 40)
+      expect(patches(edits)).toHaveLength(1)
+      expect(patches(edits)[0]!.data).toEqual(new Uint8Array([1, 2, 3]))
+    })
+
+    it('accumulates a second drag onto the first', async () => {
+      const edits = seed()
+      const editor = mountIt()
+      await drag(editor, 0, 60, 40)
+      await drag(editor, 0, 10, 5)
+      expect(patches(edits)[0]!.offset).toEqual({ dx: 70, dy: 45 })
+    })
+
+    /**
+     * Below the threshold the gesture is a click, and a click removes. A
+     * one-pixel wobble on a trackpad must not leave the user with an image
+     * they did not mean to lift.
+     */
+    it('treats a press that barely moves as a click', async () => {
+      const edits = seed()
+      await drag(mountIt(), 0, 2, 1)
+      expect(patches(edits)).toHaveLength(1)
+      expect(patches(edits)[0]!.data).toBeUndefined()
+      expect(patches(edits)[0]!.offset).toBeUndefined()
+      expect(imageCrop).not.toHaveBeenCalled()
+    })
+
+    /**
+     * A crop that cannot be produced must move NOTHING. Covering the image
+     * and drawing no copy would read as a delete the user did not ask for.
+     */
+    it('does nothing when the crop cannot be produced', async () => {
+      const edits = seed()
+      imageCrop.mockResolvedValue(undefined)
+      await drag(mountIt(), 0, 60, 40)
+      expect(patches(edits)).toHaveLength(0)
+    })
+
+    it('ignores a press from a non-primary button', async () => {
+      const edits = seed()
+      await mountIt().find('[data-image-target="0"]')
+        .trigger('pointerdown', { button: 2, clientX: 0, clientY: 0, pointerId: 1 })
+      releasePointer()
+      await flushPromises()
+      expect(patches(edits)).toHaveLength(0)
+    })
+
+    it('a move is one undoable step back to where it started', async () => {
+      const edits = seed()
+      await drag(mountIt(), 0, 60, 40)
+      while (edits.canUndo) edits.undo()
+      expect(patches(edits)).toHaveLength(0)
+    })
   })
 
   /**
@@ -133,7 +289,7 @@ describe('ImageEditor', () => {
    */
   it('falls back to white when there is no rendered page to sample', async () => {
     const edits = seed()
-    await mountIt().find('[data-image-target="0"]').trigger('click')
+    await click(mountIt(), 0)
     expect(patches(edits)[0]!.background).toEqual([1, 1, 1])
     expect(patches(edits)[0]!.backgroundConfidence).toBe(0)
   })
@@ -149,7 +305,7 @@ describe('ImageEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor')
       .mockReturnValue({ width, height, rgba, scale: 1 } as never)
 
-    await mountIt().find('[data-image-target="0"]').trigger('click')
+    await click(mountIt(), 0)
     const [r, g, b] = patches(edits)[0]!.background
     expect(r).toBeCloseTo(128 / 255, 2)
     expect(g).toBeCloseTo(128 / 255, 2)
@@ -178,7 +334,7 @@ describe('ImageEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor')
       .mockReturnValue({ width, height, rgba, scale: 1 } as never)
 
-    await mountIt().find('[data-image-target="0"]').trigger('click')
+    await click(mountIt(), 0)
     expect(patches(edits)[0]!.background).toEqual([1, 1, 1])
     expect(patches(edits)[0]!.backgroundConfidence).toBeGreaterThan(0.9)
   })

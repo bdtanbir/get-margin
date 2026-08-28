@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { nanoid } from 'nanoid'
-import type { EditObject, ImagePatchObject, PageImageIndex } from '@margin/pdf-core'
+import { viewDeltaToPage } from '@margin/transform'
+import type {
+  EditObject, ImagePatchObject, ImagePlacement, PageImageIndex,
+} from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
+import { getPdfClient } from '@/workers/pdfClient'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
 import { plainColor } from './linePatch'
 
@@ -17,10 +21,12 @@ import { plainColor } from './linePatch'
  * because a permanent layer of hit targets over every page would swallow
  * every other interaction.
  *
- * Clicking covers the image; clicking a covered one uncovers it again. A
- * toggle rather than a one-way door because the cover is cosmetic and
- * reversible, and because a tool whose only feedback is "the thing you
- * clicked is gone" is a tool people are afraid to try.
+ * CLICK REMOVES, DRAG MOVES. One gesture each, on the same target, told
+ * apart by whether the pointer travelled -- which is how every direct
+ * manipulation surface people already use behaves. Clicking a removed
+ * image brings it back, because the cover is cosmetic and reversible and a
+ * tool whose only feedback is "the thing you clicked is gone" is a tool
+ * people are afraid to try.
  */
 const props = defineProps<{
   page: PageState
@@ -41,7 +47,39 @@ const vp = useViewportStore()
  */
 const SAMPLE_BAND_PT = 6
 
-/** The patch covering an image, if the user has already removed it. */
+/**
+ * How far the pointer must travel before a press becomes a drag, in CSS
+ * pixels. Below it the gesture is a click, and a click removes.
+ *
+ * Generous rather than tight: a press that wobbles by a pixel on a laptop
+ * trackpad is a click, and reading it as a one-pixel move would leave the
+ * user with an image they did not mean to lift and cannot see they have.
+ */
+const DRAG_THRESHOLD_PX = 4
+
+/**
+ * The resolution a moved image is rasterised at, in multiples of its size
+ * on the page.
+ *
+ * Taken from the image's OWN pixel density -- a 1200px logo occupying
+ * 207.8pt is oversampled about 5.8x, and rendering the crop at that ratio
+ * loses nothing visible. Clamped at both ends: below 2 a crop of an
+ * already-coarse image would be visibly softer than the original, and
+ * above 8 a full-page graphic would produce a raster larger than the
+ * document it is going into.
+ */
+const MIN_CROP_SCALE = 2
+const MAX_CROP_SCALE = 8
+
+function cropScale(place: ImagePlacement): number {
+  const w = place.bbox[2] - place.bbox[0]
+  const h = place.bbox[3] - place.bbox[1]
+  if (w <= 0 || h <= 0) return MIN_CROP_SCALE
+  const density = Math.max(place.width / w, place.height / h)
+  return Math.min(MAX_CROP_SCALE, Math.max(MIN_CROP_SCALE, Math.ceil(density)))
+}
+
+/** The patch covering an image, if the user has already touched it. */
 function patchOn(imageIndex: number): ImagePatchObject | undefined {
   for (const o of Object.values(edits.doc.objects)) {
     if (o.kind === 'imagePatch' && o.pageId === props.page.id && o.imageIndex === imageIndex) {
@@ -76,22 +114,14 @@ function risky(bbox: readonly [number, number, number, number]): boolean {
   return backgroundFor(bbox).confidence < CONFIDENT_ENOUGH
 }
 
-function toggle(imageIndex: number): void {
-  const existing = patchOn(imageIndex)
-  if (existing) {
-    edits.applyOp({ type: 'deleteObject', id: existing.id }, 'Restore image')
-    return
-  }
-
-  const place = placements.value[imageIndex]
-  if (!place) return
+/** A patch over one placement, with whatever the caller needs added. */
+function buildPatch(place: ImagePlacement, extra: Partial<ImagePatchObject> = {}): ImagePatchObject {
   const background = backgroundFor(place.bbox)
-
-  const object: ImagePatchObject = {
+  return {
     id: nanoid(10),
     pageId: props.page.id,
     kind: 'imagePatch',
-    imageIndex,
+    imageIndex: place.index,
     // Taken from the placement as it is RIGHT NOW, which is what makes the
     // writer's guard meaningful rather than circular: it re-walks the page
     // at export and refuses if the image there is no longer this one.
@@ -108,8 +138,125 @@ function toggle(imageIndex: number): void {
     z: edits.nextZ(),
     locked: false,
     opacity: 1,
+    ...extra,
   }
-  edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Remove image')
+}
+
+function toggle(place: ImagePlacement): void {
+  const existing = patchOn(place.index)
+  if (existing) {
+    edits.applyOp({ type: 'deleteObject', id: existing.id }, 'Restore image')
+    return
+  }
+  edits.applyOp({ type: 'addObject', object: buildPatch(place) as EditObject }, 'Remove image')
+}
+
+/**
+ * Lift an image so it can be dragged: give its patch a raster of itself.
+ *
+ * Returns the id to accumulate the drag into, or undefined if the crop
+ * could not be produced -- in which case the gesture does nothing rather
+ * than moving a cover and leaving the image behind it visible.
+ */
+async function lift(place: ImagePlacement): Promise<string | undefined> {
+  const crop = await getPdfClient().imageCrop(
+    props.page.sourceId, props.page.sourceIndex, place.index, cropScale(place),
+  )
+  if (!crop) return undefined
+
+  const existing = patchOn(place.index)
+  if (existing) {
+    edits.applyOp(
+      { type: 'updateObject', id: existing.id, patch: { data: crop.data, mime: 'image/png' } },
+      'Move image',
+    )
+    return existing.id
+  }
+  const object = buildPatch(place, { data: crop.data, mime: 'image/png' })
+  edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Move image')
+  return object.id
+}
+
+/**
+ * Press, drag, release, on one target.
+ *
+ * The crop is fetched from the worker the moment the press becomes a drag,
+ * which is asynchronous while the pointer keeps moving -- so the latest
+ * delta is remembered and applied when the patch exists, rather than the
+ * frames before it arrives being dropped. Without that the image jumps to
+ * wherever the pointer happened to be when the round trip finished.
+ */
+function onPointerDown(place: ImagePlacement, e: PointerEvent): void {
+  // Only the primary button starts a gesture; a right-click is the
+  // browser's, not ours.
+  if (e.button !== 0) return
+
+  const startX = e.clientX
+  const startY = e.clientY
+  const from = (() => {
+    const existing = patchOn(place.index)
+    return { dx: existing?.offset?.dx ?? 0, dy: existing?.offset?.dy ?? 0 }
+  })()
+
+  let dragging = false
+  let id: string | undefined
+  let latest = { dx: 0, dy: 0 }
+
+  const target = e.currentTarget as Element | null
+  try {
+    target?.setPointerCapture?.(e.pointerId)
+  } catch {
+    // Best-effort; the window listeners below are the guarantee.
+  }
+
+  const apply = (): void => {
+    if (!id) return
+    // Page space is top-down like the screen, so no sign flips -- the only
+    // conversion is out of CSS pixels. Inverting it is the writer's job.
+    const d = viewDeltaToPage(
+      { x: latest.dx, y: latest.dy }, props.page.geometry, props.zoom,
+    )
+    edits.applyOp(
+      {
+        type: 'updateObject',
+        id,
+        patch: { offset: { dx: from.dx + d.x, dy: from.dy + d.y } },
+      },
+      'Move image',
+    )
+  }
+
+  const move = (ev: Event): void => {
+    const p = ev as PointerEvent
+    latest = { dx: p.clientX - startX, dy: p.clientY - startY }
+    if (!dragging) {
+      if (Math.hypot(latest.dx, latest.dy) < DRAG_THRESHOLD_PX) return
+      dragging = true
+      void lift(place).then((lifted) => {
+        id = lifted
+        apply()
+      })
+      return
+    }
+    apply()
+  }
+
+  const end = (): void => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', end)
+    window.removeEventListener('pointercancel', end)
+    try {
+      target?.releasePointerCapture?.(e.pointerId)
+    } catch {
+      // Already released, or never captured.
+    }
+    // A press that never travelled is a click, and a click removes.
+    if (!dragging) toggle(place)
+  }
+
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', end)
+  window.addEventListener('pointercancel', end)
 }
 </script>
 
@@ -120,12 +267,18 @@ function toggle(imageIndex: number): void {
       targets are: an image over a gradient can be covered, but the flat
       rectangle will show, and finding that out in the exported file is
       finding out too late.
+
+      `touch-none` for the same reason InkCanvas needs it: the scroller
+      declares `pan-x pan-y`, and without an override the browser is
+      entitled to read a one-finger drag that starts here as a pan and take
+      the gesture away mid-move.
     -->
     <button
       v-for="place in placements"
       :key="place.index"
       type="button"
-      class="pointer-events-auto absolute cursor-pointer border-2 border-dashed transition-colors"
+      class="pointer-events-auto absolute cursor-grab touch-none border-2 border-dashed
+             transition-colors active:cursor-grabbing"
       :class="patchOn(place.index)
         ? 'border-accent bg-accent/20'
         : risky(place.bbox)
@@ -139,15 +292,15 @@ function toggle(imageIndex: number): void {
       }"
       :data-image-target="place.index"
       :title="patchOn(place.index)
-        ? 'Bring this image back'
+        ? 'Drag to move it, or click to bring it back'
         : risky(place.bbox)
-          ? 'Remove this image — the area behind it is not a flat colour, so the cover may show'
-          : 'Remove this image'"
+          ? 'Drag to move, or click to remove — the area behind it is not a flat colour, so the cover may show'
+          : 'Drag to move it, or click to remove it'"
       :aria-label="patchOn(place.index)
         ? `Bring back image ${place.index + 1}`
         : `Remove image ${place.index + 1}`"
       :aria-pressed="patchOn(place.index) ? 'true' : 'false'"
-      @click="toggle(place.index)"
+      @pointerdown="(e) => onPointerDown(place, e)"
     />
   </div>
 </template>

@@ -1,5 +1,6 @@
 import {
   PdfDocument, renderPage, rasterisePage, rasterSize, replay, buildQuadIndex, buildImageIndex,
+  cropImage,
   listFields,
   readMetadata, recompressImages,
   findInPage, missingGlyphsFor,
@@ -335,6 +336,27 @@ export class PdfService {
     const index = buildImageIndex(doc, page)
     this.#imageCache.set(key, index)
     return index
+  }
+
+  /**
+   * One of a page's own images, as pixels, cropped to where it sits.
+   *
+   * Rasterised rather than lifted out of the file -- see `cropImage`, which
+   * carries the three measurements behind that choice. Deliberately NOT
+   * cached: a crop is asked for once, at the moment an image is first
+   * dragged, and holding a page-sized RGBA buffer per image afterwards
+   * would cost far more than re-rendering the rare second time.
+   */
+  imageCrop(
+    sourceId: SourceId | undefined,
+    page: number,
+    imageIndex: number,
+    scale: number,
+  ): { data: Uint8Array; hash: string } | undefined {
+    const doc = this.#docFor(sourceId)
+    if (!doc) throw new Error('no document open')
+    const out = cropImage(doc, page, imageIndex, scale)
+    return out ? { data: out.data, hash: out.hash } : undefined
   }
 
   /**

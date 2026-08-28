@@ -70,6 +70,70 @@ describe('SelectionChrome', () => {
   })
 
   /**
+   * A moved image drags the way an edited line does -- into `offset`, never
+   * into the rect. The cover has to stay over the document's own image, or
+   * that image reappears from underneath the copy the drag is carrying.
+   */
+  describe('dragging a moved image', () => {
+    const imagePatch = (over: Record<string, unknown> = {}): EditObject => ({
+      id: 'ip1', pageId: 'p1', kind: 'imagePatch',
+      rect: { x: 100, y: 600, w: 200, h: 100 },
+      rotation: 0, z: 3, locked: false, opacity: 1,
+      imageIndex: 0, originalHash: 'aaaa1111',
+      background: [1, 1, 1], backgroundConfidence: 1,
+      data: new Uint8Array([1, 2, 3]), mime: 'image/png',
+      ...over,
+    } as unknown as EditObject)
+
+    const selectedPatch = (over?: Record<string, unknown>) => {
+      edits.applyOp({ type: 'addObject', object: imagePatch(over) }, 'add')
+      edits.select(['ip1'])
+      return mount(SelectionChrome, { props: { page, zoom: 1 } })
+    }
+
+    it('boxes it where the image is, not at its mirror image', () => {
+      const w = selectedPatch()
+      expect(w.get('[data-selection]').attributes('style')).toContain('top: 600px')
+    })
+
+    it('accumulates the drag into the offset', async () => {
+      const w = selectedPatch()
+      await w.get('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
+      move(40, 25)
+      up()
+      expect((edits.doc.objects.ip1 as { offset?: { dx: number; dy: number } }).offset)
+        .toEqual({ dx: 40, dy: 25 })
+    })
+
+    it('leaves the rect alone, so the cover stays over the original', async () => {
+      const w = selectedPatch()
+      await w.get('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
+      move(40, 25)
+      up()
+      expect(edits.doc.objects.ip1!.rect).toEqual({ x: 100, y: 600, w: 200, h: 100 })
+    })
+
+    it('adds to an offset it already had', async () => {
+      const w = selectedPatch({ offset: { dx: 10, dy: -5 } })
+      await w.get('[data-selection]').element.dispatchEvent(pointerDown(0, 0))
+      move(40, 25)
+      up()
+      expect((edits.doc.objects.ip1 as { offset?: { dx: number; dy: number } }).offset)
+        .toEqual({ dx: 50, dy: 20 })
+    })
+
+    /**
+     * Neither handle. The copy is drawn at the size of the image it
+     * replaces, from a raster captured at that size, so resize and rotate
+     * would offer an edit that silently does nothing.
+     */
+    it('offers no resize or rotate handles', () => {
+      const w = selectedPatch()
+      expect(w.findAll('[data-handle]')).toHaveLength(0)
+    })
+  })
+
+  /**
    * Double-clicking a selected text object reopens it for editing.
    *
    * `ObjectLayer` has a `dblclick` that does this, and once the object was

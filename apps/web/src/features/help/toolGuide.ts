@@ -112,8 +112,8 @@ export const TOOL_DOCS: Record<ToolId, ToolDoc> = {
     caution: 'This replaces existing wording. To add a new line that was never there, use Text.',
   },
   editImage: {
-    does: 'Take out a picture, logo or barcode the document came with, matching the colour of the paper behind it.',
-    how: 'Click a picture to cover it. Click it again to bring it back. Outlined targets show every picture on the page; an amber one sits on something other than a flat colour.',
+    does: 'Move or take out a picture, logo or barcode the document came with, matching the colour of the paper behind it.',
+    how: 'Outlined targets show every picture on the page. Click one to cover it, click it again to bring it back, or drag it to move it somewhere else. An amber outline means the area behind it is not a flat colour.',
     caution: 'This covers the picture, it does not delete it from the file — someone opening the PDF with the right tools could still recover it. To add your own picture, use Image.',
   },
 }

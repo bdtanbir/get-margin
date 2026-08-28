@@ -73,6 +73,19 @@ export type PdfClient = {
    */
   imageIndex(sourceId: SourceId | undefined, page: number): Promise<PageImageIndex>
   /**
+   * One of a page's images, as PNG pixels. See PdfService.imageCrop.
+   *
+   * Asked for at the moment an image is first dragged, not when the page's
+   * index is built: rasterising every image on a page the user is only
+   * looking at would be waste.
+   */
+  imageCrop(
+    sourceId: SourceId | undefined,
+    page: number,
+    imageIndex: number,
+    scale: number,
+  ): Promise<{ data: Uint8Array; hash: string } | undefined>
+  /**
    * The form fields on one page. See PdfService.listFields.
    *
    * Not cancellable and not queued behind renders: enumerating fields is
@@ -321,6 +334,11 @@ export function createPdfClient(): PdfClient {
     async imageIndex(sourceId, page) {
       await ready
       return remote.imageIndex(sourceId, page)
+    },
+
+    async imageCrop(sourceId, page, imageIndex, scale) {
+      await ready
+      return remote.imageCrop(sourceId, page, imageIndex, scale)
     },
 
     async addSource(bytes) {

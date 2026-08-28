@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { viewRectToPdf, viewDeltaToPage } from '@margin/transform'
-import type { PageQuadIndex, TextPatchObject } from '@margin/pdf-core'
+import type { ImagePatchObject, PageQuadIndex, TextPatchObject } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
@@ -154,6 +154,7 @@ function startMove(e: PointerEvent): void {
   const start = box.value
   if (!o || !start || o.locked) return
   if (o.kind === 'textPatch') return startMovePatch(e, o)
+  if (o.kind === 'imagePatch') return startMoveImagePatch(e, o)
   const boxes = pageBoxes()
   const origin = boxes.find((b) => b.id === props.page.id)
   const id = o.id
@@ -250,6 +251,40 @@ function startMovePatch(e: PointerEvent, o: TextPatchObject): void {
   }, e, () => tools.stopMovingPatch())
 }
 
+/**
+ * Drag a MOVED IMAGE, which moves the way an edited line does.
+ *
+ * The rect is not rewritten, for the same reason `startMovePatch` does not
+ * rewrite one: an image patch's rect is the image it REPLACES, the cover is
+ * drawn from it, and the cover has to stay over the document's own image or
+ * that image reappears from underneath the copy. So the drag accumulates
+ * into `offset`.
+ *
+ * It cannot change pages either. The patch is addressed by (pageId,
+ * imageIndex) into one page's device walk and guarded by a hash of that
+ * placement; dropped on another page it would address a different image, or
+ * none.
+ *
+ * NO ALIGNMENT RAILS. The rails are built from the page's text lines, and
+ * they exist because a moved line wants to sit level with other lines. An
+ * image has no baseline to align and is rarely the width of a column, so
+ * snapping it to a text rail would fight the user rather than help them.
+ */
+function startMoveImagePatch(e: PointerEvent, o: ImagePatchObject): void {
+  const from = { dx: o.offset?.dx ?? 0, dy: o.offset?.dy ?? 0 }
+  const id = o.id
+
+  gesture('Move image', ({ dx, dy }) => {
+    // Page space is top-down like the screen, so no sign flips -- the only
+    // conversion is out of CSS pixels. Inverting it is the writer's job.
+    const d = viewDeltaToPage({ x: dx, y: dy }, props.page.geometry, props.zoom)
+    edits.applyOp(
+      { type: 'updateObject', id, patch: { offset: { dx: from.dx + d.x, dy: from.dy + d.y } } },
+      'Move image',
+    )
+  }, e)
+}
+
 function startResize(e: PointerEvent, handle: Handle): void {
   const o = selected.value
   const start = box.value
@@ -316,12 +351,16 @@ function startRotate(e: PointerEvent): void {
     @dblclick.stop="editText"
   >
     <!--
-      An edited line has neither handle. Its box is the line's, not a size
-      of its own, and the writer sits the replacement on the line's own
-      baseline whatever `rotation` says -- so both controls would offer an
-      edit that silently does nothing.
+      Neither patch kind has either handle. An edited line's box is the
+      line's, not a size of its own, and the writer sits the replacement on
+      that line's baseline whatever `rotation` says. A moved image is drawn
+      at the size of the image it replaces, from a raster captured at that
+      size. In both cases the controls would offer an edit that silently
+      does nothing.
     -->
-    <template v-if="!selected.locked && selected.kind !== 'textPatch'">
+    <template
+      v-if="!selected.locked && selected.kind !== 'textPatch' && selected.kind !== 'imagePatch'"
+    >
       <button
         v-for="h in HANDLES"
         :key="h"
