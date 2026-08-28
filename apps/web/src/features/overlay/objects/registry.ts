@@ -72,6 +72,7 @@ export const MARKUP_KINDS = [
   'strikeout',
   'redaction',
   'textPatch',
+  'imagePatch',
 ] as const
 
 export const isMarkupKind = (kind: string): boolean =>

@@ -141,3 +141,51 @@ describe('when there is nothing to sample', () => {
       .toBeGreaterThan(100)
   })
 })
+
+/**
+ * An IMAGE is not a line, and the difference is the size of the ring.
+ *
+ * The band is a third of the box's height, which for a line of text is a
+ * few points of paper and for a 100pt logo is 33pt of whatever else is on
+ * the page -- a table, a rule, a column of text. The median survives a
+ * minority of those, but the CONFIDENCE does not: a ring that reaches into
+ * unrelated content reads as "the area behind this is varied" and warns
+ * the user off a cover that would in fact have been invisible.
+ */
+describe('sampleBackground band cap', () => {
+  /** White paper, with a black band well outside a small ring. */
+  function paperWithDistantInk(): Bitmap {
+    const width = 200, height = 200
+    const rgba = new Uint8Array(width * height * 4).fill(255)
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        // Ink only more than 10px away from the box below.
+        const far = y < 30 || y > 170
+        if (!far) continue
+        const at = (y * width + x) * 4
+        rgba[at] = 0; rgba[at + 1] = 0; rgba[at + 2] = 0
+      }
+    }
+    return { width, height, rgba }
+  }
+
+  const box = { x: 50, y: 50, w: 100, h: 100 }
+
+  it('reaches into distant content without a cap', () => {
+    const out = sampleBackground(paperWithDistantInk(), box, 1)
+    expect(out.confidence).toBeLessThan(0.75)
+  })
+
+  it('stays on the paper beside the box when the band is capped', () => {
+    const out = sampleBackground(paperWithDistantInk(), box, 1, 6)
+    expect(out.color).toEqual([1, 1, 1])
+    expect(out.confidence).toBeGreaterThan(0.9)
+  })
+
+  it('never grows the band beyond what the box would have used', () => {
+    // A cap larger than the natural band changes nothing.
+    const natural = sampleBackground(paperWithDistantInk(), box, 1)
+    const capped = sampleBackground(paperWithDistantInk(), box, 1, 999)
+    expect(capped).toEqual(natural)
+  })
+})

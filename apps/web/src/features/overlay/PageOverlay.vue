@@ -15,6 +15,7 @@ import AlignmentGuides from './AlignmentGuides.vue'
 import MarkupObject from './objects/MarkupObject.vue'
 import RedactionObject from './objects/RedactionObject.vue'
 import TextPatchObject from './objects/TextPatchObject.vue'
+import ImagePatchObject from './objects/ImagePatchObject.vue'
 import { isMarkupKind } from './objects/registry'
 import { useTextSelection } from './useTextSelection'
 import { useSelectionStore } from '@/stores/selection'
@@ -26,6 +27,7 @@ import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
 import FieldLayer from '@/features/forms/FieldLayer.vue'
 import FindHighlights from '@/features/find/FindHighlights.vue'
 import PatchEditor from '@/features/patch/PatchEditor.vue'
+import ImageEditor from '@/features/patch/ImageEditor.vue'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -149,6 +151,37 @@ async function ensureIndex(): Promise<void> {
 }
 
 watch(selecting, (on) => { if (on) void ensureIndex() }, { immediate: true })
+
+/**
+ * The image index, fetched on the same terms as the quad index and for the
+ * same reason: walking every image on a page the user is scrolling past is
+ * waste, so it is asked for only while the tool that needs it is active.
+ *
+ * A SEPARATE fetch rather than a field on the quad index. The two are
+ * built by different walks -- structured text for glyphs, a device for
+ * images -- and folding them together would make every text selection pay
+ * for a device run over the page.
+ */
+const imageIndex = ref<Awaited<ReturnType<ReturnType<typeof getPdfClient>['imageIndex']>> | undefined>(undefined)
+let imagesRequested = false
+
+const editingImages = computed(() => tools.active === 'editImage')
+
+async function ensureImages(): Promise<void> {
+  if (imagesRequested || !editingImages.value) return
+  imagesRequested = true
+  try {
+    // BOTH halves of the identity, for the reason quadIndex documents: in a
+    // merged document two files' first pages are both sourceIndex 0.
+    imageIndex.value = await getPdfClient().imageIndex(props.page.sourceId, props.page.sourceIndex)
+  } catch {
+    // A page whose images cannot be walked still renders and still takes
+    // every other edit.
+    imagesRequested = false
+  }
+}
+
+watch(editingImages, (on) => { if (on) void ensureImages() }, { immediate: true })
 
 const text = useTextSelection(() => props.page.id, () => quadIndex.value, {
   /**
@@ -294,6 +327,7 @@ const draft = computed(() => {
         >
           <RedactionObject v-if="o.kind === 'redaction'" :object="(o as never)" />
           <TextPatchObject v-else-if="o.kind === 'textPatch'" :object="(o as never)" />
+          <ImagePatchObject v-else-if="o.kind === 'imagePatch'" :object="(o as never)" />
           <MarkupObject v-else :object="(o as never)" />
         </g>
       </template>
@@ -366,6 +400,16 @@ const draft = computed(() => {
       :page="props.page"
       :zoom="props.zoom"
       :index="quadIndex"
+    />
+    <!--
+      The same bargain as PatchEditor above: a layer of per-image click
+      targets exists only while its tool is active.
+    -->
+    <ImageEditor
+      v-if="editingImages"
+      :page="props.page"
+      :zoom="props.zoom"
+      :index="imageIndex"
     />
     <!--
       Only on the anchor page: cropping is a page action and showing a

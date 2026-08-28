@@ -17,6 +17,7 @@ import { writeMarkup } from './objects/markup.js'
 import { writeField } from './objects/field.js'
 import { writeStamp } from './objects/stamp.js'
 import { writeTextPatch } from './objects/patch.js'
+import { writeImagePatch } from './objects/imagePatch.js'
 export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
 export { listFields, fieldKey, applyFieldValues, hasAcroForm } from './fields.js'
 export {
@@ -120,6 +121,12 @@ WRITERS.stamp = writeStamp
 // Task 91. Cover-and-redraw over the document's own text. Refuses rather
 // than mispatching -- see objects/patch.ts.
 WRITERS.textPatch = writeTextPatch
+
+// Task 100. The other half of Phase 9's pair: cover-and-redraw over one of
+// the document's own IMAGES. `data` absent is a deletion -- the cover with
+// nothing drawn back. Refuses on a changed page for the same reason the
+// text patch does.
+WRITERS.imagePatch = writeImagePatch
 
 WRITERS.highlight = writeMarkup
 WRITERS.underline = writeMarkup

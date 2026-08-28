@@ -21,6 +21,7 @@ export type ToolId =
   // Task 92. Replaces a line of the DOCUMENT's own text, unlike the text
   // tool, which adds a new one.
   | 'patch'
+  | 'editImage'
 
 /** An object being dragged out but not yet committed. */
 export type Draft = { pageId: string; rect: Rect }

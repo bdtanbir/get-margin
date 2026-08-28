@@ -2,7 +2,7 @@ import type { Component } from 'vue'
 import {
   MousePointer2, Type, Image, Square, Circle, Minus, ArrowRight,
   Pen, Eraser, Link2, Signature, Highlighter, Underline, Strikethrough, Crop, TextCursorInput,
-  SquareSlash, TextSelect,
+  SquareSlash, TextSelect, ImageMinus,
 } from 'lucide-vue-next'
 import type { ToolId } from '@/stores/tools'
 
@@ -45,4 +45,9 @@ export const TOOLS: Array<{ id: ToolId; label: string; icon: Component }> = [
   // replaces what the document already says, and the two are easy to
   // confuse from an icon alone.
   { id: 'patch', label: 'Edit text', icon: TextSelect },
+  // Next to "Edit text" because it is the same idea applied to the other
+  // half of what a document already contains, and named the same way for
+  // the same reason: the Image tool ADDS a picture, this one moves or
+  // removes one the file came with.
+  { id: 'editImage', label: 'Edit image', icon: ImageMinus },
 ]

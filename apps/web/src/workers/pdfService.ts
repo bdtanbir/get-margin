@@ -1,8 +1,10 @@
 import {
-  PdfDocument, renderPage, rasterisePage, rasterSize, replay, buildQuadIndex, listFields,
+  PdfDocument, renderPage, rasterisePage, rasterSize, replay, buildQuadIndex, buildImageIndex,
+  listFields,
   readMetadata, recompressImages,
   findInPage, missingGlyphsFor,
-  type EditDocument, type PageQuadIndex, type SourceId, type StrippedContent,
+  type EditDocument, type PageQuadIndex, type PageImageIndex, type SourceId,
+  type StrippedContent,
   type SourceField, type Protection, type DocumentMetadata,
   type CompressionPreset, type CompressionResult, type FindOptions, type Match,
   type RasterFormat, type RasterisedPage,
@@ -70,6 +72,7 @@ export class PdfService {
   // Keyed `sourceId:page`, not by page alone: two merged files both have a
   // page 0, and sharing one entry served the wrong file's text.
   #quadCache = new Map<string, PageQuadIndex>()
+  #imageCache = new Map<string, PageImageIndex>()
 
   #info(): DocumentInfo {
     const doc = this.#doc
@@ -312,6 +315,29 @@ export class PdfService {
   }
 
   /**
+   * Every image one page DRAWS, in draw order.
+   *
+   * The counterpart to `quadIndex`, cached the same way and keyed by source
+   * as well as page for the same reason: two files' first pages are both
+   * `sourceIndex` 0, and a cache keyed by page alone would serve one file's
+   * images for the other's page.
+   *
+   * Reads from the SOURCE document rather than an export copy, like
+   * `quadIndex` and `listFields`: the overlay draws targets over the page
+   * as rendered, and the page as rendered is the source page.
+   */
+  imageIndex(sourceId: SourceId | undefined, page: number): PageImageIndex {
+    const doc = this.#docFor(sourceId)
+    if (!doc) throw new Error('no document open')
+    const key = `${sourceId ?? this.#primarySource ?? 'primary'}:${page}`
+    const hit = this.#imageCache.get(key)
+    if (hit) return hit
+    const index = buildImageIndex(doc, page)
+    this.#imageCache.set(key, index)
+    return index
+  }
+
+  /**
    * The form fields on one page of one source.
    *
    * Reads from the SOURCE document, not from an assembled export copy: the
@@ -444,5 +470,6 @@ export class PdfService {
     this.#primarySource = undefined
     this.#passwords.clear()
     this.#quadCache.clear()
+    this.#imageCache.clear()
   }
 }

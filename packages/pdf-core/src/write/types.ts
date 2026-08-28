@@ -20,6 +20,7 @@ export const OBJECT_KINDS = [
   'stamp',
   'redaction',
   'textPatch',
+  'imagePatch',
 ] as const
 
 export type ObjectKind = (typeof OBJECT_KINDS)[number]
@@ -327,6 +328,91 @@ export type TextPatchObject = BaseObject & {
   offset?: { dx: number; dy: number }
 }
 
+/**
+ * A patch over one of the DOCUMENT'S OWN images.
+ *
+ * Cover and redraw, exactly as `TextPatchObject` is, and deliberately the
+ * same shape: an opaque rectangle in the sampled background colour over
+ * where the image is, and -- if it is being moved rather than deleted --
+ * a copy of it drawn somewhere else.
+ *
+ * ONE KIND FOR BOTH, with `data` absent meaning "deleted". Two kinds would
+ * put two rows in the layers list for what the user did once, and would
+ * make "delete a moved image" a conversion between kinds rather than the
+ * removal of a field.
+ *
+ * IT COVERS; IT DOES NOT REMOVE. The image stream stays in the file and
+ * stays extractable, like every whiteout and every text patch. That is a
+ * specification (imagePatch.test.ts pins it), not an oversight -- removal
+ * is redaction's job and carries a guarantee this cannot make.
+ */
+export type ImagePatchObject = BaseObject & {
+  kind: 'imagePatch'
+  /**
+   * Which image on the page, in DRAW ORDER -- see `ImagePlacement.index`.
+   *
+   * A position, not an identity, which is exactly why `originalHash` has
+   * to exist alongside it.
+   */
+  imageIndex: number
+  /**
+   * The placement's identity when the user edited it, from
+   * `placementHash`. The writer re-walks the assembled page at export and
+   * REFUSES if the image at `imageIndex` no longer hashes the same.
+   *
+   * `PLAN.md` 2.4: fail loudly, never silently mispatch. Covering
+   * whatever happens to sit at that index now would damage a document
+   * while reporting success.
+   */
+  originalHash: string
+  /**
+   * The colour to cover the original with, sampled from the rendered page
+   * at EDIT time -- the writer has no cheap way to render and sample, and
+   * the app already has the pixels on screen. Same bargain as
+   * `TextPatchObject.background`.
+   */
+  background: Color
+  /**
+   * How confident that sample was, 0..1. Low means the area behind the
+   * image was varied, where a flat rectangle leaves a visible scar -- so
+   * the UI can warn BEFORE the user commits.
+   */
+  backgroundConfidence: number
+  /**
+   * The image to REDRAW, as a raster of what the page actually shows.
+   *
+   * Absent means deleted: cover, and draw nothing.
+   *
+   * A raster rather than a reference to the document's own XObject, and
+   * that is a measured decision rather than a shortcut. Probing a real
+   * e-ticket found its images nested inside form XObjects rather than in
+   * the page's resources, drawn through a `clipImageMask` stencil that
+   * carries the transparency the image itself does not, in one case in an
+   * Indexed CMYK space that `compress.ts` already documents as failing to
+   * round-trip. Re-referencing the original would have to solve all three
+   * to put the logo down again without a black box behind it. Asking the
+   * renderer for the pixels a reader would see solves none of them and
+   * needs to.
+   */
+  data?: Uint8Array
+  mime?: 'image/png'
+  /**
+   * How far the redrawn copy sits FROM the image it replaces, in points,
+   * MuPDF page space -- top-down, the same space `rect` uses for this
+   * kind. Positive dy is down the page.
+   *
+   * Relative rather than absolute for the same reason `TextPatchObject`
+   * is: the writer does not read this object's geometry, it re-walks the
+   * page at export so the hash guard is meaningful, and a stored
+   * destination would be a second source of truth that could disagree
+   * with what it finds.
+   *
+   * Only the COPY moves. The cover stays over the original, because the
+   * document's own image is still underneath it.
+   */
+  offset?: { dx: number; dy: number }
+}
+
 export type SignatureObject = BaseObject & {
   kind: 'signature'
   data: Uint8Array
@@ -336,7 +422,7 @@ export type SignatureObject = BaseObject & {
 export type EditObject =
   | TextObject | ImageObject | ShapeObject | WhiteoutObject
   | InkObject | MarkupObject | LinkObject | SignatureObject | FieldObject
-  | StampObject | RedactionObject | TextPatchObject
+  | StampObject | RedactionObject | TextPatchObject | ImagePatchObject
 
 export type SourceId = string
 

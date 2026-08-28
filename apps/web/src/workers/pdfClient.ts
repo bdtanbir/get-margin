@@ -1,7 +1,7 @@
 import * as Comlink from 'comlink'
 import type { PdfService, DocumentInfo, RenderResult } from './pdfService'
 import type {
-  EditDocument, PageQuadIndex, SourceId, StrippedContent, SourceField, Protection,
+  EditDocument, PageQuadIndex, PageImageIndex, SourceId, StrippedContent, SourceField, Protection,
   DocumentMetadata, CompressionPreset, CompressionResult, FindOptions, Match,
   RasterFormat, RasterisedPage,
 } from '@margin/pdf-core'
@@ -64,6 +64,14 @@ export type PdfClient = {
    * merged-in file and produced no error to notice.
    */
   quadIndex(sourceId: SourceId | undefined, page: number): Promise<PageQuadIndex>
+  /**
+   * Every image one page draws, in draw order. See PdfService.imageIndex.
+   *
+   * `sourceId` is required for the same reason it is on `quadIndex`:
+   * omitting it silently means "the primary document", which is the wrong
+   * answer for every page of a merged-in file.
+   */
+  imageIndex(sourceId: SourceId | undefined, page: number): Promise<PageImageIndex>
   /**
    * The form fields on one page. See PdfService.listFields.
    *
@@ -308,6 +316,11 @@ export function createPdfClient(): PdfClient {
     async quadIndex(sourceId, page) {
       await ready
       return remote.quadIndex(sourceId, page)
+    },
+
+    async imageIndex(sourceId, page) {
+      await ready
+      return remote.imageIndex(sourceId, page)
     },
 
     async addSource(bytes) {

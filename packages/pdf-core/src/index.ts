@@ -14,6 +14,7 @@ export type {
   TextObject, ImageObject, ShapeObject, WhiteoutObject,
   InkObject, MarkupObject, LinkObject, SignatureObject,
   FieldObject, FieldType, FieldValue, StampObject, RedactionObject, TextPatchObject,
+  ImagePatchObject,
 } from './write/types.js'
 export { EDIT_DOCUMENT_VERSION, emptyEditDocument, OBJECT_KINDS } from './write/types.js'
 export { listFields, fieldKey, hasAcroForm } from './write/fields.js'
@@ -49,3 +50,5 @@ export {
 // Task 36. Per-page text geometry for selection, in MuPDF page space.
 export { buildQuadIndex } from './text/index.js'
 export type { Quad, CharQuad, LineRun, PageQuadIndex } from './text/index.js'
+export { pageImages, placementHash, buildImageIndex } from './images/index.js'
+export type { ImagePlacement, PageImageIndex } from './images/index.js'

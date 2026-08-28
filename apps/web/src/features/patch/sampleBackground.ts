@@ -41,6 +41,21 @@ export function sampleBackground(
   bitmap: Bitmap | undefined,
   bbox: Rect,
   scale: number,
+  /**
+   * The furthest the ring reaches from the box, in BITMAP PIXELS. Optional,
+   * and without it the band is a third of the box's height as before.
+   *
+   * It exists for images. A third of a line of text is a few points of
+   * paper; a third of a 100pt logo is 33pt of whatever else is on the page,
+   * and a ring that reaches a table two centimetres away reports "the area
+   * behind this is varied" for a cover that would have been invisible. The
+   * median survives that; the confidence, which is what the UI warns on,
+   * does not.
+   *
+   * A cap, never a floor: passing one larger than the natural band changes
+   * nothing.
+   */
+  maxBand?: number,
 ): BackgroundSample {
   if (!bitmap || bitmap.width === 0 || bitmap.height === 0) {
     return { color: WHITE, confidence: 0, samples: 0 }
@@ -55,7 +70,8 @@ export function sampleBackground(
   // A band as tall as a third of the line, which is enough to clear the
   // glyphs' antialiased edges without reaching into whatever is above or
   // below.
-  const band = Math.max(2, Math.round((y1 - y0) / 3))
+  const natural = Math.max(2, Math.round((y1 - y0) / 3))
+  const band = maxBand === undefined ? natural : Math.min(natural, Math.max(2, maxBand))
 
   const reds: number[] = []
   const greens: number[] = []

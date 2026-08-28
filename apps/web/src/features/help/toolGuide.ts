@@ -24,10 +24,10 @@ export type ToolDoc = {
   /**
    * A limit worth knowing BEFORE using the tool rather than after.
    *
-   * Only three tools carry one, and all three are cases where the obvious
-   * assumption is wrong in a way that costs the user something real: two
-   * tools that look like they remove content, one of which does not, and
-   * one that does but only for text.
+   * Only a handful of tools carry one, and each is a case where the
+   * obvious assumption is wrong in a way that costs the user something
+   * real: tools that look like they remove content, most of which only
+   * cover it, and one that genuinely removes but only text.
    */
   caution?: string
 }
@@ -110,5 +110,10 @@ export const TOOL_DOCS: Record<ToolId, ToolDoc> = {
     does: 'Rewrite a line the document already says, keeping its font, its weight and the background behind it.',
     how: 'Click the line, then retype it.',
     caution: 'This replaces existing wording. To add a new line that was never there, use Text.',
+  },
+  editImage: {
+    does: 'Take out a picture, logo or barcode the document came with, matching the colour of the paper behind it.',
+    how: 'Click a picture to cover it. Click it again to bring it back. Outlined targets show every picture on the page; an amber one sits on something other than a flat colour.',
+    caution: 'This covers the picture, it does not delete it from the file — someone opening the PDF with the right tools could still recover it. To add your own picture, use Image.',
   },
 }
