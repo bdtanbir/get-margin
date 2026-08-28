@@ -86,6 +86,18 @@ export type PdfClient = {
     scale: number,
   ): Promise<{ data: Uint8Array; hash: string } | undefined>
   /**
+   * Any rectangle of a page, as PNG pixels. See PdfService.regionCrop.
+   *
+   * `rect` is MuPDF page space, like everything else about the page's own
+   * geometry.
+   */
+  regionCrop(
+    sourceId: SourceId | undefined,
+    page: number,
+    rect: { x: number; y: number; w: number; h: number },
+    scale: number,
+  ): Promise<{ data: Uint8Array } | undefined>
+  /**
    * The form fields on one page. See PdfService.listFields.
    *
    * Not cancellable and not queued behind renders: enumerating fields is
@@ -339,6 +351,11 @@ export function createPdfClient(): PdfClient {
     async imageCrop(sourceId, page, imageIndex, scale) {
       await ready
       return remote.imageCrop(sourceId, page, imageIndex, scale)
+    },
+
+    async regionCrop(sourceId, page, rect, scale) {
+      await ready
+      return remote.regionCrop(sourceId, page, rect, scale)
     },
 
     async addSource(bytes) {

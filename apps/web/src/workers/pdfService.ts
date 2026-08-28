@@ -1,6 +1,6 @@
 import {
   PdfDocument, renderPage, rasterisePage, rasterSize, replay, buildQuadIndex, buildImageIndex,
-  cropImage,
+  cropImage, cropRegion,
   listFields,
   readMetadata, recompressImages,
   findInPage, missingGlyphsFor,
@@ -357,6 +357,24 @@ export class PdfService {
     if (!doc) throw new Error('no document open')
     const out = cropImage(doc, page, imageIndex, scale)
     return out ? { data: out.data, hash: out.hash } : undefined
+  }
+
+  /**
+   * ANY rectangle of a page, as pixels.
+   *
+   * The counterpart to `imageCrop` for everything that is not an image --
+   * vector logos, tables, a block of text. Not cached, for the same
+   * reason: a crop is asked for once, at the moment a region is lifted.
+   */
+  regionCrop(
+    sourceId: SourceId | undefined,
+    page: number,
+    rect: { x: number; y: number; w: number; h: number },
+    scale: number,
+  ): { data: Uint8Array } | undefined {
+    const doc = this.#docFor(sourceId)
+    if (!doc) throw new Error('no document open')
+    return cropRegion(doc, page, rect, scale)
   }
 
   /**

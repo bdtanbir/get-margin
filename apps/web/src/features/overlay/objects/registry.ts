@@ -73,6 +73,7 @@ export const MARKUP_KINDS = [
   'redaction',
   'textPatch',
   'imagePatch',
+  'regionPatch',
 ] as const
 
 export const isMarkupKind = (kind: string): boolean =>

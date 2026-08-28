@@ -18,6 +18,7 @@ import { writeField } from './objects/field.js'
 import { writeStamp } from './objects/stamp.js'
 import { writeTextPatch } from './objects/patch.js'
 import { writeImagePatch } from './objects/imagePatch.js'
+import { writeRegionPatch } from './objects/regionPatch.js'
 export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
 export { listFields, fieldKey, applyFieldValues, hasAcroForm } from './fields.js'
 export {
@@ -127,6 +128,12 @@ WRITERS.textPatch = writeTextPatch
 // nothing drawn back. Refuses on a changed page for the same reason the
 // text patch does.
 WRITERS.imagePatch = writeImagePatch
+
+// Task 101. The same cover-and-redraw over an area the USER drew, for the
+// large amount of a page that is not an image at all -- vector logos,
+// tables, a block of text. No guard, because a region is addressed by its
+// own geometry rather than by a position in a walk.
+WRITERS.regionPatch = writeRegionPatch
 
 WRITERS.highlight = writeMarkup
 WRITERS.underline = writeMarkup

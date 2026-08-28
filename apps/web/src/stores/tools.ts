@@ -22,6 +22,7 @@ export type ToolId =
   // tool, which adds a new one.
   | 'patch'
   | 'editImage'
+  | 'lift'
 
 /** An object being dragged out but not yet committed. */
 export type Draft = { pageId: string; rect: Rect }

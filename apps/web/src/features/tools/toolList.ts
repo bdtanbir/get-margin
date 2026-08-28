@@ -2,7 +2,7 @@ import type { Component } from 'vue'
 import {
   MousePointer2, Type, Image, Square, Circle, Minus, ArrowRight,
   Pen, Eraser, Link2, Signature, Highlighter, Underline, Strikethrough, Crop, TextCursorInput,
-  SquareSlash, TextSelect, ImageMinus,
+  SquareSlash, TextSelect, ImageMinus, SquareDashedMousePointer,
 } from 'lucide-vue-next'
 import type { ToolId } from '@/stores/tools'
 
@@ -50,4 +50,9 @@ export const TOOLS: Array<{ id: ToolId; label: string; icon: Component }> = [
   // the same reason: the Image tool ADDS a picture, this one moves or
   // removes one the file came with.
   { id: 'editImage', label: 'Edit image', icon: ImageMinus },
+  // Beside Edit image because it answers the question that tool raises the
+  // moment it cannot help: a great deal of what a reader calls a logo is
+  // drawn as artwork rather than embedded as a picture, and no list of
+  // images will ever offer it.
+  { id: 'lift', label: 'Lift area', icon: SquareDashedMousePointer },
 ]

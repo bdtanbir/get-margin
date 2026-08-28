@@ -15,7 +15,7 @@ import AlignmentGuides from './AlignmentGuides.vue'
 import MarkupObject from './objects/MarkupObject.vue'
 import RedactionObject from './objects/RedactionObject.vue'
 import TextPatchObject from './objects/TextPatchObject.vue'
-import ImagePatchObject from './objects/ImagePatchObject.vue'
+import PatchedAreaObject from './objects/PatchedAreaObject.vue'
 import { isMarkupKind } from './objects/registry'
 import { useTextSelection } from './useTextSelection'
 import { useSelectionStore } from '@/stores/selection'
@@ -28,6 +28,7 @@ import FieldLayer from '@/features/forms/FieldLayer.vue'
 import FindHighlights from '@/features/find/FindHighlights.vue'
 import PatchEditor from '@/features/patch/PatchEditor.vue'
 import ImageEditor from '@/features/patch/ImageEditor.vue'
+import LiftTool from '@/features/patch/LiftTool.vue'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const edits = useEditsStore()
@@ -327,7 +328,10 @@ const draft = computed(() => {
         >
           <RedactionObject v-if="o.kind === 'redaction'" :object="(o as never)" />
           <TextPatchObject v-else-if="o.kind === 'textPatch'" :object="(o as never)" />
-          <ImagePatchObject v-else-if="o.kind === 'imagePatch'" :object="(o as never)" />
+          <PatchedAreaObject
+            v-else-if="o.kind === 'imagePatch' || o.kind === 'regionPatch'"
+            :object="(o as never)"
+          />
           <MarkupObject v-else :object="(o as never)" />
         </g>
       </template>
@@ -411,6 +415,12 @@ const draft = computed(() => {
       :zoom="props.zoom"
       :index="imageIndex"
     />
+    <!--
+      Above the objects and mounted only while its tool is active: while
+      drawing a lift box, a pointerdown belongs to the box and not to
+      whatever happens to sit underneath it.
+    -->
+    <LiftTool v-if="tools.active === 'lift'" :page="props.page" :zoom="props.zoom" />
     <!--
       Only on the anchor page: cropping is a page action and showing a
       dimmed crop surface on every mounted page at once would be noise.

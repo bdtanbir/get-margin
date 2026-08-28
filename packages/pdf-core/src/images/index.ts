@@ -240,43 +240,153 @@ export function buildImageIndex(doc: PdfDocument, pageIndex: number): PageImageI
  * whose bytes are one image and whose hash is another refuses at export
  * for no reason the user can see.
  */
+/**
+ * The most pixels a crop may come to.
+ *
+ * A lift of half a page is a reasonable thing to ask for; a 200MB raster
+ * is not a reasonable way to answer it. Past this the scale drops rather
+ * than the request being refused -- a coarser copy is still the copy the
+ * user asked for, where an error is not.
+ */
+const MAX_CROP_PIXELS = 4_000_000
+
+/**
+ * A rectangle of the page, rendered, as PNG.
+ *
+ * The pixmap's own box is in DEVICE space -- page space times the scale --
+ * so the render lands in it with no further translation and only this
+ * rectangle is ever rasterised.
+ *
+ * PAGE CONTENTS ONLY, matching `pageImages`: an annotation drawn over the
+ * area is not page content and should not be baked into a copy of it.
+ */
+function renderRegion(
+  page: mupdf.PDFPage,
+  box: Box,
+  scale: number,
+): Uint8Array | undefined {
+  const bounds = page.getBounds()
+  const clipped = intersect(box, [bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!])
+  if (isEmpty(clipped)) return undefined
+
+  const w = clipped[2] - clipped[0]
+  const h = clipped[3] - clipped[1]
+  // Fit to the budget by dropping the scale, never by cropping further:
+  // the caller asked for this area and gets all of it.
+  const fitted = Math.min(scale, Math.sqrt(MAX_CROP_PIXELS / (w * h)))
+
+  /**
+   * Rounding out to whole pixels can push the result a row and a column
+   * past the budget, so the box is measured and the scale corrected once.
+   * One pass is enough: the error it corrects is at most one pixel per
+   * axis, and the correction only ever shrinks.
+   */
+  const boxAt = (s: number): Box => [
+    Math.floor(clipped[0] * s), Math.floor(clipped[1] * s),
+    Math.ceil(clipped[2] * s), Math.ceil(clipped[3] * s),
+  ]
+  let device = boxAt(fitted)
+  const area = (b: Box): number => (b[2] - b[0]) * (b[3] - b[1])
+  if (area(device) > MAX_CROP_PIXELS) {
+    device = boxAt(fitted * Math.sqrt(MAX_CROP_PIXELS / area(device)))
+  }
+  const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, device, false)
+  let drawer: mupdf.DrawDevice | undefined
+  try {
+    // White, so anything the page leaves untouched inside the box reads as
+    // paper rather than as the uninitialised memory it would be.
+    pixmap.clear(255)
+    drawer = new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap)
+    // The scale the DEVICE box was built at, so the render lands in it
+    // exactly -- taking `fitted` here after a correction would draw the
+    // page slightly larger than the pixmap that has to hold it.
+    const drawn = (device[2] - device[0]) / w
+    page.runPageContents(drawer, mupdf.Matrix.scale(drawn, drawn))
+    drawer.close()
+    return pixmap.asPNG()
+  } finally {
+    drawer?.destroy()
+    pixmap.destroy()
+  }
+}
+
+/**
+ * One of the page's images, as pixels, cropped to where it sits.
+ *
+ * WHY A RASTER AND NOT THE ORIGINAL STREAM. Probing a real e-ticket found
+ * its images nested inside form XObjects rather than the page's own
+ * resources, drawn through a `clipImageMask` stencil that carries the
+ * transparency the image itself does not, one of them in an Indexed CMYK
+ * space that `compress.ts` documents as failing to round-trip through a
+ * pixmap. Re-referencing the original XObject at a new position would have
+ * to solve the nesting, rebuild the stencil, and survive the colour space
+ * -- and getting the stencil wrong paints a black box behind the logo.
+ *
+ * Asking the renderer for the pixels a READER would see solves all three
+ * at once, because it is the same path that draws the page on screen.
+ *
+ * The cost is resolution: a crop is only as fine as `scale`. The caller
+ * picks it from the ratio between the image's source pixels and the points
+ * it occupies -- the ticket's logo is 1200px in 207.8pt, so a scale of 6
+ * loses nothing visible.
+ *
+ * ONE WALK for the pixels and the hash. Two could disagree, and a patch
+ * whose bytes are one image and whose hash is another refuses at export
+ * for no reason the user can see.
+ */
 export function cropImage(
   doc: PdfDocument,
   pageIndex: number,
   imageIndex: number,
   scale: number,
-): { data: Uint8Array; hash: string; bbox: [number, number, number, number] } | undefined {
+): { data: Uint8Array; hash: string; bbox: Box } | undefined {
   doc.pageGeometry(pageIndex)
   const page = doc._raw().loadPage(pageIndex) as mupdf.PDFPage
   try {
     const place = pageImages(page)[imageIndex]
     if (!place) return undefined
+    const data = renderRegion(page, place.bbox, scale)
+    return data ? { data, hash: place.hash, bbox: place.bbox } : undefined
+  } finally {
+    page.destroy()
+  }
+}
 
-    const [x0, y0, x1, y1] = place.bbox
-    // The pixmap's own box is in DEVICE space -- page space times the
-    // scale -- so the render lands in it with no further translation, and
-    // only the image's own area is ever rasterised.
-    const box: [number, number, number, number] = [
-      Math.floor(x0 * scale), Math.floor(y0 * scale),
-      Math.ceil(x1 * scale), Math.ceil(y1 * scale),
-    ]
-    const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, box, false)
-    let device: mupdf.DrawDevice | undefined
-    try {
-      // White, so anything the page leaves untouched inside the box reads
-      // as paper rather than as the uninitialised memory it would be.
-      pixmap.clear(255)
-      device = new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap)
-      // Page CONTENTS, matching pageImages: the index is built from the
-      // same run, so an annotation drawn over the image is not baked into
-      // a crop of it.
-      page.runPageContents(device, mupdf.Matrix.scale(scale, scale))
-      device.close()
-      return { data: pixmap.asPNG(), hash: place.hash, bbox: place.bbox }
-    } finally {
-      device?.destroy()
-      pixmap.destroy()
-    }
+/**
+ * ANY rectangle of the page, as pixels.
+ *
+ * The escape hatch from `cropImage`, and it exists because a great deal of
+ * what a reader would call "the logo" is not an image at all. Page 2 of a
+ * real US-Bangla e-ticket draws the same logo page 1 embeds as a 1200x286
+ * raster using 21 vector paths instead, so no image walk can reach it and
+ * no clustering heuristic can decide where it ends without sometimes
+ * taking the rule beside it.
+ *
+ * Letting the user draw the boundary answers both problems at once, and
+ * the rendering is identical either way -- which is the point: to this
+ * function a logo, a barcode, a table and a paragraph are all just an area
+ * of the page.
+ *
+ * `rect` is MuPDF PAGE space (top-down), like every other geometry in this
+ * module. A region reaching past the page is CLAMPED rather than refused:
+ * a drag that overshoots the edge means "to the edge".
+ */
+export function cropRegion(
+  doc: PdfDocument,
+  pageIndex: number,
+  rect: { x: number; y: number; w: number; h: number },
+  scale: number,
+): { data: Uint8Array } | undefined {
+  doc.pageGeometry(pageIndex)
+  if (rect.w <= 0 || rect.h <= 0) return undefined
+  const page = doc._raw().loadPage(pageIndex) as mupdf.PDFPage
+  try {
+    const data = renderRegion(
+      page,
+      [rect.x, rect.y, rect.x + rect.w, rect.y + rect.h],
+      scale,
+    )
+    return data ? { data } : undefined
   } finally {
     page.destroy()
   }

@@ -98,3 +98,25 @@ already documents as untrusted.
 7. `data` + `offset` on the object; the writer redraws through the
    existing `writeImage` XObject cache.
 8. Drag to move, reusing `SelectionChrome`'s patch-move gesture.
+
+### Lift (added after page 2)
+
+The image tool cannot reach what is not an image, and a great deal of what
+a reader calls "the logo" is not one. Page 2 of the same e-ticket draws
+the logo page 1 embeds as a 1200x286 raster using **21 vector paths**, so
+`fillImage` never fires for it and no image index can offer it.
+
+Clustering those paths into "the logo" is a heuristic, and every heuristic
+eventually takes the rule beside them. So the boundary is drawn instead:
+
+9. `cropRegion` -- any rectangle of the page, rendered. Shares
+   `renderRegion` with `cropImage`; caps itself at 4M pixels by dropping
+   the scale rather than refusing.
+10. `RegionPatchObject` -- the same fields as an image patch minus the
+    address, because `rect` IS the address. No hash guard, and that is a
+    real difference rather than an omission: an image patch is addressed
+    by position in a walk, a region by its own geometry.
+11. `coverArea.ts` -- the drawing both patch kinds share, so they cannot
+    drift by a bleed or a sign.
+12. The Lift area tool: drag a box, it lifts as one piece, and the select
+    tool arrives with it already selected.

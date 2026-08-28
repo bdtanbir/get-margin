@@ -8,7 +8,7 @@ import type { EditObject } from '@margin/pdf-core'
  * documented rule -- markup and redaction go out of their way to honour it,
  * converting their page-space quads when the object is created.
  *
- * The two patch kinds are the exceptions, and cannot stop being ones. A
+ * The three patch kinds are the exceptions, and cannot stop being ones. A
  * `textPatch`'s rect is the replaced line's own box, taken from the
  * extraction's character quads; an `imagePatch`'s is where the page draws
  * the image, taken from the device walk. Both therefore arrive in MuPDF
@@ -24,7 +24,8 @@ import type { EditObject } from '@margin/pdf-core'
  * image of the line it replaces.
  */
 export function objectViewRect(o: EditObject, g: PageGeometry, zoom: number): ViewRect {
-  if (o.kind !== 'textPatch' && o.kind !== 'imagePatch') return pdfRectToView(o.rect, g, zoom)
+  const isPatch = o.kind === 'textPatch' || o.kind === 'imagePatch' || o.kind === 'regionPatch'
+  if (!isPatch) return pdfRectToView(o.rect, g, zoom)
   /**
    * A patch's rect is the line it REPLACES, and stays there however far the
    * replacement has been dragged -- the cover is drawn from it, and the

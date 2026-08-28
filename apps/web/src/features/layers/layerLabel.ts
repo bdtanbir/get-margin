@@ -2,7 +2,7 @@ import type { Component } from 'vue'
 import {
   Type, Image, Square, Circle, Minus, ArrowRight, Pen, Eraser, Link2,
   Signature, Highlighter, Underline, Strikethrough, TextCursorInput,
-  SquareSlash, TextSelect, Stamp, ImageOff,
+  SquareSlash, TextSelect, Stamp, ImageOff, SquareDashedMousePointer,
 } from 'lucide-vue-next'
 import type { EditObject, ObjectKind } from '@margin/pdf-core'
 
@@ -33,6 +33,7 @@ const KIND_NAMES: Record<ObjectKind, string> = {
   redaction: 'Redaction',
   textPatch: 'Edited text',
   imagePatch: 'Edited image',
+  regionPatch: 'Lifted area',
 }
 
 /** The rail's icon for the tool that made the object, so the two agree. */
@@ -55,6 +56,7 @@ const KIND_ICONS: Record<ObjectKind, Component> = {
   redaction: SquareSlash,
   textPatch: TextSelect,
   imagePatch: ImageOff,
+  regionPatch: SquareDashedMousePointer,
 }
 
 /**

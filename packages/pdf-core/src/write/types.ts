@@ -21,6 +21,7 @@ export const OBJECT_KINDS = [
   'redaction',
   'textPatch',
   'imagePatch',
+  'regionPatch',
 ] as const
 
 export type ObjectKind = (typeof OBJECT_KINDS)[number]
@@ -413,6 +414,55 @@ export type ImagePatchObject = BaseObject & {
   offset?: { dx: number; dy: number }
 }
 
+/**
+ * A patch over an area of the page the USER drew a box around.
+ *
+ * The escape hatch from `ImagePatchObject`. A great deal of what a reader
+ * calls "the logo" is not an image: page 2 of a real US-Bangla e-ticket
+ * draws the same logo page 1 embeds as a raster using 21 vector paths, so
+ * no image index can reach it. Rather than guess which paths belong
+ * together -- a heuristic that eventually takes the rule beside them --
+ * this lets the boundary be drawn.
+ *
+ * Same fields as an image patch minus the address, because a region needs
+ * none: `rect` IS the address. That is also why there is no hash guard.
+ *
+ * IT COVERS; IT DOES NOT REMOVE, like every other patch and every
+ * whiteout.
+ */
+export type RegionPatchObject = BaseObject & {
+  kind: 'regionPatch'
+  /**
+   * The colour to cover the area with, sampled from the rendered page at
+   * EDIT time -- the writer has no cheap way to render and sample, and the
+   * app already has the pixels on screen.
+   */
+  background: Color
+  /** How confident that sample was, 0..1. See `ImagePatchObject`. */
+  backgroundConfidence: number
+  /**
+   * The area to REDRAW, as a raster of what the page shows there.
+   *
+   * Absent means hidden: cover, and draw nothing.
+   *
+   * A raster is not a compromise here the way it is for an image patch --
+   * it is the only possible answer. The area may hold vector paths, text,
+   * an image, or all three at once, and the one thing they have in common
+   * is what they look like.
+   */
+  data?: Uint8Array
+  mime?: 'image/png'
+  /**
+   * How far the copy sits FROM the area it was lifted out of, in points,
+   * MuPDF page space -- top-down, the same space `rect` uses for this
+   * kind. Positive dy is down the page.
+   *
+   * Only the COPY moves. The cover stays over the original, because the
+   * page's own content is still underneath it.
+   */
+  offset?: { dx: number; dy: number }
+}
+
 export type SignatureObject = BaseObject & {
   kind: 'signature'
   data: Uint8Array
@@ -422,7 +472,7 @@ export type SignatureObject = BaseObject & {
 export type EditObject =
   | TextObject | ImageObject | ShapeObject | WhiteoutObject
   | InkObject | MarkupObject | LinkObject | SignatureObject | FieldObject
-  | StampObject | RedactionObject | TextPatchObject | ImagePatchObject
+  | StampObject | RedactionObject | TextPatchObject | ImagePatchObject | RegionPatchObject
 
 export type SourceId = string
 

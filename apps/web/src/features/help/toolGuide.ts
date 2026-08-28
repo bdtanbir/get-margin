@@ -116,4 +116,9 @@ export const TOOL_DOCS: Record<ToolId, ToolDoc> = {
     how: 'Outlined targets show every picture on the page. Click one to cover it, click it again to bring it back, or drag it to move it somewhere else. An amber outline means the area behind it is not a flat colour.',
     caution: 'This covers the picture, it does not delete it from the file — someone opening the PDF with the right tools could still recover it. To add your own picture, use Image.',
   },
+  lift: {
+    does: 'Take a copy of any part of the page — a logo drawn as artwork, a table, a block of text, anything Edit image cannot see — and move it or hide it.',
+    how: 'Drag a box around what you want. It lifts as one piece: drag it where you like, or press Delete to leave the space blank.',
+    caution: 'The copy is a picture of that area, so it cannot be re-edited as text afterwards, and it carries the paper behind it — moving it onto a coloured panel will show a pale rectangle. Like the other cover tools, the original is hidden rather than deleted.',
+  },
 }

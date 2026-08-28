@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { viewRectToPdf, viewDeltaToPage } from '@margin/transform'
-import type { ImagePatchObject, PageQuadIndex, TextPatchObject } from '@margin/pdf-core'
+import type {
+  ImagePatchObject, PageQuadIndex, RegionPatchObject, TextPatchObject,
+} from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
@@ -154,7 +156,7 @@ function startMove(e: PointerEvent): void {
   const start = box.value
   if (!o || !start || o.locked) return
   if (o.kind === 'textPatch') return startMovePatch(e, o)
-  if (o.kind === 'imagePatch') return startMoveImagePatch(e, o)
+  if (o.kind === 'imagePatch' || o.kind === 'regionPatch') return startMoveImagePatch(e, o)
   const boxes = pageBoxes()
   const origin = boxes.find((b) => b.id === props.page.id)
   const id = o.id
@@ -252,25 +254,26 @@ function startMovePatch(e: PointerEvent, o: TextPatchObject): void {
 }
 
 /**
- * Drag a MOVED IMAGE, which moves the way an edited line does.
+ * Drag a MOVED IMAGE or a LIFTED AREA, which move the way an edited line
+ * does and identically to each other.
  *
  * The rect is not rewritten, for the same reason `startMovePatch` does not
- * rewrite one: an image patch's rect is the image it REPLACES, the cover is
- * drawn from it, and the cover has to stay over the document's own image or
- * that image reappears from underneath the copy. So the drag accumulates
- * into `offset`.
+ * rewrite one: the rect is what the cover is drawn from, and the cover has
+ * to stay over the document's own content or that content reappears from
+ * underneath the copy. So the drag accumulates into `offset`.
  *
- * It cannot change pages either. The patch is addressed by (pageId,
+ * Neither can change pages. An image patch is addressed by (pageId,
  * imageIndex) into one page's device walk and guarded by a hash of that
- * placement; dropped on another page it would address a different image, or
- * none.
+ * placement; dropped on another page it would address a different image,
+ * or none. A lifted area carries a raster of one page's content, which
+ * means nothing anywhere else.
  *
  * NO ALIGNMENT RAILS. The rails are built from the page's text lines, and
  * they exist because a moved line wants to sit level with other lines. An
  * image has no baseline to align and is rarely the width of a column, so
  * snapping it to a text rail would fight the user rather than help them.
  */
-function startMoveImagePatch(e: PointerEvent, o: ImagePatchObject): void {
+function startMoveImagePatch(e: PointerEvent, o: ImagePatchObject | RegionPatchObject): void {
   const from = { dx: o.offset?.dx ?? 0, dy: o.offset?.dy ?? 0 }
   const id = o.id
 
@@ -298,6 +301,13 @@ function startResize(e: PointerEvent, handle: Handle): void {
     commit({ x, y, w, h })
   }, e)
 }
+
+/**
+ * The kinds whose box is the thing they REPLACE rather than a size of
+ * their own, so resize and rotate would offer an edit that does nothing.
+ */
+const isPatchKind = (kind: string): boolean =>
+  kind === 'textPatch' || kind === 'imagePatch' || kind === 'regionPatch'
 
 /** Fold into 0..360 so a few full turns of the handle stay bounded. */
 const norm = (deg: number): number => ((deg % 360) + 360) % 360
@@ -351,15 +361,15 @@ function startRotate(e: PointerEvent): void {
     @dblclick.stop="editText"
   >
     <!--
-      Neither patch kind has either handle. An edited line's box is the
-      line's, not a size of its own, and the writer sits the replacement on
-      that line's baseline whatever `rotation` says. A moved image is drawn
-      at the size of the image it replaces, from a raster captured at that
-      size. In both cases the controls would offer an edit that silently
-      does nothing.
+      No patch kind has either handle. An edited line's box is the line's,
+      not a size of its own, and the writer sits the replacement on that
+      line's baseline whatever `rotation` says. A moved image and a lifted
+      area are drawn at the size of what they replace, from a raster
+      captured at that size. In every case the controls would offer an edit
+      that silently does nothing.
     -->
     <template
-      v-if="!selected.locked && selected.kind !== 'textPatch' && selected.kind !== 'imagePatch'"
+      v-if="!selected.locked && !isPatchKind(selected.kind)"
     >
       <button
         v-for="h in HANDLES"
