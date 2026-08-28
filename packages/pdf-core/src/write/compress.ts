@@ -32,26 +32,62 @@ export type CompressionResult = {
 }
 
 /**
- * Every image XObject reachable from a page's resources.
+ * Every image XObject a page can DRAW, however deeply it is nested.
  *
  * `isStream()` follows an indirect reference, but the object returned by
  * `.resolve()` reports false while still answering `get()` correctly
  * (docs/findings/14-phase-6-preflight.md 7). Resolving first therefore
  * finds nothing, silently -- which is exactly what the first version of
  * this walk did.
+ *
+ * FORMS COUNT, and this is not an edge case. A page's own /Resources is
+ * where an image sits when the page draws it directly; a page that draws
+ * a form draws the form's images too, and those live in the FORM's
+ * resources. Probing a real US-Bangla e-ticket found its logo and its
+ * barcode inside /Fm1 and /Fm2 with the page-level dictionary holding no
+ * image at all -- so the page-only walk reported zero images, and the
+ * compressor handed the file straight back untouched. The documents built
+ * this way are ordinary generator output, and they are the ones with the
+ * most to save.
+ *
+ * `visited` guards the recursion by object number rather than the depth:
+ * a form whose resources reach itself is malformed but writable, and a
+ * plain recursive walk would follow it until the stack ran out.
  */
-function imageRefs(page: mupdf.PDFPage): mupdf.PDFObject[] {
-  const resources = page.getObject().get('Resources')
-  if (!resources.isDictionary()) return []
+function collectImages(
+  resources: mupdf.PDFObject,
+  found: mupdf.PDFObject[],
+  visited: Set<number>,
+): void {
+  if (!resources.isDictionary()) return
   const xobjects = resources.get('XObject')
-  if (!xobjects.isDictionary()) return []
+  if (!xobjects.isDictionary()) return
 
-  const found: mupdf.PDFObject[] = []
   xobjects.forEach((ref) => {
     if (!ref.isStream()) return
     const subtype = ref.get('Subtype')
-    if (subtype.isName() && subtype.asName() === 'Image') found.push(ref)
+    if (!subtype.isName()) return
+
+    if (subtype.asName() === 'Image') {
+      found.push(ref)
+      return
+    }
+    if (subtype.asName() !== 'Form') return
+
+    const num = ref.asIndirect()
+    if (num) {
+      if (visited.has(num)) return
+      visited.add(num)
+    }
+    // A form with no /Resources of its own inherits the page's, which the
+    // caller has already walked -- so a null here is a leaf, not a gap.
+    collectImages(ref.get('Resources'), found, visited)
   })
+}
+
+function imageRefs(page: mupdf.PDFPage): mupdf.PDFObject[] {
+  const found: mupdf.PDFObject[] = []
+  collectImages(page.getObject().get('Resources'), found, new Set())
   return found
 }
 

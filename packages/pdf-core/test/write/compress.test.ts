@@ -56,6 +56,29 @@ async function photoOnThreePages(): Promise<Uint8Array> {
 }
 
 /**
+ * A photo nested one level down, inside a FORM XObject.
+ *
+ * This is not a contrived shape: it is what a real e-ticket looks like.
+ * Probing a US-Bangla e-ticket found its logo and barcode drawn from
+ * inside /Fm1 and /Fm2, with the page's own /Resources /XObject holding
+ * no image at all -- so a walk that reads only page-level resources
+ * reports zero images and compresses nothing, on exactly the documents
+ * with the most to save.
+ *
+ * Built with pdf-lib's `embedPdf`, which is how one document's page
+ * becomes another's form -- the same construction the generators of those
+ * tickets use.
+ */
+async function photoInsideForm(): Promise<Uint8Array> {
+  const inner = await withPhoto()
+  const outer = await PDFDocument.create()
+  const [form] = await outer.embedPdf(inner)
+  const page = outer.addPage([612, 792])
+  page.drawPage(form!, { x: 0, y: 0, width: 612, height: 792 })
+  return outer.save()
+}
+
+/**
  * A vector-heavy document with no images at all.
  *
  * This is the case the pre-flight measured as GROWING on re-save
@@ -137,6 +160,20 @@ describe('recompressImages', () => {
    */
   it('re-encodes a shared image once, not once per page', async () => {
     const out = recompressImages(await photoOnThreePages(), 'balanced')
+    expect(out.imagesRecompressed).toBe(1)
+    expect(out.keptOriginal).toBe(false)
+  })
+
+  /**
+   * The bug this guards: images nested in a form were invisible.
+   *
+   * `imageRefs` read only the page's own /Resources /XObject, so a
+   * document that draws its images through a form -- every e-ticket and
+   * every "place a PDF inside a PDF" generator -- reported zero images
+   * and was handed straight back as `keptOriginal`.
+   */
+  it('finds an image nested inside a form XObject', async () => {
+    const out = recompressImages(await photoInsideForm(), 'balanced')
     expect(out.imagesRecompressed).toBe(1)
     expect(out.keptOriginal).toBe(false)
   })
