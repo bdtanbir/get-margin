@@ -105,6 +105,38 @@ describe('confidence', () => {
     expect(sampleBackground(page, LINE, 1).confidence).toBeLessThan(CONFIDENT_ENOUGH)
   })
 
+  /**
+   * A MINORITY OF OUTLIERS IS NOT A VARIED BACKGROUND.
+   *
+   * The colour already knows this -- it is a median precisely so that a
+   * rule or a border in the band cannot drag it. The confidence used a
+   * MEAN deviation, so the same rule dragged that instead, and the two
+   * disagreed about the same pixels.
+   *
+   * Measured on a real e-ticket: the US-Bangla logo sits on flat white
+   * with a blue header bar a few points above it. The sampler returned
+   * white, correctly, with a confidence of 0.105 -- so the tool warned
+   * "the area behind it is not a flat colour" over plain paper.
+   */
+  it('is high for flat paper with a coloured bar nearby', () => {
+    const page = paint(200, 200, (_x, y) => (y >= 47 && y < 50 ? [20, 80, 200] : [255, 255, 255]))
+    const s = sampleBackground(page, { x: 50, y: 50, w: 100, h: 100 }, 1, 6)
+    expect(s.color).toEqual([1, 1, 1])
+    expect(s.confidence).toBeGreaterThan(CONFIDENT_ENOUGH)
+  })
+
+  /**
+   * The other side of the same coin, and the reason a share is not simply
+   * "ignore everything". When the band is genuinely split between two
+   * colours there is no telling which of them continues under the box, so
+   * the cover may well show and this has to keep saying so.
+   */
+  it('is low when the band is split evenly between two colours', () => {
+    const page = paint(200, 200, (x) => (x < 100 ? [255, 255, 255] : [20, 80, 200]))
+    expect(sampleBackground(page, { x: 50, y: 50, w: 100, h: 100 }, 1, 6).confidence)
+      .toBeLessThan(CONFIDENT_ENOUGH)
+  })
+
   it('tolerates the slight noise of antialiasing', () => {
     const page = paint(200, 100, (x, y) => {
       const jitter = ((x * 7 + y * 13) % 5) - 2
@@ -147,45 +179,46 @@ describe('when there is nothing to sample', () => {
  *
  * The band is a third of the box's height, which for a line of text is a
  * few points of paper and for a 100pt logo is 33pt of whatever else is on
- * the page -- a table, a rule, a column of text. The median survives a
- * minority of those, but the CONFIDENCE does not: a ring that reaches into
- * unrelated content reads as "the area behind this is varied" and warns
- * the user off a cover that would in fact have been invisible.
+ * the page -- a table, a rule, a column of text. Reach far enough and the
+ * far content stops being a minority, and once it is the majority it takes
+ * the MEDIAN with it: the cover is then painted in the colour of something
+ * two centimetres away.
  */
 describe('sampleBackground band cap', () => {
-  /** White paper, with a black band well outside a small ring. */
-  function paperWithDistantInk(): Bitmap {
-    const width = 200, height = 200
-    const rgba = new Uint8Array(width * height * 4).fill(255)
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        // Ink only more than 10px away from the box below.
-        const far = y < 30 || y > 170
-        if (!far) continue
-        const at = (y * width + x) * 4
-        rgba[at] = 0; rgba[at + 1] = 0; rgba[at + 2] = 0
-      }
-    }
-    return { width, height, rgba }
+  /**
+   * A white frame 8px wide around the box, and black beyond it.
+   *
+   * Sized so the two answers genuinely differ: the natural band for this
+   * box is 33px, of which only the first 8 are white, so an uncapped ring
+   * is three-quarters black and its median goes with it.
+   */
+  function paperInsideInkOutside(): Bitmap {
+    const box = { x0: 50, y0: 50, x1: 150, y1: 150 }
+    const margin = 8
+    return paint(200, 200, (x, y) => {
+      const near =
+        x >= box.x0 - margin && x < box.x1 + margin &&
+        y >= box.y0 - margin && y < box.y1 + margin
+      return near ? [255, 255, 255] : [0, 0, 0]
+    })
   }
 
   const box = { x: 50, y: 50, w: 100, h: 100 }
 
-  it('reaches into distant content without a cap', () => {
-    const out = sampleBackground(paperWithDistantInk(), box, 1)
-    expect(out.confidence).toBeLessThan(0.75)
+  it('takes its colour from distant content when the band is not capped', () => {
+    expect(sampleBackground(paperInsideInkOutside(), box, 1).color).toEqual([0, 0, 0])
   })
 
   it('stays on the paper beside the box when the band is capped', () => {
-    const out = sampleBackground(paperWithDistantInk(), box, 1, 6)
+    const out = sampleBackground(paperInsideInkOutside(), box, 1, 6)
     expect(out.color).toEqual([1, 1, 1])
     expect(out.confidence).toBeGreaterThan(0.9)
   })
 
   it('never grows the band beyond what the box would have used', () => {
     // A cap larger than the natural band changes nothing.
-    const natural = sampleBackground(paperWithDistantInk(), box, 1)
-    const capped = sampleBackground(paperWithDistantInk(), box, 1, 999)
+    const natural = sampleBackground(paperInsideInkOutside(), box, 1)
+    const capped = sampleBackground(paperInsideInkOutside(), box, 1, 999)
     expect(capped).toEqual(natural)
   })
 })

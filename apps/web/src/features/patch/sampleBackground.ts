@@ -19,6 +19,16 @@ export type BackgroundSample = {
   samples: number
 }
 
+/**
+ * How far a pixel may sit from the median and still count as the same
+ * colour, per channel, 0..255.
+ *
+ * Wide enough to swallow the antialiasing and JPEG noise that make no two
+ * pixels of "white paper" identical, narrow enough that two colours a
+ * reader can tell apart are not counted as one.
+ */
+const FLAT_TOLERANCE = 12
+
 /** White, the honest default when there is nothing to sample. */
 const WHITE: [number, number, number] = [1, 1, 1]
 
@@ -119,16 +129,37 @@ export function sampleBackground(
   const mg = median(greens)
   const mb = median(blues)
 
-  // Confidence from the mean absolute deviation around that median, which
-  // is the "is this area flat" question stated directly. Normalised against
-  // a deviation of 24/255 -- about the point where a flat cover starts to
-  // be visible against what it covers.
-  let deviation = 0
+  /**
+   * Confidence is the SHARE of the sampled paper that is already the
+   * colour about to be painted.
+   *
+   * This used to be one minus the MEAN absolute deviation around the
+   * median, and that contradicted the median two lines above it. The
+   * median exists precisely so a rule, a border or a coloured bar in the
+   * band cannot drag the answer; a mean deviation over the same pixels
+   * hands them back all their influence, so the colour ignored the
+   * outliers and the confidence did not.
+   *
+   * Measured on a real e-ticket: the US-Bangla logo sits on flat white
+   * with a blue header bar a few points above it. The sample returned
+   * white with a confidence of 0.105, so the tool warned that the paper
+   * behind a logo on plain paper "is not a flat colour".
+   *
+   * A share answers the question the UI actually asks -- will a flat
+   * rectangle of THIS colour look wrong here -- and it degrades the way
+   * the warning needs it to: a quarter of the band being something else
+   * still reads as flat paper, while a background that genuinely varies
+   * has almost no pixels at any single colour and collapses towards zero.
+   */
+  let matching = 0
   for (let i = 0; i < reds.length; i++) {
-    deviation += Math.abs(reds[i]! - mr) + Math.abs(greens[i]! - mg) + Math.abs(blues[i]! - mb)
+    if (
+      Math.abs(reds[i]! - mr) <= FLAT_TOLERANCE &&
+      Math.abs(greens[i]! - mg) <= FLAT_TOLERANCE &&
+      Math.abs(blues[i]! - mb) <= FLAT_TOLERANCE
+    ) matching++
   }
-  deviation /= reds.length * 3
-  const confidence = Math.max(0, Math.min(1, 1 - deviation / 24))
+  const confidence = matching / reds.length
 
   return {
     color: [mr / 255, mg / 255, mb / 255],
