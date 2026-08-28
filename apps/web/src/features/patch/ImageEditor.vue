@@ -118,12 +118,15 @@ const placements = computed(() => props.index?.images ?? [])
  * the copy's position, which is the only one anybody can see.
  */
 function targetBox(place: ImagePlacement): { x: number; y: number; w: number; h: number } {
-  const { dx = 0, dy = 0 } = patchOn(place.index)?.offset ?? {}
+  const patch = patchOn(place.index)
+  const { dx = 0, dy = 0 } = patch?.offset ?? {}
   return {
     x: place.bbox[0] + dx,
     y: place.bbox[1] + dy,
-    w: place.bbox[2] - place.bbox[0],
-    h: place.bbox[3] - place.bbox[1],
+    // The copy's own size once it has been resized, so the target keeps
+    // matching the thing on screen rather than the area underneath it.
+    w: patch?.size?.w ?? place.bbox[2] - place.bbox[0],
+    h: patch?.size?.h ?? place.bbox[3] - place.bbox[1],
   }
 }
 

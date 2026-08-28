@@ -74,3 +74,46 @@ describe('objectViewRect for a moved text patch', () => {
       .toEqual(objectViewRect(obj({ kind: 'image' }), LETTER, 1))
   })
 })
+
+/**
+ * A resized copy has a size of its own, and the selection box, the layers
+ * list and the floating toolbar all ask this function where it is. Reading
+ * the rect's size would draw the box around the AREA COVERED instead --
+ * which after a resize is a different rectangle entirely.
+ */
+describe('objectViewRect for a resized image patch', () => {
+  const patch = (extra: Record<string, unknown> = {}): EditObject =>
+    obj({ kind: 'imagePatch', data: new Uint8Array([1]), ...extra })
+
+  it('uses the copy’s own size', () => {
+    expect(objectViewRect(patch({ size: { w: 200, h: 50 } }), LETTER, 1))
+      .toEqual({ x: 100, y: 40, w: 200, h: 50 })
+  })
+
+  it('combines a resize with a move', () => {
+    expect(objectViewRect(
+      patch({ size: { w: 200, h: 50 }, offset: { dx: 10, dy: 20 } }), LETTER, 1,
+    )).toEqual({ x: 110, y: 60, w: 200, h: 50 })
+  })
+
+  it('scales the size by zoom', () => {
+    expect(objectViewRect(patch({ size: { w: 200, h: 50 } }), LETTER, 2))
+      .toEqual({ x: 200, y: 80, w: 400, h: 100 })
+  })
+
+  it('falls back to the covered area when there is no size', () => {
+    expect(objectViewRect(patch(), LETTER, 1)).toEqual({ x: 100, y: 40, w: 80, h: 10 })
+  })
+
+  it('applies to a lifted area too', () => {
+    expect(objectViewRect(
+      obj({ kind: 'regionPatch', data: new Uint8Array([1]), size: { w: 30, h: 30 } }), LETTER, 1,
+    )).toEqual({ x: 100, y: 40, w: 30, h: 30 })
+  })
+
+  /** A size on a kind that has none is meaningless and must not be read. */
+  it('ignores a size on a kind that does not have one', () => {
+    expect(objectViewRect(obj({ kind: 'image', size: { w: 500, h: 500 } }), LETTER, 1))
+      .toEqual(objectViewRect(obj({ kind: 'image' }), LETTER, 1))
+  })
+})

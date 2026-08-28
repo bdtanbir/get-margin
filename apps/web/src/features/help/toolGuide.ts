@@ -113,12 +113,12 @@ export const TOOL_DOCS: Record<ToolId, ToolDoc> = {
   },
   editImage: {
     does: 'Move or take out a picture, logo or barcode the document came with, matching the colour of the paper behind it.',
-    how: 'Outlined targets show every picture on the page. Click one to pick it up — it then behaves like anything else you have added, so you can move it, duplicate it, or press Delete to take it out. An amber outline means the area behind it is not a flat colour.',
+    how: 'Outlined targets show every picture on the page. Click one to pick it up — it then behaves like anything else you have added, so you can drag it, drag a corner to resize it, duplicate it, or press Delete to take it out. An amber outline means the area behind it is not a flat colour.',
     caution: 'This covers the picture, it does not delete it from the file — someone opening the PDF with the right tools could still recover it. To add your own picture, use Image.',
   },
   lift: {
     does: 'Take a copy of any part of the page — a logo drawn as artwork, a table, a block of text, anything Edit image cannot see — and move it or hide it.',
-    how: 'Drag a box around what you want. It lifts as one piece: drag it where you like, or press Delete to leave the space blank.',
-    caution: 'The copy is a picture of that area, so it cannot be re-edited as text afterwards, and it carries the paper behind it — moving it onto a coloured panel will show a pale rectangle. Like the other cover tools, the original is hidden rather than deleted.',
+    how: 'Drag a box around what you want. It lifts as one piece: drag it where you like, drag a corner to resize it, or press Delete to leave the space blank.',
+    caution: 'The copy is a picture of that area, so it cannot be re-edited as text afterwards, it carries the paper behind it — moving it onto a coloured panel will show a pale rectangle — and enlarging it a long way past its original size will soften it. Like the other cover tools, the original is hidden rather than deleted.',
   },
 }

@@ -153,6 +153,27 @@ describe('ImageEditor', () => {
       expect(target.attributes('style')).toContain('left: 220px')
     })
 
+    it('a resized image gets a target its own size', () => {
+      seed()
+      const edits = useEditsStore()
+      edits.applyOp({
+        type: 'addObject',
+        object: {
+          id: 'ip2', pageId: 'p1', kind: 'imagePatch',
+          imageIndex: 0, originalHash: 'aaaa1111',
+          background: [1, 1, 1], backgroundConfidence: 1,
+          data: new Uint8Array([1]), mime: 'image/png',
+          size: { w: 60, h: 30 }, offset: { dx: 10, dy: 5 },
+          rect: { x: 50, y: 50, w: 200, h: 100 },
+          rotation: 0, z: 1, locked: false, opacity: 1,
+        } as never,
+      }, 'add')
+      const target = mountIt().find('[data-image-target="0"]')
+      expect(target.attributes('style')).toContain('width: 60px')
+      expect(target.attributes('style')).toContain('height: 30px')
+      expect(target.attributes('style')).toContain('left: 60px')
+    })
+
     it('clicking it selects the image it has become, not a second copy', async () => {
       const edits = seed()
       moved({ dx: 60, dy: 40 })

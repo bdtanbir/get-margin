@@ -120,3 +120,20 @@ eventually takes the rule beside them. So the boundary is drawn instead:
     drift by a bleed or a sign.
 12. The Lift area tool: drag a box, it lifts as one piece, and the select
     tool arrives with it already selected.
+
+### Resize (added after move)
+
+A copy is a picture and wants a size of its own. `size` is stored
+separately from `rect` because the two answer different questions and must
+be free to disagree: `rect` is the area being covered and has to stay over
+the page's own content, while the copy can be dragged to any size.
+
+13. `size?: {w, h}` on both patch kinds; absent means "the size of what I
+    cover", which is what every patch written before it meant.
+14. `coverArea` places the copy by its TOP-LEFT, so the drawn height comes
+    off the y — reducing to the old `y - dy` when there is no resize.
+15. Resize handles appear on a patch once it CARRIES A COPY. Rotate never
+    does: the writer places a copy with a plain scale-and-translate matrix.
+16. Dragging a north or west handle derives the move from the CLAMPED
+    size, so an edge stops when the box bottoms out instead of carrying on
+    across the page.

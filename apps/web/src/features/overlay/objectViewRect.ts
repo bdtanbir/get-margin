@@ -39,6 +39,26 @@ export function objectViewRect(o: EditObject, g: PageGeometry, zoom: number): Vi
    * stream is bottom-up; both signs are pinned by tests.
    */
   const { dx = 0, dy = 0 } = o.offset ?? {}
-  const at = { ...o.rect, x: o.rect.x + dx, y: o.rect.y + dy }
+  /**
+   * The COPY'S size, where it has one of its own.
+   *
+   * An image patch and a lifted area can be resized, and their `size` is
+   * deliberately separate from `rect`: the rect is the area being covered
+   * and must stay over the page's own content, while the copy is a picture
+   * and can be any size it was dragged to. Reading the rect's size here
+   * would draw the selection box, the layers row and the floating toolbar
+   * around the covered area instead -- a different rectangle entirely once
+   * the copy has been resized.
+   *
+   * A `textPatch` has no `size`: its replacement is set at a font size and
+   * sits on the line's own baseline, so there is no box to drag.
+   */
+  const size = 'size' in o ? o.size : undefined
+  const at = {
+    x: o.rect.x + dx,
+    y: o.rect.y + dy,
+    w: size?.w ?? o.rect.w,
+    h: size?.h ?? o.rect.h,
+  }
   return pageRectToView(at, g, zoom)
 }

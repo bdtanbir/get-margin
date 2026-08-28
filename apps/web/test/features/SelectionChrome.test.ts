@@ -85,7 +85,7 @@ describe('SelectionChrome', () => {
       ...over,
     } as unknown as EditObject)
 
-    const selectedPatch = (over?: Record<string, unknown>) => {
+    const selectedPatch = (over: Record<string, unknown> = {}) => {
       edits.applyOp({ type: 'addObject', object: imagePatch(over) }, 'add')
       edits.select(['ip1'])
       return mount(SelectionChrome, { props: { page, zoom: 1 } })
@@ -123,13 +123,84 @@ describe('SelectionChrome', () => {
     })
 
     /**
-     * Neither handle. The copy is drawn at the size of the image it
-     * replaces, from a raster captured at that size, so resize and rotate
-     * would offer an edit that silently does nothing.
+     * Resize handles, once it carries a copy: that copy is a picture with
+     * a size of its own, stored separately from the rect precisely so the
+     * two can differ.
      */
-    it('offers no resize or rotate handles', () => {
+    it('offers resize handles once it carries a copy', () => {
       const w = selectedPatch()
+      expect(w.findAll('[data-handle]').length).toBeGreaterThan(0)
+    })
+
+    /**
+     * NOT rotate. The writer places the copy with a plain scale-and-
+     * translate matrix, so a rotation would be an edit that silently does
+     * nothing.
+     */
+    it('offers no rotate handle', () => {
+      expect(selectedPatch().find('[data-rotate-handle]').exists()).toBe(false)
+    })
+
+    /** Nothing to resize while it is only a cover. */
+    it('offers no handles while it carries nothing', () => {
+      const w = selectedPatch({ data: undefined })
       expect(w.findAll('[data-handle]')).toHaveLength(0)
+    })
+
+    it('resizes the copy from the south-east handle without moving it', async () => {
+      const w = selectedPatch()
+      await w.get('[data-handle="se"]').element.dispatchEvent(pointerDown(0, 0))
+      move(50, 30)
+      up()
+      const o = edits.doc.objects.ip1 as unknown as {
+        size?: { w: number; h: number }
+        offset?: { dx: number; dy: number }
+        rect: { x: number; y: number; w: number; h: number }
+      }
+      expect(o.size).toEqual({ w: 250, h: 130 })
+      expect(o.offset ?? { dx: 0, dy: 0 }).toEqual({ dx: 0, dy: 0 })
+      // The cover has to stay over the page's own image.
+      expect(o.rect).toEqual({ x: 100, y: 600, w: 200, h: 100 })
+    })
+
+    /** Dragging a north or west handle moves the top-left corner too. */
+    it('moves the copy when the north-west handle is dragged', async () => {
+      const w = selectedPatch()
+      await w.get('[data-handle="nw"]').element.dispatchEvent(pointerDown(0, 0))
+      move(20, 10)
+      up()
+      const o = edits.doc.objects.ip1 as unknown as {
+        size: { w: number; h: number }
+        offset: { dx: number; dy: number }
+      }
+      expect(o.size).toEqual({ w: 180, h: 90 })
+      expect(o.offset).toEqual({ dx: 20, dy: 10 })
+    })
+
+    it('never shrinks past the minimum, and stops moving when it gets there', async () => {
+      const w = selectedPatch()
+      await w.get('[data-handle="nw"]').element.dispatchEvent(pointerDown(0, 0))
+      move(10_000, 10_000)
+      up()
+      const o = edits.doc.objects.ip1 as unknown as {
+        size: { w: number; h: number }
+        offset: { dx: number; dy: number }
+      }
+      expect(o.size.w).toBeGreaterThan(0)
+      expect(o.size.h).toBeGreaterThan(0)
+      // The left edge stopped where the width bottomed out, rather than
+      // carrying on across the page.
+      expect(o.offset.dx).toBe(200 - o.size.w)
+      expect(o.offset.dy).toBe(100 - o.size.h)
+    })
+
+    it('adds to a size it already had', async () => {
+      const w = selectedPatch({ size: { w: 50, h: 25 } })
+      await w.get('[data-handle="se"]').element.dispatchEvent(pointerDown(0, 0))
+      move(10, 5)
+      up()
+      expect((edits.doc.objects.ip1 as unknown as { size: { w: number; h: number } }).size)
+        .toEqual({ w: 60, h: 30 })
     })
   })
 

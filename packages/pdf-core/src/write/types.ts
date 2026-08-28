@@ -398,6 +398,21 @@ export type ImagePatchObject = BaseObject & {
   data?: Uint8Array
   mime?: 'image/png'
   /**
+   * The size the copy is DRAWN at, in points. Absent means "the size of
+   * what it covers", which is what every patch written before this meant.
+   *
+   * Separate from `rect` because the two answer different questions and
+   * must be free to disagree. `rect` is the area being covered and has to
+   * stay exactly over the page's own content, or that content reappears
+   * from under its own cover; the copy is a picture and can be any size
+   * the user drags it to.
+   *
+   * It pairs with `offset`, which positions the copy's TOP-LEFT corner --
+   * so a resize that drags a north or west handle changes both, and one
+   * that drags a south or east handle changes only this.
+   */
+  size?: { w: number; h: number }
+  /**
    * How far the redrawn copy sits FROM the image it replaces, in points,
    * MuPDF page space -- top-down, the same space `rect` uses for this
    * kind. Positive dy is down the page.
@@ -452,6 +467,8 @@ export type RegionPatchObject = BaseObject & {
    */
   data?: Uint8Array
   mime?: 'image/png'
+  /** The size the copy is drawn at. See `ImagePatchObject.size`. */
+  size?: { w: number; h: number }
   /**
    * How far the copy sits FROM the area it was lifted out of, in points,
    * MuPDF page space -- top-down, the same space `rect` uses for this

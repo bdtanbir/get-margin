@@ -288,10 +288,56 @@ function startMoveImagePatch(e: PointerEvent, o: ImagePatchObject | RegionPatchO
   }, e)
 }
 
+/**
+ * Resize a COPY -- a moved image or a lifted area.
+ *
+ * Two departures from `startResize`, and both follow from what a patch is
+ * made of.
+ *
+ * The rect is not touched. It is the area being COVERED and has to stay
+ * exactly over the page's own content, or that content reappears from
+ * under its own cover. The copy's size lives in `size`, which exists so
+ * the two can differ.
+ *
+ * The maths is in PAGE space rather than PDF space, which is top-down like
+ * the screen -- so the edge multipliers apply directly, with none of the
+ * sign flipping `commit` does on its way through `viewRectToPdf`.
+ */
+function startResizePatch(
+  e: PointerEvent,
+  handle: Handle,
+  o: ImagePatchObject | RegionPatchObject,
+): void {
+  const edge = EDGES[handle]
+  const id = o.id
+  const from = { dx: o.offset?.dx ?? 0, dy: o.offset?.dy ?? 0 }
+  const start = { w: o.size?.w ?? o.rect.w, h: o.size?.h ?? o.rect.h }
+
+  gesture('Resize', ({ dx, dy }) => {
+    const d = viewDeltaToPage({ x: dx, y: dy }, props.page.geometry, props.zoom)
+    const w = Math.max(MIN_SIZE_PT, start.w + edge.r * d.x - edge.l * d.x)
+    const h = Math.max(MIN_SIZE_PT, start.h + edge.b * d.y - edge.t * d.y)
+    /**
+     * Dragging a north or west handle moves the top-left corner as well as
+     * changing the size. Deriving the move from the CLAMPED size rather
+     * than from the raw pointer delta is what stops the edge carrying on
+     * across the page after the box has bottomed out at the minimum.
+     */
+    const offset = {
+      dx: from.dx + (edge.l ? start.w - w : 0),
+      dy: from.dy + (edge.t ? start.h - h : 0),
+    }
+    edits.applyOp({ type: 'updateObject', id, patch: { offset, size: { w, h } } }, 'Resize')
+  }, e)
+}
+
 function startResize(e: PointerEvent, handle: Handle): void {
   const o = selected.value
   const start = box.value
   if (!o || !start || o.locked) return
+  if (o.kind === 'imagePatch' || o.kind === 'regionPatch') {
+    return startResizePatch(e, handle, o)
+  }
   const edge = EDGES[handle]
   gesture('Resize', ({ dx, dy }) => {
     const x = start.x + edge.l * dx
@@ -303,11 +349,40 @@ function startResize(e: PointerEvent, handle: Handle): void {
 }
 
 /**
- * The kinds whose box is the thing they REPLACE rather than a size of
- * their own, so resize and rotate would offer an edit that does nothing.
+ * The kinds whose `rect` is the thing they REPLACE rather than a size of
+ * their own.
  */
 const isPatchKind = (kind: string): boolean =>
   kind === 'textPatch' || kind === 'imagePatch' || kind === 'regionPatch'
+
+/**
+ * Resize is offered wherever there is something with a size to drag.
+ *
+ * For a patch that means once it CARRIES A COPY: the copy is a picture and
+ * has a `size` of its own, separate from the area it covers. A patch
+ * carrying nothing is a bare cover over the page's own content, and
+ * resizing that would slide it off what it is there to hide.
+ *
+ * An edited line never qualifies. Its replacement is set at a font size
+ * and sits on the line's own baseline, so there is no box to drag.
+ */
+const canResize = computed(() => {
+  const o = selected.value
+  if (!o || o.locked) return false
+  if (!isPatchKind(o.kind)) return true
+  if (o.kind !== 'imagePatch' && o.kind !== 'regionPatch') return false
+  return (o.data?.length ?? 0) > 0
+})
+
+/**
+ * Rotate is NOT offered for any patch. The writer places a copy with a
+ * plain scale-and-translate matrix and sits a replacement line on its own
+ * baseline, so the handle would offer an edit that silently does nothing.
+ */
+const canRotate = computed(() => {
+  const o = selected.value
+  return !!o && !o.locked && !isPatchKind(o.kind)
+})
 
 /** Fold into 0..360 so a few full turns of the handle stay bounded. */
 const norm = (deg: number): number => ((deg % 360) + 360) % 360
@@ -361,16 +436,10 @@ function startRotate(e: PointerEvent): void {
     @dblclick.stop="editText"
   >
     <!--
-      No patch kind has either handle. An edited line's box is the line's,
-      not a size of its own, and the writer sits the replacement on that
-      line's baseline whatever `rotation` says. A moved image and a lifted
-      area are drawn at the size of what they replace, from a raster
-      captured at that size. In every case the controls would offer an edit
-      that silently does nothing.
+      Resize wherever there is something with a size to drag -- which for a
+      patch means once it carries a copy. See `canResize`.
     -->
-    <template
-      v-if="!selected.locked && !isPatchKind(selected.kind)"
-    >
+    <template v-if="canResize">
       <button
         v-for="h in HANDLES"
         :key="h"
@@ -388,6 +457,12 @@ function startRotate(e: PointerEvent): void {
         }"
         @pointerdown.stop="(e) => startResize(e, h)"
       />
+    </template>
+    <!--
+      Rotate is never offered for a patch: the writer places a copy with a
+      plain scale-and-translate matrix. See `canRotate`.
+    -->
+    <template v-if="canRotate">
       <button
         data-rotate-handle
         type="button"

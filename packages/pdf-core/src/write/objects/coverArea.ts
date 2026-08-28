@@ -26,6 +26,8 @@ export type CoveredArea = {
   mime?: 'image/png'
   /** How far the copy sits from the area, in points, page space. */
   offset?: { dx: number; dy: number }
+  /** The size the copy is drawn at. Absent means the size of the area. */
+  size?: { w: number; h: number }
 }
 
 /**
@@ -73,6 +75,22 @@ export function coverAndRedraw(
     const dx = area.offset?.dx ?? 0
     const dy = area.offset?.dy ?? 0
 
+    /**
+     * The copy's own size, defaulting to the area's -- which is what every
+     * patch written before `size` existed meant, so no stored document
+     * needs migrating and the schema version did not have to move.
+     */
+    const drawW = area.size?.w ?? w
+    const drawH = area.size?.h ?? h
+
+    /**
+     * `offset` positions the copy's TOP-LEFT corner, and a content stream
+     * places an image by its BOTTOM-left, so the drawn height comes off
+     * the y. With no resize this reduces to `y - dy`, which is what it
+     * always was.
+     */
+    const drawY = y + h - drawH - dy
+
     // Memoised on the bytes by the same cache every image placement uses,
     // so one lifted logo repeated on ten pages embeds once.
     const { name, obj } = ctx.xobject(data, () => ctx.raw.addImage(new mupdf.Image(data)))
@@ -83,7 +101,7 @@ export function coverAndRedraw(
     // `appendContent` brackets every fragment it appends, and this `cm` is
     // the last thing this one emits.
     ops.push(
-      `${num(w)} 0 0 ${num(h)} ${num(x + dx)} ${num(y - dy)} cm`,
+      `${num(drawW)} 0 0 ${num(drawH)} ${num(x + dx)} ${num(drawY)} cm`,
       `/${name} Do`,
     )
   }

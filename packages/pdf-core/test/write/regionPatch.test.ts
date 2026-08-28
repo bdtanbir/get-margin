@@ -143,6 +143,58 @@ describe('regionPatch writer', () => {
   })
 
   /**
+   * RESIZING is the copy's own size, which is why it is stored separately
+   * from `rect`. The rect is the area being covered and has to stay
+   * exactly where the page's own content is; the copy is free.
+   */
+  describe('resizing', () => {
+    it('draws the copy at the size it was given', () => {
+      const out = write([patch({
+        data: green(), mime: 'image/png',
+        offset: { dx: 0, dy: 200 }, size: { w: 50, h: 25 },
+      })])
+      // The copy now runs x 50..100, y 292..317 in page space.
+      expect(isGreen(pixel(out, 75, 300))).toBe(true)
+      // Where a full-size copy would have reached, and no longer does.
+      expect(isGreen(pixel(out, 140, 380))).toBe(false)
+    })
+
+    it('anchors the resize at the copy’s top-left corner', () => {
+      const out = write([patch({
+        data: green(), mime: 'image/png',
+        offset: { dx: 0, dy: 200 }, size: { w: 50, h: 25 },
+      })])
+      // Inside the resized copy's own corners, and just past the far one
+      // -- which a full-size copy WOULD have reached.
+      expect(isGreen(pixel(out, 53, 295))).toBe(true)
+      expect(isGreen(pixel(out, 97, 314))).toBe(true)
+      expect(isGreen(pixel(out, 110, 330))).toBe(false)
+    })
+
+    it('can draw the copy BIGGER than the area it came from', () => {
+      const out = write([patch({
+        data: green(), mime: 'image/png',
+        offset: { dx: 0, dy: 200 }, size: { w: 300, h: 150 },
+      })])
+      expect(isGreen(pixel(out, 340, 430))).toBe(true)
+    })
+
+    it('still covers the original area at its own size', () => {
+      const out = write([patch({
+        data: green(), mime: 'image/png',
+        offset: { dx: 0, dy: 200 }, size: { w: 20, h: 10 },
+      })])
+      expect(isWhite(pixel(out, ...RED_CENTRE))).toBe(true)
+    })
+
+    /** Every patch written before this meant "the size of what I cover". */
+    it('without a size, draws at the size of what it covers', () => {
+      const out = write([patch({ data: green(), mime: 'image/png', offset: { dx: 0, dy: 200 } })])
+      expect(isGreen(pixel(out, 145, 387))).toBe(true)
+    })
+  })
+
+  /**
    * NO HASH GUARD, and that is a real difference from `imagePatch` rather
    * than an omission. An image patch is addressed by POSITION IN A WALK,
    * which means nothing without a check that the thing at that position is

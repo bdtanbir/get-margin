@@ -60,9 +60,23 @@ const cover = computed(() => {
   }
 })
 
+/**
+ * Where the copy is drawn, and at what size.
+ *
+ * The size is the COPY'S own, falling back to the covered area's -- the
+ * same default `coverArea.ts` applies on the export side, and the reason
+ * the two are stored separately: the cover must stay over the page's own
+ * content while the copy is free to be dragged to any size.
+ */
 const placed = computed(() => {
   const { x, y, w, h } = props.object.rect
-  return { x: x + dx.value, y: y + dy.value, width: w, height: h }
+  const size = props.object.size
+  return {
+    x: x + dx.value,
+    y: y + dy.value,
+    width: size?.w ?? w,
+    height: size?.h ?? h,
+  }
 })
 
 /**
