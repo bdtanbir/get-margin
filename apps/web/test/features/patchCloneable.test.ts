@@ -3,16 +3,23 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { ref } from 'vue'
 import PatchEditor from '@/features/patch/PatchEditor.vue'
+import LiftTool from '@/features/patch/LiftTool.vue'
+import ImageEditor from '@/features/patch/ImageEditor.vue'
 import SelectionToolbar from '@/features/tools/SelectionToolbar.vue'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore } from '@/stores/viewport'
 import { useSelectionStore } from '@/stores/selection'
-import type { Color, PageQuadIndex, Quad } from '@margin/pdf-core'
+import type { Color, PageImageIndex, PageQuadIndex, Quad } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 
 const missingGlyphs = vi.fn<() => Promise<string[]>>()
+const regionCrop = vi.fn<(...a: unknown[]) => Promise<{ data: Uint8Array } | undefined>>()
+const imageCrop = vi.fn<(...a: unknown[]) => Promise<{ data: Uint8Array; hash: string } | undefined>>()
 vi.mock('@/workers/pdfClient', () => ({
-  getPdfClient: () => ({ missingGlyphs, open: vi.fn(), render: vi.fn(), close: vi.fn() }),
+  getPdfClient: () => ({
+    missingGlyphs, regionCrop, imageCrop,
+    open: vi.fn(), render: vi.fn(), close: vi.fn(),
+  }),
   closeSharedDocument: vi.fn(),
 }))
 vi.mock('@/lib/fonts', async (importOriginal) => {
@@ -80,6 +87,8 @@ describe('an edit document is always structure-cloneable', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     missingGlyphs.mockResolvedValue([])
+    regionCrop.mockResolvedValue({ data: new Uint8Array([1, 2, 3]) })
+    imageCrop.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), hash: 'aaaa1111' })
     const edits = useEditsStore()
     edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'],
       { p1: { sourceId: 'src-0', sourceIndex: 0, rotation: 0, cropBox: null } })
@@ -143,5 +152,84 @@ describe('an edit document is always structure-cloneable', () => {
 
     expect(Object.values(edits.doc.objects)).toHaveLength(1)
     expectCloneable(edits.doc)
+  })
+
+  /**
+   * THE REGION HANDED TO THE WORKER, not only the document.
+   *
+   * `LiftTool` keeps the box it is drawing in a `ref`, and a ref holding an
+   * object hands back a deeply reactive Proxy on every read. That Proxy
+   * went two places: into `regionCrop`, which is a comlink call and so a
+   * `postMessage`, and onto the object as its `rect`. The first threw
+   * "Proxy object could not be cloned" the moment the drag ended -- before
+   * anything was lifted at all -- and the second would have failed the
+   * export later.
+   */
+  describe('after an area is lifted', () => {
+    const drawBox = async (w: ReturnType<typeof mount>) => {
+      await w.get('[data-lift-surface]')
+        .trigger('pointerdown', { button: 0, clientX: 40, clientY: 50, pointerId: 1 })
+      const move = new Event('pointermove', { bubbles: true }) as PointerEvent
+      Object.assign(move, { clientX: 200, clientY: 180, pointerId: 1 })
+      window.dispatchEvent(move)
+      await flushPromises()
+      const up = new Event('pointerup', { bubbles: true }) as PointerEvent
+      Object.assign(up, { clientX: 200, clientY: 180, pointerId: 1 })
+      window.dispatchEvent(up)
+      await flushPromises()
+    }
+
+    it('the box sent to the worker survives postMessage', async () => {
+      await drawBox(mount(LiftTool, { props: { page, zoom: 1 } }))
+      expect(regionCrop).toHaveBeenCalled()
+      expectCloneable(regionCrop.mock.calls[0]![2])
+    })
+
+    it('and the document it produces does too', async () => {
+      const edits = useEditsStore()
+      await drawBox(mount(LiftTool, { props: { page, zoom: 1 } }))
+      expectCloneable(edits.doc)
+    })
+  })
+
+  /**
+   * The image tool reads its geometry out of an index the app holds in a
+   * `ref`, so every `bbox` it touches is a Proxy over an array.
+   */
+  describe('after one of the document’s own images is edited', () => {
+    const reactiveImages = (): PageImageIndex => ref({
+      images: [{
+        index: 0,
+        bbox: [50, 50, 250, 150] as [number, number, number, number],
+        width: 800, height: 400, hash: 'aaaa1111',
+      }],
+    }).value
+
+    const press = async (w: ReturnType<typeof mount>, travel: boolean) => {
+      await w.get('[data-image-target="0"]')
+        .trigger('pointerdown', { button: 0, clientX: 0, clientY: 0, pointerId: 1 })
+      if (travel) {
+        const move = new Event('pointermove', { bubbles: true }) as PointerEvent
+        Object.assign(move, { clientX: 60, clientY: 40, pointerId: 1 })
+        window.dispatchEvent(move)
+        await flushPromises()
+      }
+      const up = new Event('pointerup', { bubbles: true }) as PointerEvent
+      Object.assign(up, { clientX: 0, clientY: 0, pointerId: 1 })
+      window.dispatchEvent(up)
+      await flushPromises()
+    }
+
+    it('after it is removed', async () => {
+      const edits = useEditsStore()
+      await press(mount(ImageEditor, { props: { page, zoom: 1, index: reactiveImages() } }), false)
+      expectCloneable(edits.doc)
+    })
+
+    it('after it is moved', async () => {
+      const edits = useEditsStore()
+      await press(mount(ImageEditor, { props: { page, zoom: 1, index: reactiveImages() } }), true)
+      expectCloneable(edits.doc)
+    })
   })
 })

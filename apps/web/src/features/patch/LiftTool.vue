@@ -8,7 +8,7 @@ import { useToolsStore } from '@/stores/tools'
 import { useViewportStore } from '@/stores/viewport'
 import { getPdfClient } from '@/workers/pdfClient'
 import { sampleBackground } from './sampleBackground'
-import { plainColor } from './linePatch'
+import { plainColor, plainRect } from './linePatch'
 
 /**
  * Drag a box around any part of the page and lift it out as one piece.
@@ -130,7 +130,12 @@ function onPointerDown(e: PointerEvent): void {
     } catch {
       // Already released, or never captured.
     }
-    const rect = draft.value
+    // PLAIN, not the ref's Proxy. `draft` is a ref holding an object, so
+    // reading it back gives a deeply reactive Proxy -- which cannot cross
+    // `postMessage` and must never enter the edit document. See
+    // `plainRect`.
+    const drawn = draft.value
+    const rect = drawn ? plainRect(drawn) : undefined
     draft.value = undefined
     if (!rect || rect.w < MIN_SIZE_PT || rect.h < MIN_SIZE_PT) return
     busy.value = true

@@ -39,6 +39,30 @@ export function plainColor(c: Color): Color {
   return [c[0], c[1], c[2]]
 }
 
+/**
+ * A rect as PLAIN numbers, detached from whatever it was read out of.
+ *
+ * The same hazard `plainColor` exists for, one layer up. A `ref()` holding
+ * an object makes that object DEEPLY reactive, so reading a box back out
+ * of one hands back a Proxy rather than the literal that was assigned.
+ *
+ * `LiftTool` keeps the box it is drawing in exactly such a ref, and that
+ * Proxy went two places: to `regionCrop`, which is a comlink call and so a
+ * `postMessage`, and onto the lifted object as its `rect`. The first threw
+ * "Proxy object could not be cloned" the instant the drag ended, which is
+ * what the user saw; the second would have failed the export later, far
+ * from the code that caused it.
+ *
+ * Copied here rather than at either boundary because the rule is that an
+ * edit document -- and anything handed to the worker -- holds plain data,
+ * and the place to keep that true is where the data enters.
+ */
+export function plainRect(r: { x: number; y: number; w: number; h: number }): {
+  x: number; y: number; w: number; h: number
+} {
+  return { x: r.x, y: r.y, w: r.w, h: r.h }
+}
+
 /** The four axes a patch inherits from the line it replaces. */
 export type PatchStyle = {
   bold: boolean
