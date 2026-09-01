@@ -35,7 +35,7 @@ export type ToolDoc = {
 export const TOOL_DOCS: Record<ToolId, ToolDoc> = {
   select: {
     does: 'Pick up anything you have added — move it, resize it, restyle it or delete it. It is also how you select the document’s own text before reaching for a markup tool.',
-    how: 'Click an object to select it, then drag to move or drag a corner to resize. Delete removes it. Drag across the page’s text to select words.',
+    how: 'Click an object to select it, then drag to move or drag a corner to resize. Delete removes it. Drag across the page’s text to select words. Double-click the document’s own text or a picture it came with to edit that instead — the shortcut past this rail.',
   },
   text: {
     does: 'Add a new line or paragraph of your own. Font, size, weight, colour and alignment are all in the inspector.',
@@ -108,12 +108,12 @@ export const TOOL_DOCS: Record<ToolId, ToolDoc> = {
   },
   patch: {
     does: 'Rewrite a line the document already says, keeping its font, its weight and the background behind it.',
-    how: 'Click the line, then retype it.',
+    how: 'Click the line, then retype it. Double-clicking a line under Select gets you here in one gesture, with the words already highlighted so typing replaces them.',
     caution: 'This replaces existing wording. To add a new line that was never there, use Text.',
   },
   editImage: {
     does: 'Move or take out a picture, logo or barcode the document came with, matching the colour of the paper behind it.',
-    how: 'Outlined targets show every picture on the page. Click one to pick it up — it then behaves like anything else you have added, so you can drag it, drag a corner to resize it, duplicate it, or press Delete to take it out. An amber outline means the area behind it is not a flat colour.',
+    how: 'Outlined targets show every picture on the page. Double-clicking a picture under Select picks it up in one gesture. Click one to pick it up — it then behaves like anything else you have added, so you can drag it, drag a corner to resize it, duplicate it, or press Delete to take it out. An amber outline means the area behind it is not a flat colour.',
     caution: 'This covers the picture, it does not delete it from the file — someone opening the PDF with the right tools could still recover it. To add your own picture, use Image.',
   },
   lift: {

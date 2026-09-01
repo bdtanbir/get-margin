@@ -62,11 +62,36 @@ export const useToolsStore = defineStore('tools', () => {
    */
   const movingPatchId = ref<string | undefined>(undefined)
 
+  /**
+   * A request from elsewhere in the app to open one of the two
+   * document-editing tools ON A PARTICULAR THING.
+   *
+   * It exists because a double-click on the page decides WHAT was hit --
+   * `PageOverlay` owns the coordinates and the extraction -- while only
+   * `PatchEditor` and `ImageEditor` know how to open it, and neither is
+   * mounted until its tool is active. So the answer is parked here for the
+   * tool that is about to mount, addressed by page: every page mounts its
+   * own copy of both tools, and an unaddressed request would open an editor
+   * on all of them at once.
+   *
+   * Transient like everything else in this store. Which line the user is
+   * about to edit is not an undoable step, and the request is consumed the
+   * moment it is honoured -- a request left lying around would fire again
+   * on the next page to scroll into view.
+   */
+  const pendingPatch = ref<{ pageId: string; lineIndex: number } | undefined>(undefined)
+  const pendingImage = ref<{ pageId: string; imageIndex: number } | undefined>(undefined)
+
   function setTool(id: ToolId): void {
     if (id === active.value) return
     active.value = id
     draft.value = undefined
     editingId.value = undefined
+    // A request belongs to the tool it was made for. Picking a tool by hand
+    // abandons it -- otherwise a request that never found its page would sit
+    // here and fire the next time that tool happened to be opened.
+    pendingPatch.value = undefined
+    pendingImage.value = undefined
     // A selection belongs to the select tool. Leaving it visible while a
     // drawing tool is active makes the handles look interactive when they
     // are not.
@@ -79,6 +104,23 @@ export const useToolsStore = defineStore('tools', () => {
   function startEditing(id: string): void { editingId.value = id }
   function stopEditing(): void { editingId.value = undefined }
 
+  /**
+   * Open the Edit text tool on one line of the document's own text.
+   *
+   * The tool is set FIRST: `setTool` clears any request, so recording this
+   * one before switching would throw it away.
+   */
+  function requestPatch(pageId: string, lineIndex: number): void {
+    setTool('patch')
+    pendingPatch.value = { pageId, lineIndex }
+  }
+
+  /** Open the Edit image tool on one of the images the document draws. */
+  function requestImage(pageId: string, imageIndex: number): void {
+    setTool('editImage')
+    pendingImage.value = { pageId, imageIndex }
+  }
+
   function startMovingPatch(id: string): void { movingPatchId.value = id }
   function stopMovingPatch(): void { movingPatchId.value = undefined }
 
@@ -89,7 +131,13 @@ export const useToolsStore = defineStore('tools', () => {
     draft: computed(() => draft.value),
     editingId: computed(() => editingId.value),
     movingPatchId: computed(() => movingPatchId.value),
+    pendingPatch: computed(() => pendingPatch.value),
+    pendingImage: computed(() => pendingImage.value),
     setTool,
+    requestPatch,
+    requestImage,
+    clearPendingPatch(): void { pendingPatch.value = undefined },
+    clearPendingImage(): void { pendingImage.value = undefined },
     setDraft,
     clearDraft,
     startEditing,

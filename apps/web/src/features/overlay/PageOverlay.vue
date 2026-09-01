@@ -27,6 +27,7 @@ import { useDrawTool, isDrawable, draftDefaults } from './useDrawTool'
 import FieldLayer from '@/features/forms/FieldLayer.vue'
 import FindHighlights from '@/features/find/FindHighlights.vue'
 import PatchEditor from '@/features/patch/PatchEditor.vue'
+import { imageAtPoint, lineAtPoint } from '@/features/patch/editTargets'
 import ImageEditor from '@/features/patch/ImageEditor.vue'
 import LiftTool from '@/features/patch/LiftTool.vue'
 
@@ -164,44 +165,113 @@ watch(selecting, (on) => { if (on) void ensureIndex() }, { immediate: true })
  * for a device run over the page.
  */
 const imageIndex = ref<Awaited<ReturnType<ReturnType<typeof getPdfClient>['imageIndex']>> | undefined>(undefined)
-let imagesRequested = false
 
 const editingImages = computed(() => tools.active === 'editImage')
 
-async function ensureImages(): Promise<void> {
-  if (imagesRequested || !editingImages.value) return
-  imagesRequested = true
-  try {
-    // BOTH halves of the identity, for the reason quadIndex documents: in a
-    // merged document two files' first pages are both sourceIndex 0.
-    imageIndex.value = await getPdfClient().imageIndex(props.page.sourceId, props.page.sourceIndex)
-  } catch {
-    // A page whose images cannot be walked still renders and still takes
-    // every other edit.
-    imagesRequested = false
+/**
+ * The fetch itself, rather than a "have we asked yet" flag.
+ *
+ * The flag was enough while the only caller was the watch below, which
+ * wants the index to arrive eventually and does not care when. The
+ * double-click AWAITS this and then hit-tests what came back, and a flag
+ * would have handed it an immediate return with the index still empty --
+ * so double-clicking an image while the first fetch was in flight would
+ * have found nothing there.
+ */
+let imagesFetch: Promise<void> | undefined
+
+function ensureImages(): Promise<void> {
+  if (!imagesFetch) {
+    imagesFetch = (async () => {
+      try {
+        // BOTH halves of the identity, for the reason quadIndex documents: in
+        // a merged document two files' first pages are both sourceIndex 0.
+        imageIndex.value =
+          await getPdfClient().imageIndex(props.page.sourceId, props.page.sourceIndex)
+      } catch {
+        // A page whose images cannot be walked still renders and still takes
+        // every other edit. Forgotten rather than remembered as failed, so a
+        // later double-click may try again.
+        imagesFetch = undefined
+      }
+    })()
   }
+  return imagesFetch
 }
 
 watch(editingImages, (on) => { if (on) void ensureImages() }, { immediate: true })
 
-const text = useTextSelection(() => props.page.id, () => quadIndex.value, {
-  /**
-   * getScreenCTM().inverse() -- the browser owns this conversion (spec 1.4).
-   * The <svg>'s own user space IS page space, because the viewBox is the
-   * page's displayed extent in points; the y-flip lives on the inner <g>,
-   * which these quads deliberately sit outside of.
-   */
-  toPageSpace(clientX, clientY) {
-    const svg = svgEl.value
-    const ctm = svg?.getScreenCTM?.()
-    if (!svg || !ctm) return undefined
-    const point = svg.createSVGPoint()
-    point.x = clientX
-    point.y = clientY
-    const local = point.matrixTransform(ctm.inverse())
-    return { x: local.x, y: local.y }
-  },
-})
+/**
+ * A client point in the page's own coordinates.
+ *
+ * getScreenCTM().inverse() -- the browser owns this conversion (spec 1.4).
+ * The <svg>'s own user space IS page space, because the viewBox is the
+ * page's displayed extent in points; the y-flip lives on the inner <g>,
+ * which these quads deliberately sit outside of.
+ *
+ * Shared by the two things that turn a pointer into a place in the
+ * document: dragging a text selection, and the double-click below. A second
+ * copy of this would be a second answer to where the pointer is.
+ */
+function toPageSpace(clientX: number, clientY: number): { x: number; y: number } | undefined {
+  const svg = svgEl.value
+  const ctm = svg?.getScreenCTM?.()
+  if (!svg || !ctm) return undefined
+  const point = svg.createSVGPoint()
+  point.x = clientX
+  point.y = clientY
+  const local = point.matrixTransform(ctm.inverse())
+  return { x: local.x, y: local.y }
+}
+
+const text = useTextSelection(() => props.page.id, () => quadIndex.value, { toPageSpace })
+
+/**
+ * Double-click the document's own content to edit it.
+ *
+ * The shortcut past the rail. Editing what a PDF already says is the thing
+ * people come to a PDF editor for, and it was reachable only by finding
+ * "Edit text" among twenty tools and then clicking the line -- while every
+ * editor anybody has used puts a caret in a word when you double-click it.
+ *
+ * TEXT WINS over an image where the two overlap, because the text hit test
+ * is the tighter of the two: a line's box is the glyphs' own extent, while
+ * an image's is a rectangle that may have anything drawn on top of it.
+ *
+ * Under the SELECT TOOL ONLY, though the surface this hangs off is mounted
+ * for the markup tools as well. There a double-click plausibly means
+ * "highlight this word", and yanking the user out of the tool they are
+ * holding on a gesture they may not have meant is worse than making them
+ * press the arrow first.
+ */
+async function onDoubleClick(e: MouseEvent): Promise<void> {
+  if (tools.active !== 'select') return
+  const at = toPageSpace(e.clientX, e.clientY)
+  if (!at) return
+
+  const objects = Object.values(edits.doc.objects)
+  const lines = quadIndex.value
+  const line = lines ? lineAtPoint(lines, objects, props.page.id, at.x, at.y) : undefined
+  if (line !== undefined) {
+    // The caret the first click of the double-click left behind. Entering
+    // the editor with a stray selection still drawn under it reads as two
+    // things being edited at once.
+    selection.clear()
+    tools.requestPatch(props.page.id, line)
+    return
+  }
+
+  // Only now, and only once per page: walking a page's images costs a
+  // device run, and paying it for every page the user scrolls past to
+  // answer a question nobody asked would be pure waste.
+  await ensureImages()
+  const index = imageIndex.value
+  const image = index ? imageAtPoint(index, objects, props.page.id, at.x, at.y) : undefined
+  if (image !== undefined) {
+    selection.clear()
+    tools.requestImage(props.page.id, image)
+  }
+}
 
 onBeforeUnmount(() => {
   if (selection.pageId === props.page.id) selection.clear()
@@ -263,6 +333,7 @@ const draft = computed(() => {
       data-text-surface
       class="pointer-events-auto absolute inset-0 cursor-text"
       @pointerdown="text.onPointerDown"
+      @dblclick="onDoubleClick"
     />
     <!--
       AFTER the text surface and BEFORE the <svg>, and both halves matter.

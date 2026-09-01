@@ -7,6 +7,8 @@ export const FIXTURE_NAMES = [
   'hostile',
   // A real AcroForm: text, multiline text, checkbox, radio group, dropdown.
   'form',
+  // A page with a real embedded image, for the tools that edit one.
+  'with-image',
 ] as const
 
 export type FixtureName = (typeof FIXTURE_NAMES)[number]

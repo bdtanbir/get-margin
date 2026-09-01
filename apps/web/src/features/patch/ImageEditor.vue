@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { nanoid } from 'nanoid'
 import { viewDeltaToPage } from '@margin/transform'
 import type {
@@ -12,6 +12,7 @@ import { useViewportStore } from '@/stores/viewport'
 import { getPdfClient } from '@/workers/pdfClient'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
 import { plainColor } from './linePatch'
+import { imagePatchOn, imageTargetRect } from './editTargets'
 
 /**
  * One click target per image the document draws, while the Edit image tool
@@ -93,12 +94,7 @@ function cropScale(place: ImagePlacement): number {
 
 /** The patch covering an image, if the user has already touched it. */
 function patchOn(imageIndex: number): ImagePatchObject | undefined {
-  for (const o of Object.values(edits.doc.objects)) {
-    if (o.kind === 'imagePatch' && o.pageId === props.page.id && o.imageIndex === imageIndex) {
-      return o
-    }
-  }
-  return undefined
+  return imagePatchOn(Object.values(edits.doc.objects), props.page.id, imageIndex)
 }
 
 const placements = computed(() => props.index?.images ?? [])
@@ -113,21 +109,12 @@ const placements = computed(() => props.index?.images ?? [])
  * clicking where it now sat grabbed nothing. `PatchEditor` carries the
  * same function for the same reason; this tool was written without it.
  *
- * The COVER does not move, and neither does the placement -- the
- * document's own image is still where it always was, underneath. This is
- * the copy's position, which is the only one anybody can see.
+ * Computed in `editTargets` rather than here, because the double-click
+ * that reaches this tool from the select tool has to hit-test the same
+ * boxes without this component being mounted.
  */
 function targetBox(place: ImagePlacement): { x: number; y: number; w: number; h: number } {
-  const patch = patchOn(place.index)
-  const { dx = 0, dy = 0 } = patch?.offset ?? {}
-  return {
-    x: place.bbox[0] + dx,
-    y: place.bbox[1] + dy,
-    // The copy's own size once it has been resized, so the target keeps
-    // matching the thing on screen rather than the area underneath it.
-    w: patch?.size?.w ?? place.bbox[2] - place.bbox[0],
-    h: patch?.size?.h ?? place.bbox[3] - place.bbox[1],
-  }
+  return imageTargetRect(place, patchOn(place.index))
 }
 
 /**
@@ -238,6 +225,29 @@ async function lift(place: ImagePlacement): Promise<string | undefined> {
  * frames before it arrives being dropped. Without that the image jumps to
  * wherever the pointer happened to be when the round trip finished.
  */
+/**
+ * A double-click on the page enters this tool ALREADY POINTING at an image.
+ *
+ * The sibling of the watcher in `PatchEditor`, on the same terms: the hit
+ * test lives in `PageOverlay`, the request names a page because every
+ * mounted page runs its own copy of this tool, and it is watched rather
+ * than read once because the image index is fetched per page and may not
+ * have arrived when the tool switches.
+ */
+watch(
+  () => [tools.pendingImage, placements.value] as const,
+  ([request, places]) => {
+    if (!request || request.pageId !== props.page.id) return
+    const place = places.find((p) => p.index === request.imageIndex)
+    // Kept, not consumed, while the index is still on its way: unlike a
+    // line, an image this page cannot see yet is one it is about to see.
+    if (!place) return
+    tools.clearPendingImage()
+    void selectOrLift(place)
+  },
+  { immediate: true },
+)
+
 function onPointerDown(place: ImagePlacement, e: PointerEvent): void {
   // Only the primary button starts a gesture; a right-click is the
   // browser's, not ours.

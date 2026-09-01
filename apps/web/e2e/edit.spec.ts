@@ -6,6 +6,11 @@ const FIXTURE = fileURLToPath(
   new URL('../../../packages/pdf-core/test/fixtures/simple-text.pdf', import.meta.url),
 )
 
+/** A page with a real embedded image on it, at page-space y 200..300. */
+const WITH_IMAGE = fileURLToPath(
+  new URL('../../../packages/pdf-core/test/fixtures/with-image.pdf', import.meta.url),
+)
+
 async function openFixture(page: Page): Promise<void> {
   await page.goto('/')
   await page.setInputFiles('input[type=file]', FIXTURE)
@@ -242,4 +247,84 @@ test('a click on blank page deselects a layer picked in the panel', async ({ pag
 
   await page.mouse.click(box.x + 40, box.y + 400)
   await expect(page.locator('[data-selection]')).toHaveCount(0)
+})
+
+/**
+ * Double-click the document's own text and you are editing it.
+ *
+ * The shortcut past the tool rail: people who have used any editor expect a
+ * double-click on a word to put a caret in it, and until this existed the
+ * only route to the document's own text was finding "Edit text" in a rail
+ * of twenty tools.
+ *
+ * A browser test rather than jsdom, and not by preference: the hit test
+ * converts client coordinates through `getScreenCTM()`, which jsdom does
+ * not implement, so the question "does a real double-click at a real
+ * coordinate open the right line" can only be asked where there is layout.
+ * The DECISION -- which line is under a point -- is unit-tested in
+ * editTargets.test.ts.
+ */
+test('double-clicking the document’s own text opens it for editing', async ({ page }) => {
+  await openFixture(page)
+
+  // Where a real line is, asked of the tool that draws targets over them,
+  // then the document is handed back to the select tool so the double-click
+  // is the thing under test rather than a click on a target.
+  await page.getByRole('button', { name: 'Edit text' }).first().click()
+  const target = page.locator('[data-patch-target]').first()
+  await expect(target).toBeVisible()
+  const box = (await target.boundingBox())!
+  await page.getByRole('button', { name: 'Select', exact: true }).first().click()
+  await expect(page.locator('[data-patch-target]')).toHaveCount(0)
+
+  await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2)
+
+  const input = page.locator('[data-patch-input]')
+  await expect(input).toBeVisible()
+  // The line's own words, ready to be replaced by typing.
+  expect(await input.inputValue()).not.toBe('')
+})
+
+test('double-clicking blank page opens nothing', async ({ page }) => {
+  await openFixture(page)
+  const canvas = page.getByRole('img', { name: 'Page 1', exact: true }).first()
+  const box = (await canvas.boundingBox())!
+
+  // Well below the fixture's text, which sits in the top third.
+  await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height * 0.9)
+
+  await expect(page.locator('[data-patch-input]')).toHaveCount(0)
+  // And the select tool is still in hand -- nothing was hit, so nothing
+  // should have changed underneath the user.
+  await expect(page.locator('[data-patch-layer]')).toHaveCount(0)
+})
+
+/**
+ * And the same gesture on the other half of what a document already
+ * contains.
+ *
+ * The image path is the one that cannot be checked in jsdom at all: it
+ * hit-tests boxes the worker reports in MuPDF page space against a pointer
+ * converted through `getScreenCTM()`, so a coordinate-space mistake would
+ * show up as "double-clicking the logo does nothing" and nowhere else.
+ */
+test('double-clicking an image the document came with picks it up', async ({ page }) => {
+  await page.goto('/')
+  await page.setInputFiles('input[type=file]', WITH_IMAGE)
+  await expect(page.getByRole('img', { name: 'Page 1', exact: true })).toBeVisible()
+
+  // Where the image is, asked of the tool that draws targets over them.
+  await page.getByRole('button', { name: 'Edit image' }).first().click()
+  const target = page.locator('[data-image-target]').first()
+  await expect(target).toBeVisible()
+  const box = (await target.boundingBox())!
+  await page.getByRole('button', { name: 'Select', exact: true }).first().click()
+  await expect(page.locator('[data-image-target]')).toHaveCount(0)
+
+  await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2)
+
+  // Lifted into a real object and selected, so the toolbar is there to move
+  // it, resize it, or delete it.
+  await expect(page.locator('[data-object-id]')).toHaveCount(1)
+  await expect(page.locator('[data-selection]')).toHaveCount(1)
 })

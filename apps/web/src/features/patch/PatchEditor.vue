@@ -6,6 +6,7 @@ import type {
   Color, EditObject, LineRun, PageQuadIndex, TextPatchObject,
 } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
+import { useToolsStore } from '@/stores/tools'
 import { useViewportStore } from '@/stores/viewport'
 import { getPdfClient } from '@/workers/pdfClient'
 import {
@@ -18,6 +19,7 @@ import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
 import {
   buildLinePatch, documentStyle, lineBox, patchOnLine, plainColor, sameStyle,
 } from './linePatch'
+import { lineTargetRect } from './editTargets'
 
 const props = defineProps<{
   page: PageState
@@ -26,6 +28,7 @@ const props = defineProps<{
 }>()
 
 const edits = useEditsStore()
+const tools = useToolsStore()
 const vp = useViewportStore()
 
 /** Which line is being edited, by index into the page's extraction. */
@@ -289,24 +292,20 @@ const style = computed(() => {
 const originalWidth = computed(() => (box.value ? box.value.w : 0))
 
 /**
- * How wide a line's clickable target has to be.
+ * Where each line is drawn, and so where its click target goes.
  *
- * The extraction's own width describes the ORIGINAL line, so once a patch
- * ran past it the tail of the user's own text was not clickable -- the one
- * part of the line they had just written could not be edited again.
+ * Not computed here: `editTargets` owns it, because a double-click under
+ * the select tool asks the same question without this component being
+ * mounted, and two answers would send the two routes to DIFFERENT lines.
  *
- * Measured the way the patch is drawn, so the target covers exactly what
- * is on screen.
+ * A line the extraction found no characters on gets no target at all --
+ * there is nothing to point at, and its box would be infinite.
  */
-function targetWidth(lineIndex: number, lineWidth: number, lineHeight: number): number {
-  const patch = patchOn(lineIndex)
-  if (!patch || patch.text === '') return lineWidth
-  const size = patch.fontSize > 0 ? patch.fontSize : lineHeight * 0.8
-  // 'shrink' and 'truncate' both keep the text inside the original line, so
-  // only 'overflow' can make the target wider than the extraction says.
-  if (patch.fit !== 'overflow') return lineWidth
-  return Math.max(lineWidth, measureText(patch.text, patch.fontFamily, size, patch))
-}
+const targets = computed(() =>
+  (props.index?.lines ?? []).map((l, i) =>
+    l.chars.length === 0 ? undefined : lineTargetRect(l, patchOn(i)),
+  ),
+)
 
 async function begin(lineIndex: number): Promise<void> {
   editing.value = lineIndex
@@ -484,6 +483,33 @@ function commit(): void {
   cancel()
 }
 
+/**
+ * A double-click on the page enters this tool ALREADY POINTING at a line.
+ *
+ * The decision is made in `PageOverlay`, which owns the pointer coordinates
+ * and the extraction; all this tool is told is which line, and by which
+ * page. Answering to the page matters: every mounted page runs its own copy
+ * of this component, and an unaddressed request would open an editor on all
+ * of them.
+ *
+ * Watched rather than read once on mount because the extraction is fetched
+ * per page and may not have landed when the tool switches. Dropping the
+ * request in that window would make a double-click work or not depending on
+ * how warm the cache happened to be.
+ */
+watch(
+  () => [tools.pendingPatch, props.index] as const,
+  ([request, index]) => {
+    if (!request || request.pageId !== props.page.id || !index) return
+    // Consumed whether or not it can be honoured: a request naming a line
+    // this page does not have is not going to become honourable later, and
+    // leaving it would fire on the next page to mount.
+    tools.clearPendingPatch()
+    if (index.lines[request.lineIndex]) void begin(request.lineIndex)
+  },
+  { immediate: true },
+)
+
 defineExpose({ begin })
 </script>
 
@@ -496,28 +522,23 @@ defineExpose({ begin })
       exported file is finding out too late.
     -->
     <template v-if="editing === undefined">
-      <button
-        v-for="(l, i) in props.index?.lines ?? []"
-        :key="i"
-        type="button"
-        class="pointer-events-auto absolute cursor-text border border-dashed"
-        :class="(props.index?.lines[i]?.chars.length ?? 0) === 0
-          ? 'hidden'
-          : 'border-accent/40 hover:bg-accent/10'"
-        :style="{
-          left: `${(Math.min(...l.chars.map((c) => c.quad[0])) + offsetOf(i).dx) * props.zoom}px`,
-          top: `${(Math.min(...l.chars.map((c) => c.quad[1])) + offsetOf(i).dy) * props.zoom}px`,
-          width: `${targetWidth(
-            i,
-            Math.max(...l.chars.map((c) => c.quad[2])) - Math.min(...l.chars.map((c) => c.quad[0])),
-            Math.max(...l.chars.map((c) => c.quad[5])) - Math.min(...l.chars.map((c) => c.quad[1])),
-          ) * props.zoom}px`,
-          height: `${(Math.max(...l.chars.map((c) => c.quad[5])) - Math.min(...l.chars.map((c) => c.quad[1]))) * props.zoom}px`,
-        }"
-        :data-patch-target="i"
-        :aria-label="`Edit line ${i + 1}`"
-        @click="begin(i)"
-      />
+      <template v-for="(t, i) in targets" :key="i">
+        <button
+          v-if="t"
+          type="button"
+          class="pointer-events-auto absolute cursor-text border border-dashed
+                 border-accent/40 hover:bg-accent/10"
+          :style="{
+            left: `${t.x * props.zoom}px`,
+            top: `${t.y * props.zoom}px`,
+            width: `${t.w * props.zoom}px`,
+            height: `${t.h * props.zoom}px`,
+          }"
+          :data-patch-target="i"
+          :aria-label="`Edit line ${i + 1}`"
+          @click="begin(i)"
+        />
+      </template>
     </template>
 
     <template v-else>

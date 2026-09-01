@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PatchEditor from '@/features/patch/PatchEditor.vue'
 import { useEditsStore } from '@/stores/edits'
+import { useToolsStore } from '@/stores/tools'
 import { useViewportStore } from '@/stores/viewport'
 import {
   hashText, type Color, type PageQuadIndex, type Quad, type TextPatchObject,
@@ -944,5 +945,77 @@ describe('a style-only edit', () => {
     await styleOnly(indexOf('Bold heading', true), ['b'])
     expect(patches(edits)).toHaveLength(1)
     expect(patches(edits)[0]!.bold).toBe(false)
+  })
+})
+
+/**
+ * A double-click on the page enters this tool ALREADY POINTING at a line.
+ *
+ * The request is made by `PageOverlay`, which is not mounted here and does
+ * not need to be: what this editor owes is to notice a request addressed to
+ * its own page and open that line, whether the request arrived before it
+ * was mounted or after.
+ */
+describe('opening on request', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    missingGlyphs.mockResolvedValue([])
+    seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+  })
+
+  it('opens the requested line with its text selected', async () => {
+    const tools = useToolsStore()
+    tools.requestPatch('p1', 0)
+    const w = mountEditor(INDEX)
+    await flushPromises()
+
+    const input = w.get('[data-patch-input]').element as HTMLInputElement
+    expect(input.value).toBe('Original line')
+    // Selected, so typing REPLACES the line rather than appending to it --
+    // the whole point of asking to edit the text you double-clicked.
+    expect(input.selectionStart).toBe(0)
+    expect(input.selectionEnd).toBe('Original line'.length)
+  })
+
+  it('forgets the request once it has been honoured', async () => {
+    const tools = useToolsStore()
+    tools.requestPatch('p1', 0)
+    mountEditor(INDEX)
+    await flushPromises()
+    // Or every page mounted afterwards would open an editor of its own.
+    expect(tools.pendingPatch).toBeUndefined()
+  })
+
+  it('ignores a request addressed to another page', async () => {
+    useToolsStore().requestPatch('p2', 0)
+    const w = mountEditor(INDEX)
+    await flushPromises()
+    expect(w.find('[data-patch-input]').exists()).toBe(false)
+  })
+
+  it('opens nothing at all when nothing was requested', async () => {
+    const w = mountEditor(INDEX)
+    await flushPromises()
+    expect(w.find('[data-patch-input]').exists()).toBe(false)
+  })
+
+  /**
+   * The extraction is fetched per page and may not have landed when the
+   * tool switches. Dropping the request in that window would make the
+   * double-click work or not depending on how warm the cache was.
+   */
+  it('waits for the extraction when it has not arrived yet', async () => {
+    const tools = useToolsStore()
+    tools.requestPatch('p1', 0)
+    const w = mountEditor(undefined)
+    await flushPromises()
+    expect(w.find('[data-patch-input]').exists()).toBe(false)
+
+    await w.setProps({ index: INDEX })
+    await flushPromises()
+    expect((w.get('[data-patch-input]').element as HTMLInputElement).value)
+      .toBe('Original line')
   })
 })

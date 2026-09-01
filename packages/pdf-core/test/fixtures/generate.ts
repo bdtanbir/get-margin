@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, degrees, PDFName, PDFString } from 'pdf-lib'
+import * as mupdf from 'mupdf'
 import { writeFile, mkdir, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -196,6 +197,46 @@ async function form(outDir: string): Promise<void> {
   await save(doc, outDir, 'form')
 }
 
+/**
+ * A noise JPEG, so nothing compresses it away into a blank region that the
+ * image walk would not report.
+ */
+function jpeg(w: number, h: number): Uint8Array {
+  const px = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, w, h], false)
+  const buf = px.getPixels()
+  // A fixed seed, because a fixture that differs between runs is not a fixture.
+  let seed = 7
+  for (let i = 0; i < buf.length; i++) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    buf[i] = (seed >> 7) & 0xff
+  }
+  const out = px.asJPEG(80)
+  px.destroy()
+  return out
+}
+
+/**
+ * A page carrying a real embedded image, for the tools that edit what a
+ * document already CONTAINS rather than adding to it.
+ *
+ * Every other fixture here is text or form fields, so the image half of
+ * those tools -- Edit image, and the double-click that reaches it -- had
+ * nothing to be exercised against in a browser.
+ *
+ * The image is drawn at PDF y 492..592 on a 792pt page, which is MuPDF
+ * page space y 200..300: clear of the heading, so a pointer inside it can
+ * only mean the image.
+ */
+async function withImage(outDir: string): Promise<void> {
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([612, 792])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  page.drawText('Boarding pass', { x: 60, y: 720, size: 18, font })
+  const photo = await doc.embedJpg(jpeg(240, 120))
+  page.drawImage(photo, { x: 60, y: 492, width: 200, height: 100 })
+  await save(doc, outDir, 'with-image')
+}
+
 export async function generateFixtures(outDir = fileURLToPath(new URL('.', import.meta.url))): Promise<void> {
   await mkdir(outDir, { recursive: true })
   await simpleText(outDir)
@@ -206,4 +247,5 @@ export async function generateFixtures(outDir = fileURLToPath(new URL('.', impor
   await mixedFonts(outDir)
   await hostile(outDir)
   await form(outDir)
+  await withImage(outDir)
 }

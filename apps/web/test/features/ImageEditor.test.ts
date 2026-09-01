@@ -461,3 +461,80 @@ describe('ImageEditor', () => {
     expect(patches(edits)[0]!.backgroundConfidence).toBeGreaterThan(0.9)
   })
 })
+
+/**
+ * A double-click on the page enters this tool ALREADY POINTING at an image.
+ *
+ * `PageOverlay` makes the request and is not mounted here: what this tool
+ * owes is to honour a request addressed to its own page as soon as it can
+ * see the image it names.
+ */
+describe('opening on request', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    imageCrop.mockReset()
+    imageCrop.mockResolvedValue({ data: new Uint8Array([1, 2, 3]), hash: 'bbbb2222' })
+  })
+
+  it('lifts the requested image and hands over the select tool', async () => {
+    const edits = seed()
+    const tools = useToolsStore()
+    tools.requestImage('p1', 1)
+    mountIt()
+    await flushPromises()
+
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.imageIndex).toBe(1)
+    // The next thing anybody does with something they picked is act on it,
+    // and every action lives on the selection toolbar.
+    expect(tools.active).toBe('select')
+    expect(edits.selection).toEqual([patches(edits)[0]!.id])
+  })
+
+  it('forgets the request once it has been honoured', async () => {
+    seed()
+    const tools = useToolsStore()
+    tools.requestImage('p1', 1)
+    mountIt()
+    await flushPromises()
+    expect(tools.pendingImage).toBeUndefined()
+  })
+
+  it('ignores a request addressed to another page', async () => {
+    const edits = seed()
+    useToolsStore().requestImage('p2', 1)
+    mountIt()
+    await flushPromises()
+    expect(patches(edits)).toHaveLength(0)
+  })
+
+  it('lifts nothing at all when nothing was requested', async () => {
+    const edits = seed()
+    mountIt()
+    await flushPromises()
+    expect(patches(edits)).toHaveLength(0)
+  })
+
+  /**
+   * The image index is fetched per page and may not have landed when the
+   * tool switches, so a request that names an image this page cannot see
+   * yet has to wait rather than be dropped.
+   *
+   * Mounted the long way round: `mountIt(undefined)` would trigger its
+   * default parameter and quietly hand over the POPULATED index.
+   */
+  it('waits for the index when it has not arrived yet', async () => {
+    const edits = seed()
+    const tools = useToolsStore()
+    tools.requestImage('p1', 1)
+    const w = mount(ImageEditor, { props: { page, zoom: 1, index: undefined } })
+    await flushPromises()
+    expect(patches(edits)).toHaveLength(0)
+
+    await w.setProps({ index: INDEX })
+    await flushPromises()
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.imageIndex).toBe(1)
+  })
+})
