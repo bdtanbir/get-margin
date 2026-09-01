@@ -104,9 +104,9 @@ describe('what is documented is what is bound', () => {
   }
 
   it('binds every combination the edit shortcuts declare, and no others', () => {
-    const declared = (['undo', 'redo', 'find', 'delete', 'escape'] as const).flatMap((id) =>
-      combosFor(id),
-    )
+    const declared = (
+      ['undo', 'redo', 'find', 'delete', 'nudge', 'nudge-far', 'escape'] as const
+    ).flatMap((id) => combosFor(id))
     expect(boundCombos().sort()).toEqual([...declared].sort())
   })
 
@@ -125,6 +125,19 @@ describe('what is documented is what is bound', () => {
     const firstUndo = Math.min(...combosFor('undo').map((c) => bound.indexOf(c)))
     expect(firstRedo).toBeGreaterThanOrEqual(0)
     expect(firstRedo).toBeLessThan(firstUndo)
+  })
+
+  /**
+   * And the same ordering, for the same reason, one shortcut down: the
+   * shifted arrows must be registered before the plain ones, or a
+   * Shift+Arrow fires both bindings and moves the object eleven points.
+   */
+  it('registers the shifted arrows before the plain ones', () => {
+    const bound = boundCombos()
+    const firstFar = Math.min(...combosFor('nudge-far').map((c) => bound.indexOf(c)))
+    const firstNear = Math.min(...combosFor('nudge').map((c) => bound.indexOf(c)))
+    expect(firstFar).toBeGreaterThanOrEqual(0)
+    expect(firstFar).toBeLessThan(firstNear)
   })
 
   /**

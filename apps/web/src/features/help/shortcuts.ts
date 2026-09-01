@@ -19,6 +19,8 @@ export type ShortcutId =
   | 'find'
   | 'palette'
   | 'delete'
+  | 'nudge'
+  | 'nudge-far'
   | 'escape'
   | 'zoom-in'
   | 'zoom-out'
@@ -56,6 +58,23 @@ export const SHORTCUTS: readonly Shortcut[] = [
     group: 'Editing',
     display: 'Delete',
     combos: ['Delete', 'Backspace'],
+  },
+  {
+    id: 'nudge',
+    label: 'Move what is selected',
+    group: 'Editing',
+    display: '↑ ↓ ← →',
+    // Bound AFTER the shifted forms below, for the reason undo's comment
+    // gives: useMagicKeys reports `ArrowUp` as true during `Shift+ArrowUp`
+    // as well, so the plain binding has to check that Shift is not down.
+    combos: ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'],
+  },
+  {
+    id: 'nudge-far',
+    label: 'Move it ten times as far',
+    group: 'Editing',
+    display: '⇧ and an arrow',
+    combos: ['Shift+ArrowUp', 'Shift+ArrowDown', 'Shift+ArrowLeft', 'Shift+ArrowRight'],
   },
   {
     id: 'find',

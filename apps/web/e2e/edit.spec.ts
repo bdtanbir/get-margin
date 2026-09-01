@@ -328,3 +328,50 @@ test('double-clicking an image the document came with picks it up', async ({ pag
   await expect(page.locator('[data-object-id]')).toHaveCount(1)
   await expect(page.locator('[data-selection]')).toHaveCount(1)
 })
+
+/**
+ * Arrow keys move what is selected.
+ *
+ * A browser test because jsdom cannot say whether the keys reach the app
+ * at all with real focus, and because a nudge is a claim about where
+ * something ends up on screen.
+ *
+ * The "page stayed put" assertion is a REGRESSION GUARD rather than a
+ * demonstration: no engine scrolls this shell on an arrow press today,
+ * because nothing puts focus inside the page scroller. The day something
+ * does -- a tabindex added for keyboard accessibility would be enough --
+ * nudging would start dragging the document along with the object, and
+ * this is what would notice.
+ */
+test('arrow keys move the selection without scrolling the page', async ({ page }, testInfo) => {
+  // The edit shortcuts are installed from the desktop shell; the phone
+  // shell has no physical keyboard to install them for.
+  test.skip(testInfo.project.name === 'phone', 'keyboard shortcuts are desktop-only')
+  await openFixture(page)
+
+  await page.getByRole('button', { name: 'Rectangle' }).first().click()
+  await drawOn(page, { x: 60, y: 80 }, { x: 200, y: 180 })
+  const selection = page.locator('[data-selection]')
+  await expect(selection).toHaveCount(1)
+
+  const paper = page.locator('[data-page-id]').first()
+  const before = (await selection.boundingBox())!
+  const paperBefore = (await paper.boundingBox())!
+
+  // 50pt down, in five shifted steps.
+  for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+ArrowDown')
+
+  const after = (await selection.boundingBox())!
+  expect(after.y - before.y).toBeGreaterThan(40)
+  expect(Math.abs(after.x - before.x)).toBeLessThan(2)
+
+  // The page stayed exactly where it was: the arrows moved the object, not
+  // the document. See the note above -- a guard, not a demonstration.
+  const paperAfter = (await paper.boundingBox())!
+  expect(Math.abs(paperAfter.y - paperBefore.y)).toBeLessThan(2)
+
+  // And the whole run is one thing to undo, not five.
+  await page.locator('[data-undo]').click()
+  const undone = (await selection.boundingBox())!
+  expect(Math.abs(undone.y - before.y)).toBeLessThan(2)
+})

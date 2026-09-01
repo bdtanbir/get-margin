@@ -5,7 +5,10 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useEditShortcuts } from '@/features/tools/useEditShortcuts'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
+import { useDocumentStore } from '@/stores/document'
+import { useDialogsStore } from '@/stores/dialogs'
 import type { EditObject } from '@margin/pdf-core'
+import type { PageGeometry } from '@margin/transform'
 
 const Host = defineComponent({
   setup: () => { useEditShortcuts(); return () => null },
@@ -140,5 +143,130 @@ describe('useEditShortcuts', () => {
     host.unmount()
     await press('z', { ctrl: true })
     expect(Object.keys(edits.doc.objects)).toEqual(['o1'])
+  })
+})
+
+/**
+ * Nudging what is selected with the arrow keys.
+ *
+ * The gesture people reach for when the mouse is not precise enough: a
+ * signature that has to line up with a printed rule, a logo a point off
+ * centre. Until this, the only way to move anything was to drag it.
+ */
+describe('arrow keys', () => {
+  let edits: ReturnType<typeof useEditsStore>
+  let host: ReturnType<typeof mount>
+
+  /** A page the document store can resolve geometry for. */
+  const GEOMETRY: PageGeometry = { cropBox: [0, 0, 612, 792], rotate: 0 }
+
+  function seed(o: EditObject = rect()): void {
+    edits.applyOp({ type: 'addObject', object: o }, 'Draw')
+    edits.select([o.id])
+  }
+
+  const moved = (): { x: number; y: number } => {
+    const o = edits.doc.objects.o1!
+    return { x: o.rect.x, y: o.rect.y }
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    edits = useEditsStore()
+    edits.reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p0'],
+      { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
+    useDocumentStore().$patch({
+      status: 'ready',
+      fileName: 'a.pdf',
+      sources: { 'src-0': { id: 'src-0', name: 'a.pdf', pageCount: 1, geometries: [GEOMETRY] } },
+    })
+    host = mount(Host, { attachTo: document.body })
+  })
+
+  afterEach(() => host.unmount())
+
+  it('moves the selection one point per press', async () => {
+    seed()
+    await press('ArrowRight')
+    expect(moved().x).toBe(1)
+  })
+
+  it('moves it up the page for an up arrow', async () => {
+    seed()
+    await press('ArrowUp')
+    // A PDF counts y from the bottom, so up the SCREEN is up the number.
+    expect(moved().y).toBe(1)
+  })
+
+  it('moves it down and left for the other two', async () => {
+    seed()
+    await press('ArrowDown')
+    await press('ArrowLeft')
+    expect(moved()).toEqual({ x: -1, y: -1 })
+  })
+
+  it('moves ten points at a time with Shift held', async () => {
+    seed()
+    await press('ArrowRight', { shift: true })
+    expect(moved().x).toBe(10)
+  })
+
+  /**
+   * The trap the undo/redo bindings already carry a comment about:
+   * useMagicKeys reports `ArrowRight` as true during `Shift+ArrowRight`
+   * too, so an unguarded plain binding fires alongside the shifted one and
+   * the object moves eleven points instead of ten.
+   */
+  it('does not add a plain step to a shifted one', async () => {
+    seed()
+    await press('ArrowRight', { shift: true })
+    expect(moved().x).not.toBe(11)
+  })
+
+  it('collapses a run of presses into one undo step', async () => {
+    seed()
+    await press('ArrowRight')
+    await press('ArrowRight')
+    await press('ArrowRight')
+    expect(moved().x).toBe(3)
+    edits.undo()
+    // One undo puts the object back where the run started, rather than
+    // needing one press-worth of undo each.
+    expect(moved().x).toBe(0)
+  })
+
+  it('leaves a locked object where it is', async () => {
+    seed(rect('o1', true))
+    await press('ArrowRight')
+    expect(moved().x).toBe(0)
+  })
+
+  it('moves nothing when nothing is selected', async () => {
+    edits.applyOp({ type: 'addObject', object: rect() }, 'Draw')
+    await press('ArrowRight')
+    expect(moved().x).toBe(0)
+  })
+
+  /** Arrows belong to the caret while there is one. */
+  it('leaves the selection alone while the user is typing', async () => {
+    seed()
+    const input = document.createElement('input')
+    document.body.append(input)
+    input.focus()
+    await press('ArrowRight', {}, input)
+    expect(moved().x).toBe(0)
+    input.remove()
+  })
+
+  /**
+   * The pages grid binds its own arrows to move between pages, and it lives
+   * in a dialog. Nudging the canvas underneath it at the same time would
+   * move something the user cannot even see.
+   */
+  it('leaves the selection alone while a dialog is open', async () => {
+    seed()
+    useDialogsStore().show('find')
+    await press('ArrowRight')
+    expect(moved().x).toBe(0)
   })
 })
