@@ -1,7 +1,7 @@
 import type { ObjectWriter } from '../index.js'
 import type { StampObject } from '../types.js'
 import { appendContent, prependContent, addResource, fillColor, alphaState } from '../content.js'
-import { toContentSpace, num } from '../coords.js'
+import { contentRectToPage, pagePointToContent, pageDirToContent, textMatrix, num } from '../coords.js'
 import { pdfString } from '../fonts.js'
 import { ASCENT_RATIO } from './text.js'
 
@@ -82,7 +82,11 @@ export const writeStamp: ObjectWriter = (ctx, object) => {
   // which is what an empty page-range token or a cleared template produces.
   if (text === '') return
 
-  const { x, y, w, h } = toContentSpace(o.rect)
+  // Laid out in PAGE space -- the box, its alignment and its own rotation
+  // are all things the user set looking at the page, and a quarter turn
+  // swaps that space's axes against the content stream's. See `writeText`.
+  const g = ctx.geometry
+  const box = contentRectToPage(o.rect, g)
   const font = ctx.fonts.resolve(o.fontFamily)
   addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
 
@@ -91,28 +95,41 @@ export const writeStamp: ObjectWriter = (ctx, object) => {
   ops.push(fillColor(o.color), 'BT', `/${font.name} ${num(o.fontSize)} Tf`)
 
   const advance = ctx.measure(text, o.fontFamily, o.fontSize)
-  const baseline = y + h - o.fontSize * ASCENT_RATIO
-  const offset = o.align === 'center' ? (w - advance) / 2 : o.align === 'right' ? w - advance : 0
+  const fromTop = o.fontSize * ASCENT_RATIO
+  const offset =
+    o.align === 'center' ? (box.w - advance) / 2 : o.align === 'right' ? box.w - advance : 0
 
-  if (o.rotation) {
-    // Rotate about the box centre. The text matrix carries the rotation
-    // rather than a `cm` outside BT/ET, because a text matrix is what the
-    // baseline placement below is already expressed in -- mixing the two
-    // would make the offset mean something different.
-    const rad = (o.rotation * Math.PI) / 180
-    const cos = Math.cos(rad)
-    const sin = Math.sin(rad)
-    const cx = x + w / 2
-    const cy = y + h / 2
-    const px = x + offset
-    const py = baseline
-    // Rotate (px,py) about (cx,cy).
-    const rx = cx + (px - cx) * cos - (py - cy) * sin
-    const ry = cy + (px - cx) * sin + (py - cy) * cos
-    ops.push(`${num(cos)} ${num(sin)} ${num(-sin)} ${num(cos)} ${num(rx)} ${num(ry)} Tm`)
-  } else {
-    ops.push(`1 0 0 1 ${num(x + offset)} ${num(baseline)} Tm`)
-  }
+  /**
+   * The stamp's own turn, composed with the page's.
+   *
+   * `o.rotation` is degrees counter-clockwise AS SEEN ON THE PAGE, and page
+   * space is top-down, so on that axis it is a NEGATIVE angle -- which is
+   * the one sign flip in here, and the reason a 45-degree watermark leans
+   * the same way it always did. The page's own turn is not applied a second
+   * time by hand: `pageDirToContent` carries the direction across, exactly
+   * as it does for a patched line.
+   */
+  const rad = (-o.rotation * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const u = pageDirToContent({ x: cos, y: sin }, g)
+
+  // Rotate the pen about the box's centre, in page space.
+  const cx = box.x + box.w / 2
+  const cy = box.y + box.h / 2
+  const px = box.x + offset
+  const py = box.y + fromTop
+  const pen = pagePointToContent(
+    {
+      x: cx + (px - cx) * cos - (py - cy) * sin,
+      y: cy + (px - cx) * sin + (py - cy) * cos,
+    },
+    g,
+  )
+  // A text matrix rather than a `cm` outside BT/ET, because the baseline
+  // placement above is already expressed in one -- mixing the two would
+  // make the offset mean something different.
+  ops.push(textMatrix(u, pen.x, pen.y))
 
   ops.push(`${pdfString(text)} Tj`, 'ET')
 

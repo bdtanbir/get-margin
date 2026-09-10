@@ -3,6 +3,7 @@ import {
   type PageGeometry, type Point, type Rect,
 } from '@margin/transform'
 
+
 /**
  * THE THREE CONVENTIONS. Read this before touching any object writer.
  *
@@ -165,4 +166,35 @@ export function pageDirToContent(dir: Point, g: PageGeometry): Point {
  */
 export function textMatrix(u: Point, e: number, f: number): string {
   return `${num(u.x)} ${num(u.y)} ${num(-u.y)} ${num(u.x)} ${num(e)} ${num(f)} Tm`
+}
+
+/**
+ * A stored content-space rect, in page space.
+ *
+ * The inverse of what `pageBoxToContent` does, and the direction an object
+ * that LAYS SOMETHING OUT wants: alignment, line stacking and a rotation
+ * about a box's centre are all things the user specified while looking at
+ * the page, so they are only meaningful in the space the user was looking
+ * at. Laying out in page space and converting the finished anchor point is
+ * what makes an export agree with the on-screen preview on a turned page.
+ */
+export function contentRectToPage(rect: Rect, g: PageGeometry): Rect {
+  const v = pdfRectToView(rect, g, 1)
+  return { x: v.x, y: v.y, w: v.w, h: v.h }
+}
+
+/**
+ * The page's own axes, in content space: which way is right, and which is up.
+ *
+ * Both are unit vectors, because /Rotate is only ever a quarter turn. On an
+ * unrotated page they are (1,0) and (0,1), which is why every writer that
+ * used a literal `1 0 0 1` or `w 0 0 h` was correct there and only there.
+ * `up` comes from page-space -y: page space is top-down, so "up the screen"
+ * is where y decreases.
+ */
+export function pageBasis(g: PageGeometry): { right: Point; up: Point } {
+  return {
+    right: pageDeltaToContent({ x: 1, y: 0 }, g),
+    up: pageDeltaToContent({ x: 0, y: -1 }, g),
+  }
 }
