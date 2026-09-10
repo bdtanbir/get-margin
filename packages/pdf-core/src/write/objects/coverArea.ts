@@ -2,7 +2,7 @@ import * as mupdf from 'mupdf'
 import type { WriteContext } from '../index.js'
 import type { Color } from '../types.js'
 import { appendContent, addResource, fillColor } from '../content.js'
-import { num } from '../coords.js'
+import { num, pageBoxToContent, pagePointToContent, pageDeltaToContent } from '../coords.js'
 
 /**
  * How far a cover extends past the area it hides, in points.
@@ -40,37 +40,54 @@ export type CoveredArea = {
  * and not at all in what they then draw, so the drawing lives here rather
  * than in two copies that could drift by a bleed or a sign.
  *
- * `box` is MuPDF PAGE space (top-down): [x0, y0, x1, y1]. Both callers get
- * their geometry from extraction or from a page-space rect rather than
- * from a stored PDF-space rect, which is why the flip happens here against
- * the page's own height instead of through `toContentSpace`.
+ * `box` is MuPDF PAGE space (Convention C): [x0, y0, x1, y1], top-down and
+ * with /Rotate applied. Both callers get their geometry from extraction or
+ * from a page-space rect rather than from a stored PDF-space rect, which is
+ * why the conversion happens here rather than through `toContentSpace`.
+ *
+ * `offset` and `size` are page-space too, so the arithmetic that positions
+ * the copy is all done in page space and converted once at the end. That
+ * ordering is what makes a turned page work: page space is the space the
+ * user was looking at when they dragged the copy, and it is the only one in
+ * which "down" means down.
  */
 export function coverAndRedraw(
   ctx: WriteContext,
   area: CoveredArea,
   box: [number, number, number, number],
 ): void {
-  const [cx0, cy0, cx1, cy1] = ctx.geometry.cropBox
-  const pageHeight = Math.abs(cy1 - cy0)
+  const g = ctx.geometry
   const [bx0, by0, bx1, by1] = box
-  const x = bx0 + cx0
-  const y = pageHeight - by1 + cy0
-  const w = bx1 - bx0
-  const h = by1 - by0
+  /**
+   * The cover, in content space.
+   *
+   * This used to be a y-flip against the UNROTATED CropBox height with x
+   * passed through -- which is the same thing on a /Rotate 0 page and wrong
+   * on every turned one, where page space has the swapped axes and a cover
+   * computed that way lands off the page.
+   */
+  const cover = pageBoxToContent(box, g)
+  // Page-space extents. A quarter-turn swaps `cover.w`/`cover.h` against
+  // these, so the copy's own sizing below stays on the page-space pair.
+  const pw = Math.abs(bx1 - bx0)
+  const ph = Math.abs(by1 - by0)
 
   const ops: string[] = [
     fillColor(area.background),
-    `${num(x - BLEED_PT)} ${num(y - BLEED_PT)} ${num(w + BLEED_PT * 2)} ${num(h + BLEED_PT * 2)} re`,
+    `${num(cover.x - BLEED_PT)} ${num(cover.y - BLEED_PT)} ` +
+      `${num(cover.w + BLEED_PT * 2)} ${num(cover.h + BLEED_PT * 2)} re`,
     'f',
   ]
 
   const data = area.data
   if (data && data.length > 0) {
     /**
-     * Page space is top-down and the content stream is bottom-up, so `dy`
-     * SUBTRACTS from y. Getting that flip wrong moves the copy exactly as
-     * far the wrong way, which reads as deliberate rather than as a bug --
-     * so the direction is pinned by a test for each kind that uses this.
+     * `offset` is a page-space displacement, and page space is top-down, so
+     * a positive `dy` moves the copy DOWN the page as the user saw it.
+     * Adding it here, before the conversion, is what keeps that true on a
+     * turned page -- the direction is pinned by a test for each kind that
+     * uses this, because getting it wrong moves the copy exactly as far the
+     * wrong way and so reads as deliberate rather than as a bug.
      */
     const dx = area.offset?.dx ?? 0
     const dy = area.offset?.dy ?? 0
@@ -80,16 +97,28 @@ export function coverAndRedraw(
      * patch written before `size` existed meant, so no stored document
      * needs migrating and the schema version did not have to move.
      */
-    const drawW = area.size?.w ?? w
-    const drawH = area.size?.h ?? h
+    const drawW = area.size?.w ?? pw
+    const drawH = area.size?.h ?? ph
 
     /**
-     * `offset` positions the copy's TOP-LEFT corner, and a content stream
-     * places an image by its BOTTOM-left, so the drawn height comes off
-     * the y. With no resize this reduces to `y - dy`, which is what it
-     * always was.
+     * An image XObject's unit square has its origin at the BOTTOM-left,
+     * while `offset` positions the copy's TOP-left, so the anchor is the
+     * page-space corner one drawn height further down the page.
      */
-    const drawY = y + h - drawH - dy
+    const anchor = pagePointToContent({ x: bx0 + dx, y: by0 + dy + drawH }, g)
+
+    /**
+     * The copy carries the page's turn in its own matrix.
+     *
+     * The bytes are a picture of what the page LOOKED like, so the CTM has
+     * to map the image's own axes -- right, and up -- onto whatever
+     * directions those are in raw user space. On an unrotated page that is
+     * the plain `w 0 0 h` scale this replaced; on a /Rotate 90 page an
+     * axis-aligned CTM would draw the copy at a right angle to the original
+     * it is standing in for.
+     */
+    const right = pageDeltaToContent({ x: 1, y: 0 }, g)
+    const up = pageDeltaToContent({ x: 0, y: -1 }, g)
 
     // Memoised on the bytes by the same cache every image placement uses,
     // so one lifted logo repeated on ten pages embeds once.
@@ -101,7 +130,9 @@ export function coverAndRedraw(
     // `appendContent` brackets every fragment it appends, and this `cm` is
     // the last thing this one emits.
     ops.push(
-      `${num(drawW)} 0 0 ${num(drawH)} ${num(x + dx)} ${num(drawY)} cm`,
+      `${num(drawW * right.x)} ${num(drawW * right.y)} ` +
+        `${num(drawH * up.x)} ${num(drawH * up.y)} ` +
+        `${num(anchor.x)} ${num(anchor.y)} cm`,
       `/${name} Do`,
     )
   }

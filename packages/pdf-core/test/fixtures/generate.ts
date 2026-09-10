@@ -53,6 +53,31 @@ async function rotated(outDir: string): Promise<void> {
   await save(doc, outDir, 'rotated')
 }
 
+/**
+ * A quarter-turned page that READS UPRIGHT.
+ *
+ * `rotated` above turns the page but leaves its text drawn along user-space
+ * +x, so the text displays sideways -- which exercises /Rotate but is not
+ * what real turned documents look like. A report or an invoice produced in
+ * landscape carries /Rotate 90 AND has its text authored sideways in user
+ * space, so the two turns cancel and it reads normally on screen.
+ *
+ * MuPDF reports direction [1,0] for the lines here and [0,1] for `rotated`'s,
+ * and a writer that redraws a line has to reproduce whichever it was given.
+ * The page size matches the invoice this fixture was added for: MediaBox
+ * [0 0 420 595] with /Rotate 90, so page space is 595x420.
+ */
+async function rotatedUpright(outDir: string): Promise<void> {
+  const doc = await PDFDocument.create()
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const page = doc.addPage([420, 595])
+  page.setRotation(degrees(90))
+  // Two lines, so a patch on one can be checked against the other staying put.
+  page.drawText('Invoice No: 22440799', { x: 60, y: 60, size: 14, font, rotate: degrees(90) })
+  page.drawText('Dear Sir,', { x: 90, y: 60, size: 14, font, rotate: degrees(90) })
+  await save(doc, outDir, 'rotated-upright')
+}
+
 async function offsetCropBox(outDir: string): Promise<void> {
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
@@ -241,6 +266,7 @@ export async function generateFixtures(outDir = fileURLToPath(new URL('.', impor
   await mkdir(outDir, { recursive: true })
   await simpleText(outDir)
   await rotated(outDir)
+  await rotatedUpright(outDir)
   await offsetCropBox(outDir)
   await multiPage(outDir)
   await large300p(outDir)

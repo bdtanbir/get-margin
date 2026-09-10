@@ -9,6 +9,10 @@ export const FIXTURE_NAMES = [
   'form',
   // A page with a real embedded image, for the tools that edit one.
   'with-image',
+  // A turned page whose text was authored sideways so that it reads UPRIGHT
+  // once /Rotate is applied -- the shape of a real scanner/report PDF, and
+  // the one `rotated` does not cover: there the text displays sideways.
+  'rotated-upright',
 ] as const
 
 export type FixtureName = (typeof FIXTURE_NAMES)[number]

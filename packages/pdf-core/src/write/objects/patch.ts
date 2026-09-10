@@ -2,7 +2,9 @@ import * as mupdf from 'mupdf'
 import type { ObjectWriter } from '../index.js'
 import type { TextPatchObject } from '../types.js'
 import { appendContent, addResource, fillColor } from '../content.js'
-import { num } from '../coords.js'
+import {
+  num, pageBoxToContent, pagePointToContent, pageDeltaToContent, pageDirToContent, textMatrix,
+} from '../coords.js'
 import { pdfString, faceKey } from '../fonts.js'
 import { ASCENT_RATIO } from './text.js'
 
@@ -91,16 +93,30 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
     bbox: [number, number, number, number]
     /** The size the line was actually set in, from its first glyph. */
     size: number
-    /** Where the pen sat, in page space. See `LineRun.baseline`. */
-    baseline: number
+    /**
+     * Where the pen sat at the start of the line, in MuPDF PAGE space
+     * (Convention C). The WHOLE point, not just its y: on a turned page the
+     * pen does not run along page-space x, so an x reconstructed from the
+     * bbox would be the wrong corner of it.
+     */
+    origin: { x: number; y: number } | null
+    /**
+     * Which way the line runs, in page space: [1,0] reads left-to-right on
+     * screen. MuPDF hands this to `beginLine`; `pageDirToContent` turns it
+     * into the direction the run was actually drawn in.
+     */
+    dir: { x: number; y: number }
   }> = []
   structured.walk({
-    beginLine: () => {
+    beginLine: (_bbox: unknown, _wmode: number, direction: number[]) => {
       lines.push({
         text: '',
         bbox: [Infinity, Infinity, -Infinity, -Infinity],
         size: 0,
-        baseline: 0,
+        origin: null,
+        // A walker that predates the argument, or a degenerate run, reads
+        // as ordinary left-to-right rather than as a zero-length direction.
+        dir: { x: direction?.[0] ?? 1, y: direction?.[1] ?? 0 },
       })
     },
     onChar: (c: string, origin: number[], _font: unknown, size: number, quad: number[]) => {
@@ -110,7 +126,7 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
       // model, and the pen position at its start is the line's baseline.
       if (line.text === '') {
         line.size = size
-        line.baseline = origin[1] ?? 0
+        line.origin = { x: origin[0] ?? 0, y: origin[1] ?? 0 }
       }
       line.text += c
       for (let i = 0; i < 8; i += 2) {
@@ -135,30 +151,51 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
     )
   }
 
-  // The line's box is MuPDF page space (top-down); content-stream drawing
-  // is raw user space (bottom-up). Every other writer converts a stored
-  // rect; here the geometry comes from extraction, so the flip happens
-  // against the page's own height.
+  /**
+   * The line's box is MuPDF page space (Convention C); content-stream
+   * drawing is raw user space (Convention B). Every other writer converts a
+   * stored rect, which is already Convention B; here the geometry comes
+   * from extraction, so it needs the real conversion.
+   *
+   * This used to flip y against the UNROTATED CropBox height and pass x
+   * through untouched -- correct on a /Rotate 0 page and wrong on every
+   * turned one, where page space has the swapped axes. On the /Rotate 90
+   * invoice that produced this fix, the cover landed off the page entirely
+   * and the replacement was drawn at a right angle to the line it replaced.
+   */
   const geometry = ctx.geometry
-  const [cx0, cy0, cx1, cy1] = geometry.cropBox
-  const pageHeight = Math.abs(cy1 - cy0)
-  const [lx0, ly0, lx1, ly1] = line.bbox
-  const x = lx0 + cx0
-  const y = pageHeight - ly1 + cy0
-  const w = lx1 - lx0
-  const h = ly1 - ly0
+  const { x, y, w, h } = pageBoxToContent(line.bbox, geometry)
+
+  /**
+   * The line's extent ALONG the text and ACROSS it, both measured in page
+   * space, where the writing direction is known.
+   *
+   * `w` and `h` above cannot stand in for these. A quarter-turn swaps them,
+   * so on a /Rotate 90 page `w` is the thickness of the glyph band rather
+   * than the length of the line -- and `fit` measured against it shrank a
+   * replacement to nothing, while a bleed proportional to it grew to cover
+   * the whole line. Both come off the page-space box and the reported
+   * direction instead, which stay meaningful whichever way the page turns.
+   */
+  const [bx0, by0, bx1, by1] = line.bbox
+  const horizontal = Math.abs(line.dir.x) >= Math.abs(line.dir.y)
+  const along = Math.abs(horizontal ? bx1 - bx0 : by1 - by0)
+  const across = Math.abs(horizontal ? by1 - by0 : bx1 - bx0)
 
   /**
    * Where the replacement is drawn, relative to the line it replaces.
    *
-   * Page space is top-down and the content stream is bottom-up, so `dy`
-   * SUBTRACTS from the baseline below. Getting that flip wrong moves the
-   * text exactly as far the wrong way, which reads as deliberate rather
-   * than as a bug -- `patch.test.ts` asserts the direction for that reason.
+   * `offset` is measured in page space, which is top-down and, on a turned
+   * page, differently-axed from the content stream -- so it is converted as
+   * a DISTANCE rather than added to the pen directly. On an unrotated page
+   * this comes out as `+dx, -dy`, the inline flip this replaced;
+   * `patch.test.ts` pins the direction because getting it wrong moves the
+   * text exactly as far the wrong way, which reads as deliberate.
    */
   const dx = o.offset?.dx ?? 0
   const dy = o.offset?.dy ?? 0
   const moved = dx !== 0 || dy !== 0
+  const shift = pageDeltaToContent({ x: dx, y: dy }, geometry)
 
   const face = faceKey(o.fontFamily, o)
   const font = ctx.fonts.resolve(face)
@@ -167,7 +204,7 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
   // A little bleed, because glyph quads sit tight against the ink and
   // antialiased edges extend past them -- covering exactly the bbox leaves
   // a faint outline of the old text.
-  const bleed = Math.max(1, h * 0.12)
+  const bleed = Math.max(1, across * 0.12)
 
   const ops: string[] = [
     fillColor(o.background),
@@ -184,14 +221,14 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
      * descent differ from that ratio -- so a replacement came out a
      * different size from the text around it.
      */
-    let size = o.fontSize > 0 ? o.fontSize : line.size > 0 ? line.size : h * 0.8
+    let size = o.fontSize > 0 ? o.fontSize : line.size > 0 ? line.size : across * 0.8
     let text = o.text
     const advance = () => ctx.measure(text, face, size)
 
     /**
      * A MOVED patch always overflows, whatever `fit` says.
      *
-     * Both fit rules measure against `w`, the width of the line being
+     * Both fit rules measure against `along`, the length of the line being
      * replaced. Once the text is drawn somewhere else, that width describes
      * a box the text is no longer in -- so shrinking or cutting to it
      * damages the replacement to fit a constraint that has stopped
@@ -203,15 +240,15 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
     } else if (o.fit === 'shrink') {
       // Only ever shrink: growing text to fill a box is not what was asked
       // for and would look like a different edit.
-      while (size > 4 && advance() > w) size -= 0.5
+      while (size > 4 && advance() > along) size -= 0.5
     } else if (o.fit === 'truncate') {
-      while (text.length > 1 && advance() > w) text = text.slice(0, -1)
+      while (text.length > 1 && advance() > along) text = text.slice(0, -1)
     }
     // 'overflow' does nothing on purpose: the user chose to let it run
     // past, and surrounding content is never pushed around (§2.4).
 
     /**
-     * Sit on the line's OWN baseline.
+     * Sit on the line's OWN pen position.
      *
      * This used to place the text at `y + h - size * ASCENT_RATIO`, which
      * derives a baseline from the glyph box and a constant. How far a
@@ -221,19 +258,36 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
      * sat visibly higher than the text it replaced while the surrounding
      * lines stayed put.
      *
-     * The extraction knows where the pen actually was. `line.baseline` is
-     * in page space (top-down); the content stream is raw user space
-     * (bottom-up), so it flips against the page height the same way the
-     * cover above does.
+     * The extraction knows where the pen actually was, and knows it as a
+     * POINT: on a turned page the pen does not run along page-space x, so
+     * taking its y alone and pairing that with the box's left edge picks a
+     * corner the text never started from. The fallback keeps the old
+     * derivation for a run that reported no origin at all.
      */
-    const baseline =
-      line.baseline > 0 ? pageHeight - line.baseline + cy0 : y + h - size * ASCENT_RATIO
+    const pen = line.origin
+      ? pagePointToContent(line.origin, geometry)
+      : { x, y: y + h - size * ASCENT_RATIO }
+    // The fallback is the pre-extraction guess and is only meaningful on an
+    // unrotated page; it is reachable only for a run that reported no
+    // glyphs at all, which cannot hash-match a non-empty original.
+
+    /**
+     * Drawn along the ORIGINAL run's direction, not along user-space +x.
+     *
+     * A content stream is turned with its page when it is displayed, so
+     * text drawn axis-aligned on a /Rotate 90 page comes out at a right
+     * angle to everything around it -- which is exactly what a patched
+     * invoice looked like. `pageDirToContent` turns the page-space
+     * direction MuPDF reported for this line back into the direction the
+     * run was drawn in, so the replacement lies along the text it replaces.
+     */
+    const u = pageDirToContent(line.dir, geometry)
 
     ops.push(
       fillColor(o.color),
       'BT',
       `/${font.name} ${num(size)} Tf`,
-      `1 0 0 1 ${num(x + dx)} ${num(baseline - dy)} Tm`,
+      textMatrix(u, pen.x + shift.x, pen.y + shift.y),
       `${pdfString(text)} Tj`,
       'ET',
     )
