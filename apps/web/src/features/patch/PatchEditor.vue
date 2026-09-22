@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { pageViewSize } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import type {
-  Color, EditObject, LineRun, PageQuadIndex, TextPatchObject,
+  Color, EditObject, PageQuadIndex, TextPatchObject,
 } from '@margin/pdf-core'
 import { isBoldWeight, weightOf } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
@@ -18,7 +18,7 @@ import { rgb } from '@/features/overlay/objects/svgPaint'
 import { noZoomTextSize } from '@/lib/textFieldZoom'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
 import {
-  buildLinePatch, documentStyle, lineBox, patchOnLine, plainColor, sameStyle,
+  buildLinePatch, documentStyle, lineBox, patchOnLine, plainColor,
 } from './linePatch'
 import { lineTargetRect } from './editTargets'
 
@@ -309,14 +309,55 @@ const targets = computed(() =>
   ),
 )
 
+/**
+ * A click on a line MAKES ITS LAYER, before anything is typed.
+ *
+ * The patch used to exist only once the text or the style had changed: a
+ * line the user clicked and left alone recorded nothing. That meant a line
+ * could not be restyled from the inspector without first retyping it --
+ * there was no object to select, so no Font, Weight, Size or Colour to
+ * offer -- and the layers list had nothing to show for a line the user had
+ * plainly reached for. The reported case was a heading whose weight and
+ * colour were the whole point.
+ *
+ * So the patch is created here, carrying the line's own words and the
+ * style the document set it in, and SELECTED, so the inspector shows its
+ * controls while the field is still open. What it costs is honest: a
+ * pristine patch covers the line and redraws it in the default family,
+ * which is a visible change on a page set in something else. That is the
+ * same change every edit already makes, now made by the click that asks
+ * for it -- and one Undo, or the layer's own delete, takes it back.
+ */
+function ensurePatch(lineIndex: number): TextPatchObject | undefined {
+  const existing = patchOn(lineIndex)
+  if (existing) return existing
+  const l = props.index?.lines[lineIndex]
+  if (!l || l.chars.length === 0) return undefined
+  const object = buildLinePatch({
+    pageId: props.page.id,
+    lineIndex,
+    line: l,
+    fontFamily: DEFAULT_FAMILY,
+    style: documentStyle(l),
+    background: background.value,
+    z: edits.nextZ(),
+    fit: 'overflow',
+  })
+  edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Edit text')
+  return object
+}
+
 async function begin(lineIndex: number): Promise<void> {
   editing.value = lineIndex
-  // What the user last typed, if they have edited this line before --
-  // otherwise the line as the document has it. Loading the original over
-  // an existing edit made every re-edit start from scratch, which read as
-  // the edit having been lost.
-  const existing = patchOn(lineIndex)
+  // The line's layer, made now if the line had none, and selected so the
+  // inspector offers its style while the field is open. The draft is what
+  // the user last typed if they have edited this line before -- otherwise
+  // the line as the document has it. Loading the original over an existing
+  // edit made every re-edit start from scratch, which read as the edit
+  // having been lost.
+  const existing = ensurePatch(lineIndex)
   editingId.value = existing?.id
+  if (existing) edits.select([existing.id])
   draft.value = existing ? existing.text : originalText.value
   const line = props.index?.lines[lineIndex]
   // An existing patch's own weight, otherwise the weight the DOCUMENT set
@@ -393,20 +434,6 @@ watch([draft, weight, italic], async ([text]) => {
   }
 })
 
-/**
- * Whether the style being committed is the one the line already has.
- *
- * Compared against the DOCUMENT's line rather than against any existing
- * patch: "undo the edit" means restore what the page itself draws, so that
- * is what the comparison has to be against.
- */
-function matchesDocument(l: LineRun): boolean {
-  return sameStyle(
-    { weight: weight.value, italic: italic.value, fontSize: size.value, color: color.value },
-    documentStyle(l),
-  )
-}
-
 function commit(): void {
   const l = line.value
   const b = box.value
@@ -416,34 +443,21 @@ function commit(): void {
   const existing = editingId.value
 
   /**
-   * Putting the line back exactly as the document has it is a request to
-   * undo the edit.
+   * Committing UPDATES the patch the click made -- which is every commit,
+   * since `begin` makes one -- and never deletes it.
    *
-   * EXACTLY means the style too, and that used to be missing. The test was
-   * `draft === originalText`, so changing only the weight or the slope --
-   * pressing Ctrl+B on a line and touching nothing else -- looked like
-   * typing the original back, and the edit was discarded on blur. The style
-   * appeared while the field was open and vanished the moment it closed.
+   * It used to: typing the original back with the document's own style
+   * was read as a request to undo the edit, and the patch was removed. Now
+   * that the click itself makes the layer, a patch drawing exactly what the
+   * document draws is the layer the user asked for by clicking, not a
+   * leftover, and it stays until they delete it or undo. Typing the
+   * original back simply leaves the layer saying the original.
    *
-   * AND THE POSITION, for the same reason and with a worse failure. A line
-   * that has only been MOVED still has the document's own words and the
-   * document's own style, so this matched it -- and merely opening the
-   * field and clicking away deleted the patch, snapping the line back to
-   * where it started with nothing on screen to say why. Where the line is
-   * is part of "exactly as the document has it".
-   *
-   * With no existing patch there is simply nothing to record. With one,
-   * leaving it in place would keep painting a cover over text identical to
-   * what is underneath -- a visible flat rectangle achieving nothing.
-   */
-  if (draft.value === originalText.value && matchesDocument(l) && !isMoved.value) {
-    if (existing) edits.applyOp({ type: 'deleteObject', id: existing }, 'Undo text edit')
-    cancel()
-    return
-  }
-
-  /**
-   * Editing a line that already has a patch UPDATES it.
+   * `originalText` and `originalHash` are deliberately left alone: they
+   * describe the line in the source document, which has not changed, and
+   * they are what the writer checks before applying anything. Recomputing
+   * them from the current draft would make that guard compare the edit
+   * against itself.
    *
    * `originalText` and `originalHash` are deliberately left alone: they
    * describe the line in the source document, which has not changed, and
@@ -452,6 +466,20 @@ function commit(): void {
    * against itself.
    */
   if (existing) {
+    // Nothing to record when the field closes as it opened: an update
+    // that changes nothing would still be an undo step, so Ctrl+Z after
+    // a click-and-leave would revert the no-op and leave the layer, when
+    // what the user means is "take back the click".
+    const stored = patchOn(at)
+    if (
+      stored && stored.text === draft.value && stored.fit === fit.value &&
+      stored.fontSize === size.value && weightOf(stored) === weight.value &&
+      (stored.italic === true) === italic.value &&
+      stored.color.every((channel, i) => channel === color.value[i])
+    ) {
+      cancel()
+      return
+    }
     edits.applyOp(
       {
         type: 'updateObject',
@@ -490,6 +518,8 @@ function commit(): void {
     fit: fit.value,
   })
 
+  // Only reachable when `begin` could not make the layer, which it can
+  // for every line that has a target. Kept so a commit never loses text.
   edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Edit text')
   cancel()
 }

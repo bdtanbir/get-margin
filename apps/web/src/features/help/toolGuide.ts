@@ -108,7 +108,7 @@ export const TOOL_DOCS: Record<ToolId, ToolDoc> = {
   },
   patch: {
     does: 'Rewrite a line the document already says, keeping its font, its weight and the background behind it.',
-    how: 'Click the line, then retype it. Double-clicking a line under Select gets you here in one gesture, with the words already highlighted so typing replaces them.',
+    how: 'Click the line and it becomes a layer you can retype, or restyle from the inspector — font, weight, size and colour. Double-clicking a line under Select gets you here in one gesture, with the words already highlighted so typing replaces them.',
     caution: 'This replaces existing wording. To add a new line that was never there, use Text.',
   },
   editImage: {

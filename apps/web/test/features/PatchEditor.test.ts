@@ -248,23 +248,72 @@ describe('PatchEditor', () => {
     expect(patches(edits)[0]!.backgroundConfidence).toBe(1)
   })
 
-  it('creates nothing when the text is unchanged', async () => {
+  /**
+   * The click MAKES THE LAYER. A line clicked and left alone used to record
+   * nothing, so it could not be restyled from the inspector -- there was no
+   * object to select -- and the layers list had nothing to show for it.
+   */
+  it('makes the line a layer the moment it is clicked, before anything is typed', async () => {
+    const edits = seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+    const w = mountEditor(INDEX)
+    await w.get('[data-patch-target="0"]').trigger('click')
+    expect(patches(edits)).toHaveLength(1)
+    const patch = patches(edits)[0]!
+    expect(patch.text).toBe('Original line')
+    expect(patch.originalText).toBe('Original line')
+    expect(patch.weight).toBe(400)
+    expect(patch.fontSize).toBe(12)
+    expect(patch.background).toEqual([1, 1, 1])
+  })
+
+  it('selects that layer, so the inspector offers its font, weight, size and colour', async () => {
+    const edits = seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+    const w = mountEditor(INDEX)
+    await w.get('[data-patch-target="0"]').trigger('click')
+    expect(edits.selection).toEqual([patches(edits)[0]!.id])
+  })
+
+  it('keeps the layer when the field is closed with the text unchanged', async () => {
     const edits = seed()
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
     await w.get('[data-patch-input]').trigger('keydown.enter')
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.text).toBe('Original line')
+  })
+
+  it('does not make a second layer when the line is clicked again', async () => {
+    const edits = seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+    const w = mountEditor(INDEX)
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-target="0"]').trigger('click')
+    expect(patches(edits)).toHaveLength(1)
+  })
+
+  it('takes the layer back with one undo', async () => {
+    const edits = seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+    const w = mountEditor(INDEX)
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await w.get('[data-patch-input]').trigger('keydown.enter')
+    edits.undo()
     expect(patches(edits)).toHaveLength(0)
   })
 
-  it('abandons on cancel', async () => {
+  it('discards typed text on cancel, keeping the layer', async () => {
     const edits = seed()
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
     await w.get('[data-patch-input]').setValue('Replacement')
     await w.get('[data-patch-input]').trigger('keydown.esc')
-    expect(patches(edits)).toHaveLength(0)
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.text).toBe('Original line')
     expect(w.find('[data-patch-input]').exists()).toBe(false)
   })
 
@@ -311,7 +360,7 @@ describe('PatchEditor', () => {
     await w.get('[data-patch-target="0"]').trigger('click')
     await w.get('[data-patch-input]').setValue('Abandoned')
     await w.get('[data-patch-input]').trigger('keydown.esc')
-    expect(patches(edits)).toHaveLength(0)
+    expect(patches(edits)[0]!.text).toBe('Original line')
   })
 
   /**
@@ -362,10 +411,11 @@ describe('PatchEditor', () => {
       expect(patch.originalHash).toBe(hashText('Original line'))
     })
 
-    /** Typing the original back is a request to undo, not to cover it with itself. */
-    it('removes the patch when the original text is typed back', async () => {
+    /** The layer is the click's; typing the original back leaves it saying the original. */
+    it('keeps the layer, saying the original, when the original text is typed back', async () => {
       const { edits } = await editTwice('First replacement', 'Original line')
-      expect(patches(edits)).toHaveLength(0)
+      expect(patches(edits)).toHaveLength(1)
+      expect(patches(edits)[0]!.text).toBe('Original line')
     })
   })
 
@@ -475,12 +525,13 @@ describe('PatchEditor', () => {
       expect(w.find('[data-patch-guide]').exists()).toBe(true)
     })
 
-    it('still undoes the edit when an unmoved patch is typed back', async () => {
+    it('keeps an unmoved patch that is typed back, now saying the original', async () => {
       const { edits, w } = withMoved({ offset: { dx: 0, dy: 0 }, text: 'Changed' })
       await w.get('[data-patch-target="0"]').trigger('click')
       await w.get('[data-patch-input]').setValue('Original line')
       await w.get('[data-patch-input]').trigger('keydown.enter')
-      expect(patches(edits)).toHaveLength(0)
+      expect(patches(edits)).toHaveLength(1)
+      expect(patches(edits)[0]!.text).toBe('Original line')
     })
   })
 
@@ -869,9 +920,9 @@ describe('slope', () => {
  * nothing else discarded the patch on blur. The style showed while the
  * field was open and vanished the moment it closed.
  *
- * Restoring the document's own appearance still discards the patch -- that
- * is the behaviour the shortcut exists for -- but it now takes ALL FOUR
- * axes matching, not just the text.
+ * Restoring the document's own appearance no longer discards the patch:
+ * the click that opened the field made the layer, and the layer stays
+ * until it is deleted or undone.
  */
 describe('a style-only edit', () => {
   beforeEach(() => {
@@ -920,21 +971,20 @@ describe('a style-only edit', () => {
     expect(patches(edits)[0]!.italic).toBe(true)
   })
 
-  it('records nothing when neither the text nor the style changed', async () => {
-    // The shortcut still earns its keep: a cover painted over text
-    // identical to what is underneath is a visible rectangle achieving
-    // nothing.
+  it('keeps the layer the click made when neither the text nor the style changed', async () => {
     const edits = useEditsStore()
     await styleOnly(indexOf('Project: Checkout Design'), [])
-    expect(patches(edits)).toHaveLength(0)
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.weight).toBe(400)
   })
 
-  it('discards the patch when the style is toggled back to the document’s', async () => {
+  it('keeps the layer when the style is toggled back to the document’s', async () => {
     const edits = useEditsStore()
     await styleOnly(indexOf('Project: Checkout Design'), ['b'])
-    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.weight).toBe(700)
     await styleOnly(indexOf('Project: Checkout Design'), ['b'])
-    expect(patches(edits)).toHaveLength(0)
+    expect(patches(edits)).toHaveLength(1)
+    expect(patches(edits)[0]!.weight).toBe(400)
   })
 
   it('keeps an un-bold of a line the document set bold', async () => {
