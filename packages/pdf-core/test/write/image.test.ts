@@ -54,6 +54,7 @@ function docWith(objects: EditObject[]): EditDocument {
     version: EDIT_DOCUMENT_VERSION, sources: { 'src-0': { hash: '', name: 'a.pdf' } },
     pageOrder: ['p0', 'p1'], pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null }, p1: { sourceIndex: 1, sourceId: 'src-0', rotation: 0, cropBox: null } },
     objects: Object.fromEntries(objects.map((o) => [o.id, o])), nextZ: 99,
+    fieldValues: {}, flattenForms: false,
   }
 }
 

@@ -23,6 +23,7 @@ function emptyEdits(pageCount: number): EditDocument {
     pages,
     objects: {},
     nextZ: 1,
+    fieldValues: {}, flattenForms: false,
   }
 }
 
@@ -115,6 +116,7 @@ describe('replay progress and error context', () => {
       pages: Object.fromEntries(pageOrder.map((id, i) => [id, { sourceIndex: i, sourceId: 'src-0', rotation: 0, cropBox: null }])),
       objects: Object.fromEntries(objects.map((o) => [o.id, o])),
       nextZ: 9,
+      fieldValues: {}, flattenForms: false,
     }
   }
 

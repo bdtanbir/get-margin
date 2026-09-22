@@ -149,6 +149,7 @@ function everyKind(target: Target): EditDocument {
     pageOrder: ['p0'], pages: { p0: { sourceIndex: pageIndex, sourceId: 'src-0', rotation: 0, cropBox: null } },
     objects: Object.fromEntries(objects.map((o) => [o.id, o])),
     nextZ: 99,
+    fieldValues: {}, flattenForms: false,
   }
 }
 

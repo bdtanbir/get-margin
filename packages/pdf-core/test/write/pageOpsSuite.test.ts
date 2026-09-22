@@ -62,6 +62,7 @@ function pageOps(fixture: FixtureName): EditDocument {
     ])),
     objects: {},
     nextZ: 1,
+    fieldValues: {}, flattenForms: false,
   }
 }
 
@@ -77,6 +78,7 @@ function merged(): EditDocument {
     },
     objects: {},
     nextZ: 1,
+    fieldValues: {}, flattenForms: false,
   }
 }
 
@@ -203,6 +205,7 @@ describe('Phase 3 page-operation suite', () => {
         },
         objects: {},
         nextZ: 1,
+        fieldValues: {}, flattenForms: false,
       },
     )
     expect(annotsOf(out, 1)).toEqual({ annots: ['Ink'], links: ['https://example.com/'] })

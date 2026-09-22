@@ -6,7 +6,6 @@ import { generateFixtures } from '../fixtures/index.js'
 import { bytes, textOf, redactionFor, write } from './redactHelpers.js'
 
 beforeAll(async () => { await generateFixtures() }, 60_000)
-const bytes = (n: FixtureName): Uint8Array => new Uint8Array(readFileSync(fixturePath(n)))
 
 describe('redaction', () => {
   it('removes the text from the page', () => {

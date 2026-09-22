@@ -80,6 +80,7 @@ function edited(): EditDocument {
     pages: { p0: { sourceId: SRC, sourceIndex: 0, rotation: 90, cropBox: null } },
     objects: {},
     nextZ: 1,
+    fieldValues: {}, flattenForms: false,
   }
 }
 

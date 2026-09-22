@@ -23,7 +23,7 @@ const src = (): Uint8Array => new Uint8Array(readFileSync(fixturePath('simple-te
  * same defect. The rest of the page is untouched.
  */
 function withDanglingTransform(pdf: Uint8Array, ops = '2 0 0 2 0 0 cm'): Uint8Array {
-  const doc = mupdf.PDFDocument.openDocument(Buffer.from(pdf), 'application/pdf')
+  const doc = mupdf.PDFDocument.openDocument(Buffer.from(pdf), "application/pdf") as mupdf.PDFDocument
   const page = doc.loadPage(0)
   const obj = page.getObject()
   const contents = obj.get('Contents')
@@ -146,7 +146,7 @@ describe('appending to a page that left a transform applied', () => {
     const many = [box('b1'), { ...box('b2'), rect: { x: 300, y: 600, w: 60, h: 60 } } as EditObject]
     const out = replay(new Map([['src-0', hostile]]), docWith(many))
 
-    const doc = mupdf.PDFDocument.openDocument(Buffer.from(out), 'application/pdf')
+    const doc = mupdf.PDFDocument.openDocument(Buffer.from(out), "application/pdf") as mupdf.PDFDocument
     const contents = doc.loadPage(0).getObject().get('Contents')
     expect(contents.isArray()).toBe(true)
 

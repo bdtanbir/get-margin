@@ -23,6 +23,7 @@ function doc(order: number[]): EditDocument {
     ])),
     objects: {},
     nextZ: 1,
+    fieldValues: {}, flattenForms: false,
   }
 }
 
@@ -37,6 +38,7 @@ function twoSources(pages: Array<{ id: string; sourceId: string; sourceIndex: nu
     ])),
     objects: {},
     nextZ: 1,
+    fieldValues: {}, flattenForms: false,
   }
 }
 

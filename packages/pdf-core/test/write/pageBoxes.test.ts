@@ -23,6 +23,7 @@ function docWith(pageCount: number, target: number, override: Override): EditDoc
     ])),
     objects: {},
     nextZ: 1,
+    fieldValues: {}, flattenForms: false,
   }
 }
 
