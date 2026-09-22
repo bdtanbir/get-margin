@@ -394,7 +394,7 @@ describe('Inspector weight controls', () => {
     id: 't1', pageId: 'p1', kind: 'text', text: 'Hello',
     rect: { x: 10, y: 20, w: 100, h: 20 },
     rotation: 0, z: 1, locked: false, opacity: 1,
-    fontFamily: 'Inter', bold: false, italic: false, fontSize: 14,
+    fontFamily: 'Inter', weight: 400, italic: false, fontSize: 14,
     color: [0, 0, 0], align: 'left',
   }
 
@@ -402,7 +402,7 @@ describe('Inspector weight controls', () => {
     id: 'x1', pageId: 'p1', kind: 'textPatch',
     lineIndex: 0, originalHash: 'abcd1234', originalText: 'Was bold',
     text: 'Now says this',
-    fontFamily: 'Inter', bold: true, italic: true, fontSize: 11, baseline: 118,
+    fontFamily: 'Inter', weight: 700, italic: true, fontSize: 11, baseline: 118,
     color: [0, 0, 0],
     background: [1, 1, 1], backgroundConfidence: 1, fit: 'overflow',
     rect: { x: 10, y: 20, w: 100, h: 20 },
@@ -416,41 +416,89 @@ describe('Inspector weight controls', () => {
     seedDocument([{ id: 'p1', sourceIndex: 0 }])
   })
 
-  const boldBox = (w: ReturnType<typeof mount>) =>
-    w.get('[data-field="bold"]').get('input')
+  const weightSelect = (w: ReturnType<typeof mount>) =>
+    w.get('[data-field="weight"]').get('select')
 
   const italicBox = (w: ReturnType<typeof mount>) =>
     w.get('[data-field="italic"]').get('input')
 
-  it('offers Bold on a text object', () => {
+  it('offers Weight on a text object, as a select of every weight the family has', () => {
     edits.applyOp({ type: 'addObject', object: textObject }, 'add')
     edits.select(['t1'])
-    expect(boldBox(mount(Inspector)).attributes('type')).toBe('checkbox')
+    const options = weightSelect(mount(Inspector)).findAll('option')
+    expect(options.map((o) => o.attributes('value')))
+      .toEqual(['100', '200', '300', '400', '500', '600', '700', '800'])
+    expect(options.map((o) => o.text())).toContain('500 Medium')
   })
 
-  it('writes the weight onto the object when it is ticked', async () => {
+  it('writes the weight onto the object as a NUMBER', async () => {
+    // A <select> hands back a string. Stored as one, the writer would be
+    // asked for a face "Inter 700" spelled from "700" and find nothing.
     edits.applyOp({ type: 'addObject', object: textObject }, 'add')
     edits.select(['t1'])
     const w = mount(Inspector)
-    await boldBox(w).setValue(true)
-    expect((edits.doc.objects.t1 as { bold?: boolean }).bold).toBe(true)
+    await weightSelect(w).setValue('500')
+    expect((edits.doc.objects.t1 as { weight?: number }).weight).toBe(500)
   })
 
-  it('offers Bold on an edited line of the document’s own text', () => {
+  it('offers Weight on an edited line of the document’s own text', () => {
     edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
     edits.select(['x1'])
     const w = mount(Inspector)
-    // Ticked, because the patch inherited the weight of the line it
+    // Showing 700, because the patch inherited the weight of the line it
     // replaced -- which is the whole fix, shown back to the user.
-    expect((boldBox(w).element as HTMLInputElement).checked).toBe(true)
+    expect((weightSelect(w).element as HTMLSelectElement).value).toBe('700')
   })
 
   it('lets the inherited weight be corrected after the fact', async () => {
     edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
     edits.select(['x1'])
     const w = mount(Inspector)
-    await boldBox(w).setValue(false)
-    expect((edits.doc.objects.x1 as { bold?: boolean }).bold).toBe(false)
+    await weightSelect(w).setValue('400')
+    expect((edits.doc.objects.x1 as { weight?: number }).weight).toBe(400)
+  })
+
+  /**
+   * Not every family reaches every weight, and the select says so rather
+   * than offering a face the writer would refuse.
+   */
+  it('offers only the weights the chosen family has', async () => {
+    edits.applyOp({ type: 'addObject', object: { ...textObject, fontFamily: 'Merriweather' } }, 'add')
+    edits.select(['t1'])
+    const options = weightSelect(mount(Inspector)).findAll('option')
+    expect(options.map((o) => o.attributes('value')))
+      .toEqual(['300', '400', '500', '600', '700', '800'])
+  })
+
+  /**
+   * A family change carries the weight and slope with it, in ONE undo
+   * step: a 100 Inter heading moved to Merriweather lands at 300, and one
+   * moved to Lobster lands at 400 upright, because those are the nearest
+   * faces those families have. Left as they were, the object would name a
+   * face nobody can draw and the export would refuse it.
+   */
+  it('snaps the weight and slope to what the new family has', async () => {
+    edits.applyOp({
+      type: 'addObject', object: { ...textObject, weight: 100, italic: true },
+    }, 'add')
+    edits.select(['t1'])
+    const w = mount(Inspector)
+    await w.get('[data-field="fontFamily"]').get('select').setValue('Lobster')
+    const o = edits.doc.objects.t1 as { fontFamily: string; weight?: number; italic?: boolean }
+    expect(o.fontFamily).toBe('Lobster')
+    expect(o.weight).toBe(400)
+    expect(o.italic).toBe(false)
+    edits.undo()
+    const back = edits.doc.objects.t1 as { fontFamily: string; weight?: number; italic?: boolean }
+    expect(back.fontFamily).toBe('Inter')
+    expect(back.weight).toBe(100)
+    expect(back.italic).toBe(true)
+  })
+
+  it('does not offer Italic for a family that has no italic files', () => {
+    edits.applyOp({ type: 'addObject', object: { ...textObject, fontFamily: 'Lobster' } }, 'add')
+    edits.select(['t1'])
+    expect(mount(Inspector).find('[data-field="italic"]').exists()).toBe(false)
   })
 
   /**
@@ -478,15 +526,15 @@ describe('Inspector weight controls', () => {
     expect((italicBox(mount(Inspector)).element as HTMLInputElement).checked).toBe(true)
   })
 
-  it('keeps bold and italic as separate switches, not one Style picker', async () => {
-    // They combine -- bold italic is a fourth face -- so a four-option list
-    // would be spelling out the product of two independent switches.
+  it('keeps weight and italic as separate controls, not one Style picker', async () => {
+    // They combine -- a 700 italic is its own face -- so a combined list
+    // would be spelling out the product of two independent axes.
     edits.applyOp({ type: 'addObject', object: patchObject }, 'add')
     edits.select(['x1'])
     const w = mount(Inspector)
     await italicBox(w).setValue(false)
     expect((edits.doc.objects.x1 as { italic?: boolean }).italic).toBe(false)
-    expect((edits.doc.objects.x1 as { bold?: boolean }).bold).toBe(true)
+    expect((edits.doc.objects.x1 as { weight?: number }).weight).toBe(700)
   })
 
   it('offers Size on an edited line, showing the size the line was set in', () => {

@@ -32,7 +32,7 @@ const family = computed(() => cssFamily(props.object.fontFamily))
  * synthesised bold or oblique -- which would be a different shape and,
  * worse, a different width from the one `measureText` just returned.
  */
-const weight = computed(() => cssWeight(props.object.bold))
+const weight = computed(() => cssWeight(props.object.weight))
 const slope = computed(() => cssStyle(props.object.italic))
 </script>
 

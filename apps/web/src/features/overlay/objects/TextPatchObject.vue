@@ -113,7 +113,7 @@ const background = computed(() => rgb(props.object.background))
 const fill = computed(() => rgb(props.object.color))
 const family = computed(() => cssFamily(props.object.fontFamily))
 /** The style the line was already in, unless the user has overridden it. */
-const weight = computed(() => cssWeight(props.object.bold))
+const weight = computed(() => cssWeight(props.object.weight))
 const slope = computed(() => cssStyle(props.object.italic))
 </script>
 

@@ -16,7 +16,7 @@ function match(over: Partial<PageMatch> = {}): PageMatch {
     end,
     text: lineText.slice(start, end),
     lineText,
-    bold: false,
+    weight: 400,
     italic: false,
     size: 12,
     baseline: 14,
@@ -53,7 +53,7 @@ describe('buildReplacements over a line that is already patched', () => {
     lineIndex: 0,
     originalHash: 'h', originalText: 'the cat sat on the mat',
     text: 'the cat sat on the mat',
-    fontFamily: 'Inter', bold: true, italic: false, fontSize: 12, baseline: 14,
+    fontFamily: 'Inter', weight: 700, italic: false, fontSize: 12, baseline: 14,
     color: [0, 0, 0], background: [1, 1, 1], backgroundConfidence: 1,
     fit: 'overflow',
     rect: { x: 0, y: 0, w: 220, h: 18 },
@@ -292,14 +292,14 @@ describe('buildReplacements', () => {
   it('keeps each line’s own colour, weight, slope, and size', () => {
     const plan = buildReplacements(
       [match({
-        color: [0.42, 0.45, 0.5], bold: true, italic: true, size: 9, baseline: 20,
+        color: [0.42, 0.45, 0.5], weight: 700, italic: true, size: 9, baseline: 20,
       })],
       'a',
       ctx(),
     )
     const patch = plan.patches[0]!
     expect(patch.color).toEqual([0.42, 0.45, 0.5])
-    expect(patch.bold).toBe(true)
+    expect(patch.weight).toBe(700)
     expect(patch.italic).toBe(true)
     expect(patch.fontSize).toBe(9)
     expect(patch.baseline).toBe(20)

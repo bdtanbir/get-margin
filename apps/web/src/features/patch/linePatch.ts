@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid'
-import { hashText } from '@margin/pdf-core'
+import { hashText, weightOf } from '@margin/pdf-core'
 import type { Color, EditObject, LineRun, TextPatchObject } from '@margin/pdf-core'
 import type { BackgroundSample } from './sampleBackground'
 
@@ -65,7 +65,8 @@ export function plainRect(r: { x: number; y: number; w: number; h: number }): {
 
 /** The four axes a patch inherits from the line it replaces. */
 export type PatchStyle = {
-  bold: boolean
+  /** CSS weight, 100 to 800. See `LineRun.weight`. */
+  weight: number
   italic: boolean
   fontSize: number
   color: Color
@@ -74,7 +75,7 @@ export type PatchStyle = {
 /** The style the DOCUMENT itself sets a line in. */
 export function documentStyle(line: LineRun): PatchStyle {
   return {
-    bold: line.bold,
+    weight: line.weight,
     italic: line.italic,
     fontSize: line.size,
     color: plainColor(line.color),
@@ -84,13 +85,13 @@ export function documentStyle(line: LineRun): PatchStyle {
 /**
  * The style a patch is drawn in.
  *
- * `bold` and `italic` are optional in the format -- absent means off, which
- * is what every patch written before they existed meant -- so they are
- * normalised here rather than at each comparison.
+ * `weight` and `italic` are optional in the format -- absent means 400 and
+ * upright, which is what every patch written before they existed meant --
+ * so they are normalised here rather than at each comparison.
  */
 export function styleOf(patch: TextPatchObject): PatchStyle {
   return {
-    bold: patch.bold === true,
+    weight: weightOf(patch),
     italic: patch.italic === true,
     fontSize: patch.fontSize,
     color: plainColor(patch.color),
@@ -99,7 +100,7 @@ export function styleOf(patch: TextPatchObject): PatchStyle {
 
 export function sameStyle(a: PatchStyle, b: PatchStyle): boolean {
   return (
-    a.bold === b.bold &&
+    a.weight === b.weight &&
     a.italic === b.italic &&
     a.fontSize === b.fontSize &&
     a.color.every((channel, i) => channel === b.color[i])
@@ -203,7 +204,7 @@ export function buildLinePatch(args: NewLinePatch): TextPatchObject {
     originalText: args.line.text,
     text: args.text ?? args.line.text,
     fontFamily: args.fontFamily,
-    bold: args.style.bold,
+    weight: args.style.weight,
     italic: args.style.italic,
     fontSize: args.style.fontSize,
     // The pen position on the line being replaced, so the overlay draws the

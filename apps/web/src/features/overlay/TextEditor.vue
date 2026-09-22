@@ -52,7 +52,7 @@ const style = computed(() => {
     transformOrigin: 'top left',
     lineHeight: String(LINE_HEIGHT),
     fontFamily: cssFamily(o.fontFamily),
-    fontWeight: cssWeight(o.bold),
+    fontWeight: cssWeight(o.weight),
     fontStyle: cssStyle(o.italic),
     color: rgb(o.color),
     textAlign: o.align,

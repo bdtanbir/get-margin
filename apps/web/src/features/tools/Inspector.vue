@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { ChevronLeft } from 'lucide-vue-next'
-import { fieldsFor, toDisplay, fromDisplay, type Field } from './inspectorFields'
+import { fieldsFor, patchFor, toDisplay, fromDisplay, type Field } from './inspectorFields'
 import { toHex, fromHex } from './colorInput'
 import TabOrderList from './TabOrderList.vue'
 import LayersPanel from '@/features/layers/LayersPanel.vue'
@@ -29,6 +29,24 @@ const fields = computed(() => (selected.value ? fieldsFor(selected.value) : []))
 
 const valueOf = (key: string): unknown =>
   (selected.value as unknown as Record<string, unknown> | undefined)?.[key]
+
+function writePatch(patch: Record<string, unknown>): void {
+  const o = selected.value
+  if (!o) return
+  edits.applyOp({ type: 'updateObject', id: o.id, patch: patch as never }, 'Edit')
+}
+
+/**
+ * A choice from a select, stored as the field says -- a number where it
+ * asks for one, and with the weight and slope carried along on a family
+ * change. See `patchFor`.
+ */
+function onSelect(field: Field, e: Event): void {
+  const o = selected.value
+  if (!o) return
+  writePatch(patchFor(o, field, (e.target as HTMLSelectElement).value))
+  onCommit(field)
+}
 
 function write(key: string, value: unknown): void {
   const o = selected.value
@@ -187,8 +205,8 @@ function handleInput(field: Field, e: Event): void {
           :id="`insp-${f.key}`"
           class="min-h-8 rounded-control border border-border bg-surface-sunken px-2 text-[13px]"
           :disabled="selected.locked"
-          :value="valueOf(f.key)"
-          @change="(e) => { onInput(f.key, (e.target as HTMLSelectElement).value); onCommit(f) }"
+          :value="String(valueOf(f.key))"
+          @change="(e) => onSelect(f, e)"
         >
           <option v-for="o in f.options" :key="o.value" :value="o.value">{{ o.label }}</option>
         </select>

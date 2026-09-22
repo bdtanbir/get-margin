@@ -23,7 +23,7 @@ function textPatch(over: Record<string, unknown> = {}): EditObject {
   return {
     id: 'o1', pageId: 'p1', kind: 'textPatch',
     lineIndex: 0, originalHash: 'h', originalText: 'Alpha', text: 'Alpha',
-    fontFamily: 'Inter', bold: false, italic: false, fontSize: 12, baseline: 114,
+    fontFamily: 'Inter', weight: 400, italic: false, fontSize: 12, baseline: 114,
     color: [0, 0, 0], background: [1, 1, 1], backgroundConfidence: 1, fit: 'overflow',
     rect: { x: 40, y: 100, w: 50, h: 18 },
     rotation: 0, z: 1, locked: false, opacity: 1,

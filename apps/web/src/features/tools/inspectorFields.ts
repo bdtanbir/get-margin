@@ -1,5 +1,5 @@
 import type { EditObject, FieldObject } from '@margin/pdf-core'
-import { FONTS } from '@/lib/fonts'
+import { FONTS, WEIGHT_NAMES, familyLabel, fitStyle, hasItalic, weightsOf } from '@/lib/fonts'
 import { normalizeUri } from '@/lib/linkUrl'
 
 export type Field =
@@ -27,7 +27,16 @@ export type Field =
        */
       normalize?: (value: string) => string
     }
-  | { key: string; label: string; type: 'select'; options: Array<{ value: string; label: string }> }
+  | {
+      key: string; label: string; type: 'select'; options: Array<{ value: string; label: string }>
+      /**
+       * Store the chosen option as a NUMBER. A `<select>` hands back a
+       * string whatever its options were, and a weight stored as "700"
+       * is one `faceKey` spells differently from 700 -- the writer would
+       * be asked for a face nobody loaded.
+       */
+      numeric?: boolean
+    }
   | { key: string; label: string; type: 'boolean' }
   /** A list the user adds to and removes from -- a choice field's options. */
   | { key: string; label: string; type: 'list' }
@@ -74,34 +83,45 @@ const SHAPE: Field[] = [
  */
 const FONT_FAMILY: Field = {
   key: 'fontFamily', label: 'Font', type: 'select',
-  options: FONTS.map((f) => ({ value: f.family, label: f.family })),
+  options: FONTS.map((f) => ({ value: f.family, label: familyLabel(f) })),
 }
 
 /**
- * A checkbox, not a weight dropdown.
+ * The weights THIS family has a file for, not the eight the format allows.
  *
- * Two weights are bundled -- 400 and 700 -- so a "Weight" select would be a
- * list of two, and a list of two that maps onto on/off is a checkbox
- * wearing a costume. If more weights are ever bundled this becomes a
- * select, and the stored `bold: boolean` becomes the numeric weight it
- * always wanted to be; until the files exist, offering the choice would be
- * offering something the writer can only refuse.
+ * Built per object because the list depends on the family: Merriweather
+ * starts at 300 and Lobster is one weight. Offering 100 for a family that
+ * has no 100 would be offering something the writer can only refuse, and
+ * a select that lists what exists is the honest version of the checkbox
+ * this used to be.
  */
-const BOLD: Field = { key: 'bold', label: 'Bold', type: 'boolean' }
+function weightField(family: string): Field {
+  return {
+    key: 'weight', label: 'Weight', type: 'select', numeric: true,
+    options: weightsOf(family).map((w) => ({
+      value: String(w), label: `${w} ${WEIGHT_NAMES[w] ?? ''}`.trim(),
+    })),
+  }
+}
 
 /**
  * Its own file, not the regular sheared over.
  *
- * A checkbox for the same reason as BOLD, and beside it rather than folded
- * into a single "Style" picker: the two combine, so a four-option list
- * would be spelling out a product of two independent switches.
+ * A checkbox beside the weight rather than folded into a single "Style"
+ * picker: the two combine, so a combined list would be spelling out a
+ * product of two independent axes. Absent for a family with no italic
+ * files -- a box that can only be unticked is a box that should not be
+ * there.
  */
 const ITALIC: Field = { key: 'italic', label: 'Italic', type: 'boolean' }
 
-const TEXT: Field[] = [
-  FONT_FAMILY,
-  BOLD,
-  ITALIC,
+function faceFields(o: { fontFamily: string }): Field[] {
+  return hasItalic(o.fontFamily) ? [FONT_FAMILY, weightField(o.fontFamily), ITALIC]
+    : [FONT_FAMILY, weightField(o.fontFamily)]
+}
+
+const text = (o: { fontFamily: string }): Field[] => [
+  ...faceFields(o),
   { key: 'fontSize', label: 'Size', type: 'number', min: 4, max: 144, step: 1 },
   { key: 'color', label: 'Colour', type: 'color' },
   {
@@ -114,6 +134,55 @@ const TEXT: Field[] = [
   },
   OPACITY, ROTATION,
 ]
+
+/**
+ * A replacement for a line of the DOCUMENT's own text.
+ *
+ * Deliberately not `text`. Alignment is not offered because a patch has
+ * no box of its own to align within -- it redraws a line the document
+ * laid out, from that line's own left edge -- so the control would be
+ * three choices that all did the same thing.
+ *
+ * Everything else here is INHERITED from the line being replaced and then
+ * made correctable. That is the shape of the whole feature: weight,
+ * slope, size, and colour are all read off the line MuPDF extracted, and
+ * every one of them used to be decided for the user and decided wrongly
+ * -- patches were drawn upright, regular, and black, at a size stored as
+ * 0 meaning "work it out at export", which is not a number anybody can
+ * edit. The FAMILY is still the user's choice, because `isSerif()` is the
+ * one flag MuPDF reports that cannot be trusted on an embedded font.
+ *
+ * Size steps in halves and reaches down to 1pt rather than the text
+ * tool's 4pt floor: document text is routinely smaller than anything
+ * anyone would place by hand, and the fine print on a real payment slip
+ * sits around 5.
+ */
+const textPatch = (o: { fontFamily: string }): Field[] => [
+  ...faceFields(o),
+  { key: 'fontSize', label: 'Size', type: 'number', min: 1, max: 144, step: 0.5 },
+  { key: 'color', label: 'Colour', type: 'color' },
+]
+
+/**
+ * The stored change one edited field means.
+ *
+ * Almost always `{ [key]: value }`. The exception is the FAMILY: a family
+ * change has to carry the weight and slope with it, snapped to faces the
+ * new family has, in the same undo step -- or moving a 300 heading to a
+ * family that starts at 400 leaves an object the writer refuses to draw,
+ * and undoing the snap separately would restore that object.
+ */
+export function patchFor(
+  object: EditObject,
+  field: Field,
+  value: unknown,
+): Record<string, unknown> {
+  const stored = field.type === 'select' && field.numeric ? Number(value) : value
+  if (field.key === 'fontFamily' && typeof stored === 'string') {
+    return { fontFamily: stored, ...fitStyle(stored, object as { weight?: number; italic?: boolean }) }
+  }
+  return { [field.key]: stored }
+}
 
 /**
  * A form field's properties, which depend on the field's TYPE and not only
@@ -194,37 +263,6 @@ function formField(o: FieldObject): Field[] {
  */
 const REGISTRY: Partial<Record<EditObject['kind'], Field[]>> = {
   rect: SHAPE, ellipse: SHAPE, line: SHAPE, arrow: SHAPE,
-  text: TEXT,
-
-  /**
-   * A replacement for a line of the DOCUMENT's own text.
-   *
-   * Deliberately not `TEXT`. Alignment is not offered because a patch has
-   * no box of its own to align within -- it redraws a line the document
-   * laid out, from that line's own left edge -- so the control would be
-   * three choices that all did the same thing.
-   *
-   * Everything else here is INHERITED from the line being replaced and then
-   * made correctable. That is the shape of the whole feature: weight,
-   * slope, size, and colour are all read off the line MuPDF extracted, and
-   * every one of them used to be decided for the user and decided wrongly
-   * -- patches were drawn upright, regular, and black, at a size stored as
-   * 0 meaning "work it out at export", which is not a number anybody can
-   * edit. The FAMILY is still the user's choice, because `isSerif()` is the
-   * one flag MuPDF reports that cannot be trusted on an embedded font.
-   *
-   * Size steps in halves and reaches down to 1pt rather than the text
-   * tool's 4pt floor: document text is routinely smaller than anything
-   * anyone would place by hand, and the fine print on a real payment slip
-   * sits around 5.
-   */
-  textPatch: [
-    FONT_FAMILY,
-    BOLD,
-    ITALIC,
-    { key: 'fontSize', label: 'Size', type: 'number', min: 1, max: 144, step: 0.5 },
-    { key: 'color', label: 'Colour', type: 'color' },
-  ],
   whiteout: [{ key: 'fill', label: 'Colour', type: 'color' }, OPACITY],
   ink: [
     { key: 'color', label: 'Colour', type: 'color' },
@@ -241,9 +279,12 @@ const REGISTRY: Partial<Record<EditObject['kind'], Field[]>> = {
 
 /**
  * Takes the OBJECT, not just its kind: a form field's properties depend on
- * its fieldType, and every other kind ignores the argument entirely.
+ * its fieldType, a text object's on its family, and every other kind
+ * ignores the argument entirely.
  */
 export function fieldsFor(object: EditObject): Field[] {
   if (object.kind === 'field') return formField(object)
+  if (object.kind === 'text') return text(object)
+  if (object.kind === 'textPatch') return textPatch(object)
   return REGISTRY[object.kind] ?? []
 }

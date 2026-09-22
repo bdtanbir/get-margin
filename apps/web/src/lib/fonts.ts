@@ -1,98 +1,84 @@
 import type { EditObject } from '@margin/pdf-core'
-import { faceKey, type FaceStyle } from '@margin/pdf-core'
+import { faceKey, nearestWeight, weightOf, REGULAR_WEIGHT, type FaceStyle } from '@margin/pdf-core'
+import catalog from './fontCatalog.json'
 
 export { faceKey, type FaceStyle }
+
+/**
+ * One family in the curated set: what it is called, where its files are,
+ * and which faces it actually has.
+ *
+ * `weights` and `italic` are the family's REAL coverage, not a promise:
+ * Lobster is one upright file, Merriweather starts at 300, and asking for
+ * a face a family does not have is a thrown error rather than the nearest
+ * one. `fitStyle` is the place that snaps, and it is called where the user
+ * changes family -- not here, where a silent substitute would render one
+ * face and embed another.
+ *
+ * `alias` is the proprietary face this family is the metric-compatible
+ * open stand-in for: Arimo for Arial, Tinos for Times New Roman. Google
+ * Docs offers those names and cannot be served their files, so the picker
+ * shows both -- "Arimo (Arial)" -- and the document embeds the one it
+ * legally can.
+ */
+export type FontEntry = {
+  family: string
+  base: string
+  fallback: string
+  weights: readonly number[]
+  italic: boolean
+  alias?: string
+}
 
 /**
  * The curated font set, shared by preview and export.
  *
  * Spec 2.5: the browser measures and renders with the SAME BYTES the worker
  * embeds into the exported PDF, self-hosted so opening a document makes no
- * third-party request. `file` is explicit rather than derived from `family`
- * -- "Source Serif 4" does not munge into "SourceSerif4" by any rule worth
- * maintaining, and a wrong guess is a 404 at export time.
+ * third-party request. The catalogue is a JSON file rather than a literal
+ * here because the fetch script reads the same one: a family added there
+ * is fetched, offered and embedded from a single definition, and a file
+ * named by one rule and fetched by another is a 404 at export time.
  *
- * EVERY STYLE IS A SEPARATE FILE, not a flag. Asking the browser for
- * weight 700 or `font-style: italic` with only the upright regular
- * registered gets a SYNTHESISED face -- stroked outlines for bold, sheared
- * ones for italic -- and both keep the regular's advance widths, while the
- * export would embed a real face with different ones. The two would
- * disagree about where a centred line starts. Four files per family keeps
- * preview and export measuring the same glyphs, which is the whole point of
+ * EVERY FACE IS A SEPARATE FILE, not a flag. Asking the browser for weight
+ * 500 or `font-style: italic` with only the regular registered gets a
+ * SYNTHESISED face -- stroked outlines for weight, sheared ones for italic
+ * -- and both keep the regular's advance widths, while the export would
+ * embed a real face with different ones. The two would disagree about
+ * where a centred line starts. One file per weight per slope keeps preview
+ * and export measuring the same glyphs, which is the whole point of
  * self-hosting them.
- *
- * Bold italic is its OWN file rather than the bold one on a slant, because
- * that is what a type designer draws: in a serif face the italic is a
- * different alphabet, not the roman leaning over.
  *
  * See public/fonts/LICENSES.md for provenance and licences.
  */
-export const FONTS = [
-  {
-    family: 'Inter', fallback: 'sans-serif',
-    file: 'Inter.ttf', bold: 'Inter-Bold.ttf',
-    italic: 'Inter-Italic.ttf', boldItalic: 'Inter-BoldItalic.ttf',
-  },
-  {
-    family: 'Roboto', fallback: 'sans-serif',
-    file: 'Roboto.ttf', bold: 'Roboto-Bold.ttf',
-    italic: 'Roboto-Italic.ttf', boldItalic: 'Roboto-BoldItalic.ttf',
-  },
-  {
-    family: 'Source Serif 4', fallback: 'serif',
-    file: 'SourceSerif4.ttf', bold: 'SourceSerif4-Bold.ttf',
-    italic: 'SourceSerif4-Italic.ttf', boldItalic: 'SourceSerif4-BoldItalic.ttf',
-  },
-  {
-    family: 'Merriweather', fallback: 'serif',
-    file: 'Merriweather.ttf', bold: 'Merriweather-Bold.ttf',
-    italic: 'Merriweather-Italic.ttf', boldItalic: 'Merriweather-BoldItalic.ttf',
-  },
-  {
-    family: 'JetBrains Mono', fallback: 'monospace',
-    file: 'JetBrainsMono.ttf', bold: 'JetBrainsMono-Bold.ttf',
-    italic: 'JetBrainsMono-Italic.ttf', boldItalic: 'JetBrainsMono-BoldItalic.ttf',
-  },
-] as const
+export const FONTS: readonly FontEntry[] = catalog.families
 
 /**
- * Script faces for the TYPED SIGNATURE only (Task 35 Step 4).
+ * Script faces for the TYPED SIGNATURE (Task 35 Step 4).
  *
- * Deliberately NOT in FONTS above. These are browser-only: a typed
- * signature is rasterised to a transparent PNG and placed as an image, so
- * the face never needs embedding and never costs a document its ~66KB font
- * program. Keeping them out of FONTS also keeps them out of the text tool's
- * font picker, where a signature script is not what anyone wants for body
- * copy.
+ * Caveat is a body face too -- Google Docs offers it as one -- so it is
+ * in FONTS and reachable from the text tool. Dancing Script and Great Vibes
+ * are browser-only: a typed signature is rasterised to a transparent PNG
+ * and placed as an image, so the face never needs embedding and never
+ * costs a document its font program. Keeping them out of FONTS also keeps
+ * them out of the text tool's picker, where a signature script is not what
+ * anyone wants for body copy.
  *
  * Self-hosted for the same reason as FONTS (spec 2.5): no third-party
  * request when a document is opened.
- *
- * One style only: a signature is written in one hand, and a heavier or
- * slanted one is not a setting anybody reaches for -- a script face is
- * already slanted. The undefined variants also keep `faceFile` below honest
- * -- asking for a bold or italic script face fails rather than quietly
- * handing back the upright regular.
  */
-export const SIGNATURE_FACES = [
-  {
-    family: 'Caveat', file: 'Caveat.ttf', fallback: 'cursive',
-    bold: undefined, italic: undefined, boldItalic: undefined,
-  },
-  {
-    family: 'Dancing Script', file: 'DancingScript.ttf', fallback: 'cursive',
-    bold: undefined, italic: undefined, boldItalic: undefined,
-  },
-  {
-    family: 'Great Vibes', file: 'GreatVibes.ttf', fallback: 'cursive',
-    bold: undefined, italic: undefined, boldItalic: undefined,
-  },
-] as const
+export const SIGNATURE_FACES: readonly FontEntry[] = [
+  ...FONTS.filter((f) => f.family === 'Caveat'),
+  ...catalog.signature,
+]
+
+/** The faces that exist ONLY for signatures, and must never reach the writer. */
+const SCRIPT_ONLY: readonly FontEntry[] = catalog.signature
 
 /** Every face this app can load, whether or not it is embeddable. */
-const ALL_FACES = [...FONTS, ...SIGNATURE_FACES]
+const ALL_FACES: readonly FontEntry[] = [...FONTS, ...SCRIPT_ONLY]
 
-export type FontFamily = (typeof FONTS)[number]['family']
+export type FontFamily = string
 
 export const DEFAULT_FAMILY: FontFamily = 'Inter'
 
@@ -105,22 +91,72 @@ export const DEFAULT_FAMILY: FontFamily = 'Inter'
 export const ASCENT_RATIO = 0.8
 export const LINE_HEIGHT = 1.2
 
-const entry = (family: string) => ALL_FACES.find((f) => f.family === family)
+const entry = (family: string): FontEntry | undefined =>
+  ALL_FACES.find((f) => f.family === family)
+
+/**
+ * What the weights are called, for the picker. CSS's own names, which are
+ * also what the type designers call them.
+ */
+export const WEIGHT_NAMES: Readonly<Record<number, string>> = {
+  100: 'Thin',
+  200: 'Extra Light',
+  300: 'Light',
+  400: 'Regular',
+  500: 'Medium',
+  600: 'Semi Bold',
+  700: 'Bold',
+  800: 'Extra Bold',
+}
+
+/** The weights a family has a file for. Empty for an unknown family. */
+export function weightsOf(family: string): readonly number[] {
+  return entry(family)?.weights ?? []
+}
+
+/** Whether a family has italic files at all. */
+export function hasItalic(family: string): boolean {
+  return entry(family)?.italic ?? false
+}
+
+/** What the picker calls a family: its own name, and the face it stands in for. */
+export function familyLabel(f: FontEntry): string {
+  return f.alias ? `${f.family} (${f.alias})` : f.family
+}
+
+/**
+ * `style`, adjusted to a face `family` actually has.
+ *
+ * The weight snaps to the nearest the family offers and italic is dropped
+ * if the family has none. This is what a FAMILY CHANGE goes through, so
+ * moving a 300 heading from Inter to Merriweather lands it at 300 and
+ * moving it to Lobster lands it at 400 upright, in the same undo step --
+ * rather than leaving an object the writer will refuse to draw.
+ *
+ * Returns only the keys that CHANGED, so a caller can spread it into a
+ * patch without rewriting a weight that was already fine.
+ */
+export function fitStyle(family: string, style: FaceStyle): Partial<FaceStyle> {
+  const f = entry(family)
+  if (!f) return {}
+  const out: Partial<FaceStyle> = {}
+  const weight = weightOf(style)
+  const fitted = nearestWeight(weight, f.weights)
+  if (fitted !== weight) out.weight = fitted
+  if (style.italic && !f.italic) out.italic = false
+  return out
+}
 
 /**
  * The CSS `font-weight` a face is registered and asked for under.
  *
- * Named rather than spelled `700` at each site, because the number has to
- * be identical in three places -- the FontFace descriptor, the canvas
+ * One function rather than the number spelled at each site, because it has
+ * to be identical in three places -- the FontFace descriptor, the canvas
  * measurement string, and the SVG/DOM that renders -- or the browser
- * synthesises a bold instead of using the file we shipped, and nothing
+ * synthesises a weight instead of using the file we shipped, and nothing
  * says so.
  */
-export const BOLD_WEIGHT = '700'
-export const REGULAR_WEIGHT = '400'
-
-export const cssWeight = (bold?: boolean): string =>
-  bold ? BOLD_WEIGHT : REGULAR_WEIGHT
+export const cssWeight = (weight?: number): string => String(weight ?? REGULAR_WEIGHT)
 
 /** The `font-style` a face is registered and asked for under. */
 export const cssStyle = (italic?: boolean): string => (italic ? 'italic' : 'normal')
@@ -128,22 +164,22 @@ export const cssStyle = (italic?: boolean): string => (italic ? 'italic' : 'norm
 /**
  * The file behind a family in a given style.
  *
- * Throws for a style a family has no file for -- a bold or italic script
- * face -- rather than falling back to its regular: a silent fallback here
- * would render one thing and embed another.
+ * Throws for a style a family has no file for -- a 100 Merriweather, an
+ * italic Lobster -- rather than falling back to the nearest: a silent
+ * fallback here would render one thing and embed another. `fitStyle` is
+ * where snapping happens, and it happens where the user can see it.
  */
 export function faceFile(family: string, style?: FaceStyle): string {
   const f = entry(family)
   if (!f) throw new Error(`unknown font family "${family}"`)
-  const wanted = style?.bold
-    ? style.italic ? f.boldItalic : f.bold
-    : style?.italic ? f.italic : f.file
-  if (!wanted) {
+  const weight = weightOf(style)
+  const italic = style?.italic === true
+  if (!f.weights.includes(weight) || (italic && !f.italic)) {
     throw new Error(
-      `"${family}" has no ${style?.bold ? 'bold ' : ''}${style?.italic ? 'italic ' : ''}face`,
+      `"${family}" has no ${weight}${italic ? ' italic' : ''} face`,
     )
   }
-  return wanted
+  return `${f.base}-${weight}${italic ? 'Italic' : ''}.ttf`
 }
 
 export function fontUrl(family: string, style?: FaceStyle): string {
@@ -161,12 +197,12 @@ const loading = new Map<string, Promise<void>>()
 /**
  * Register a face with the document so it can be rendered and measured.
  *
- * All four styles register under the SAME CSS family name, distinguished by
- * the FontFace `weight` and `style` descriptors. That is what makes
- * `font-weight: 700` and `font-style: italic` in the overlay pick up
- * Inter-BoldItalic.ttf instead of asking the browser to fake it by stroking
- * and shearing the regular -- and a faked face measures at the regular's
- * advance widths while the export uses the real ones.
+ * Every face of a family registers under the SAME CSS family name,
+ * distinguished by the FontFace `weight` and `style` descriptors. That is
+ * what makes `font-weight: 500` and `font-style: italic` in the overlay
+ * pick up Inter-500Italic.ttf instead of asking the browser to fake it by
+ * stroking and shearing the regular -- and a faked face measures at the
+ * regular's advance widths while the export uses the real ones.
  *
  * Cached by FACE, not family: the text tool asks for the active face on
  * every keystroke, and FontFace construction plus load() is a fetch and a
@@ -179,7 +215,7 @@ export function loadFont(family: string, style?: FaceStyle): Promise<void> {
   const promise = (async () => {
     if (typeof FontFace === 'undefined' || !document.fonts) return
     const face = new FontFace(family, `url(${fontUrl(family, style)})`, {
-      weight: cssWeight(style?.bold),
+      weight: cssWeight(style?.weight),
       style: cssStyle(style?.italic),
     })
     await face.load()
@@ -189,25 +225,26 @@ export function loadFont(family: string, style?: FaceStyle): Promise<void> {
   return promise
 }
 
-/** The four combinations a bundled family has a file for. */
-export const ALL_STYLES: FaceStyle[] = [
-  {},
-  { bold: true },
-  { italic: true },
-  { bold: true, italic: true },
-]
+/** Every style a family has a file for: each weight, upright and (if any) italic. */
+export function stylesOf(family: string): FaceStyle[] {
+  const f = entry(family)
+  if (!f) return []
+  return f.weights.flatMap((weight) =>
+    f.italic ? [{ weight }, { weight, italic: true }] : [{ weight }],
+  )
+}
 
 /**
  * Every style of every body face.
  *
- * Four styles across five families is ~1.6MB, which is why this is not
- * called anywhere: faces load on demand through `loadFont`. Kept because
- * the alternative when it IS wanted is text reflowing under the caret the
- * first time somebody ticks Italic, and because a helper that enumerates
- * the set is the thing a preload would need.
+ * Over two hundred files, which is why this is not called anywhere: faces
+ * load on demand through `loadFont`. Kept because the alternative when it
+ * IS wanted is text reflowing under the caret the first time somebody
+ * picks a weight, and because a helper that enumerates the set is the
+ * thing a preload would need.
  */
 export function preloadFonts(): Promise<void[]> {
-  return Promise.all(FONTS.flatMap((f) => ALL_STYLES.map((s) => loadFont(f.family, s))))
+  return Promise.all(FONTS.flatMap((f) => stylesOf(f.family).map((s) => loadFont(f.family, s))))
 }
 
 /** The script faces, loaded on demand when the signature modal opens. */
@@ -229,10 +266,10 @@ let ctx: CanvasRenderingContext2D | null | undefined
  * a missing measurement degrades alignment, and throwing would take the
  * whole overlay down with it.
  *
- * The style is part of the measurement, not decoration on it: bold glyphs
- * are wider and italic ones are usually narrower, so measuring a line in
- * the wrong face puts every centred and right-aligned line off by a few
- * points.
+ * The style is part of the measurement, not decoration on it: heavier
+ * glyphs are wider and italic ones are usually narrower, so measuring a
+ * line in the wrong face puts every centred and right-aligned line off by
+ * a few points.
  *
  * The shorthand's order is fixed by CSS -- style, then weight, then size --
  * and a font shorthand the browser cannot parse is silently ignored, which
@@ -247,7 +284,7 @@ export function measureText(
   if (ctx === undefined) ctx = document.createElement('canvas').getContext('2d')
   if (!ctx) return 0
   ctx.font =
-    `${cssStyle(style?.italic)} ${cssWeight(style?.bold)} ${size}px ${cssFamily(family)}`
+    `${cssStyle(style?.italic)} ${cssWeight(style?.weight)} ${size}px ${cssFamily(family)}`
   return ctx.measureText(text).width
 }
 
@@ -272,8 +309,8 @@ export async function fontBytes(family: string, style?: FaceStyle): Promise<Uint
  * A kind added later has to be added here, once, rather than in five
  * places nobody will remember to visit.
  *
- * Returns FACE keys and not families, for the same reason: a bold italic
- * heading needs Inter Bold Italic embedded, and a collector that only knew
+ * Returns FACE keys and not families, for the same reason: a 700 italic
+ * heading needs Inter 700 Italic embedded, and a collector that only knew
  * about families would hand the writer the regular and let it throw at
  * Download time -- which is exactly the failure this function was written
  * to end. The object is passed to `faceKey` whole, so a style axis added to
@@ -290,27 +327,35 @@ export function facesUsed(objects: Iterable<EditObject>): string[] {
 }
 
 /**
+ * Every embeddable face, by the key the writer looks it up under. Built
+ * once: it is a couple of hundred entries, and every export consults it.
+ */
+const EMBEDDABLE: ReadonlyMap<string, { family: string; style: FaceStyle }> = (() => {
+  const map = new Map<string, { family: string; style: FaceStyle }>()
+  for (const f of FONTS) {
+    for (const style of stylesOf(f.family)) {
+      map.set(faceKey(f.family, style), { family: f.family, style })
+    }
+  }
+  return map
+})()
+
+/**
  * Font bytes for every face the edit document actually uses, keyed the way
- * the writer looks them up. Loading all twenty on every export would add
- * ~1.6MB of fetches for a document that uses one of them.
+ * the writer looks them up. Loading every file on every export would add
+ * megabytes of fetches for a document that uses one of them.
  */
 export async function fontsForExport(
   faces: Iterable<string>,
 ): Promise<Map<string, Uint8Array>> {
-  // Only embeddable faces. A signature script reaching here would mean a
-  // TEXT object had been given one, which the picker cannot produce -- and
-  // embedding it would silently add ~60KB to a document for a face the
-  // writer was never meant to see.
-  const embeddable = new Map<string, { family: string; style: FaceStyle }>()
-  for (const f of FONTS) {
-    for (const style of ALL_STYLES) {
-      embeddable.set(faceKey(f.family, style), { family: f.family, style })
-    }
-  }
-  const unique = [...new Set(faces)].filter((f) => embeddable.has(f))
+  // Only embeddable faces. A signature-only script reaching here would
+  // mean a TEXT object had been given one, which the picker cannot
+  // produce -- and embedding it would silently add ~60KB to a document for
+  // a face the writer was never meant to see.
+  const unique = [...new Set(faces)].filter((f) => EMBEDDABLE.has(f))
   const loaded = await Promise.all(
     unique.map(async (face) => {
-      const { family, style } = embeddable.get(face)!
+      const { family, style } = EMBEDDABLE.get(face)!
       return [face, await fontBytes(family, style)] as const
     }),
   )

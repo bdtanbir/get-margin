@@ -37,7 +37,7 @@ function indexOf(
       bbox: [40, 100, 160, 118],
       text,
       font: 'Test',
-      bold,
+      weight: bold ? 700 : 400,
       italic,
       color,
       size: 12,
@@ -389,7 +389,7 @@ describe('PatchEditor', () => {
       originalHash: hashText('Original line'),
       originalText: 'Original line',
       text: 'Original line',
-      fontFamily: 'Inter', bold: false, italic: false, fontSize: 12, baseline: 114,
+      fontFamily: 'Inter', weight: 400, italic: false, fontSize: 12, baseline: 114,
       color: [0, 0, 0], background: [1, 1, 1], backgroundConfidence: 1,
       fit: 'overflow',
       rect: { x: 40, y: 100, w: 120, h: 18 },
@@ -596,7 +596,7 @@ describe('weight', () => {
     await w.get('[data-patch-input]').setValue('New heading')
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
-    expect(patches(edits)[0]!.bold).toBe(true)
+    expect(patches(edits)[0]!.weight).toBe(700)
   })
 
   it('leaves a regular line regular', async () => {
@@ -606,7 +606,7 @@ describe('weight', () => {
     await w.get('[data-patch-input]').setValue('New body text')
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
-    expect(patches(edits)[0]!.bold).toBe(false)
+    expect(patches(edits)[0]!.weight).toBe(400)
   })
 
   it('shows the inherited weight in the field being typed into', async () => {
@@ -626,7 +626,7 @@ describe('weight', () => {
     await w.get('[data-patch-input]').trigger('keydown', { key: 'b', ctrlKey: true })
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
-    expect(patches(edits)[0]!.bold).toBe(false)
+    expect(patches(edits)[0]!.weight).toBe(400)
   })
 
   it('resumes from the patch’s own weight when a line is edited again', async () => {
@@ -646,7 +646,7 @@ describe('weight', () => {
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
     expect(patches(edits)).toHaveLength(1)
-    expect(patches(edits)[0]!.bold).toBe(false)
+    expect(patches(edits)[0]!.weight).toBe(400)
   })
 })
 
@@ -855,7 +855,7 @@ describe('slope', () => {
     // one axis would ask for a face the line was not set in.
     const edits = useEditsStore()
     await commit(mountEditor(indexOf('Bold emphasis', true, [0, 0, 0], true)), 'Rewritten')
-    expect(patches(edits)[0]!.bold).toBe(true)
+    expect(patches(edits)[0]!.weight).toBe(700)
     expect(patches(edits)[0]!.italic).toBe(true)
   })
 })
@@ -901,7 +901,7 @@ describe('a style-only edit', () => {
     const edits = useEditsStore()
     await styleOnly(indexOf('Project: Checkout Design'), ['b'])
     expect(patches(edits)).toHaveLength(1)
-    expect(patches(edits)[0]!.bold).toBe(true)
+    expect(patches(edits)[0]!.weight).toBe(700)
     expect(patches(edits)[0]!.text).toBe('Project: Checkout Design')
   })
 
@@ -916,7 +916,7 @@ describe('a style-only edit', () => {
     const edits = useEditsStore()
     await styleOnly(indexOf('Project: Checkout Design'), ['b', 'i'])
     expect(patches(edits)).toHaveLength(1)
-    expect(patches(edits)[0]!.bold).toBe(true)
+    expect(patches(edits)[0]!.weight).toBe(700)
     expect(patches(edits)[0]!.italic).toBe(true)
   })
 
@@ -944,7 +944,7 @@ describe('a style-only edit', () => {
     const edits = useEditsStore()
     await styleOnly(indexOf('Bold heading', true), ['b'])
     expect(patches(edits)).toHaveLength(1)
-    expect(patches(edits)[0]!.bold).toBe(false)
+    expect(patches(edits)[0]!.weight).toBe(400)
   })
 })
 

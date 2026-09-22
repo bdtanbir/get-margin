@@ -22,7 +22,7 @@ const quad = (i: number): Quad => [i * 10, 0, i * 10 + 10, 0, i * 10, 18, i * 10
 const match = (page: number, text = 'hit'): PageMatch => ({
   page, lineIndex: 0, start: 0, end: text.length, text,
   lineText: text,
-  bold: false,
+  weight: 400,
   italic: false,
   size: 12,
   baseline: 14,
@@ -394,7 +394,7 @@ describe('replace', () => {
         object: {
           id: 'tp1', pageId: 'p0', kind: 'textPatch',
           lineIndex: 0, originalHash: 'h', originalText: 'the cat', text: 'the cat',
-          fontFamily: 'Inter', bold: true, italic: false, fontSize: 12, baseline: 14,
+          fontFamily: 'Inter', weight: 700, italic: false, fontSize: 12, baseline: 14,
           color: [0, 0, 0], background: [1, 1, 1], backgroundConfidence: 1,
           fit: 'overflow', rect: { x: 0, y: 0, w: 70, h: 18 },
           offset: { dx: 40, dy: 20 },
@@ -427,9 +427,9 @@ describe('replace', () => {
     it('keeps the move and the styling the user had applied', async () => {
       const edits = seedPatch()
       await replaceAll()
-      const kept = patches(edits)[0] as { offset?: unknown; bold?: boolean }
+      const kept = patches(edits)[0] as { offset?: unknown; weight?: number }
       expect(kept.offset).toEqual({ dx: 40, dy: 20 })
-      expect(kept.bold).toBe(true)
+      expect(kept.weight).toBe(700)
     })
 
     it('is still one undo entry', async () => {

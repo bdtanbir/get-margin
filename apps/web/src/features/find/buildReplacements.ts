@@ -156,7 +156,7 @@ export function buildReplacements(
       // The weight and slope the line is already set in, so Replace All
       // does not un-bold or straighten every heading it touches. The match
       // carries them out of the extraction for exactly this.
-      bold: first.bold,
+      weight: first.weight,
       italic: first.italic,
       // The line's own size and pen position, for the same reason as the
       // weight: a patch built without them shows a zero in the inspector

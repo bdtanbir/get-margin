@@ -101,7 +101,7 @@ describe('SelectionToolbar markup actions', () => {
   const index = {
     lines: [{
       bbox: [10, 100, 30, 120] as [number, number, number, number],
-      text: 'ab', font: 'Helvetica', bold: false, italic: false, color: [0, 0, 0] as Color, size: 10, baseline: 116,
+      text: 'ab', font: 'Helvetica', weight: 400, italic: false, color: [0, 0, 0] as Color, size: 10, baseline: 116,
       chars: [
         { char: 'a', quad: [10, 100, 20, 100, 10, 120, 20, 120] as never },
         { char: 'b', quad: [20, 100, 30, 100, 20, 120, 30, 120] as never },
@@ -194,7 +194,7 @@ describe('SelectionToolbar style actions', () => {
     bbox: [10, 100 + row * 30, 30, 120 + row * 30] as [number, number, number, number],
     text,
     font: 'Helvetica',
-    bold: style.bold === true,
+    weight: style.bold ? 700 : 400,
     italic: style.italic === true,
     color: [0, 0, 0] as Color,
     size: 10,
@@ -248,7 +248,7 @@ describe('SelectionToolbar style actions', () => {
     select(twoLines)
     await mountFor().get('[data-style-bold]').trigger('click')
     expect(patches()).toHaveLength(1)
-    expect(patches()[0]!.bold).toBe(true)
+    expect(patches()[0]!.weight).toBe(700)
     // The WHOLE line's text, redrawn -- not the selected characters alone.
     expect(patches()[0]!.text).toBe('ab')
   })
@@ -326,7 +326,7 @@ describe('SelectionToolbar style actions', () => {
     // Turning the document's own bold OFF is a real edit: the page draws
     // that line bold, so something has to cover and redraw it.
     expect(patches()).toHaveLength(1)
-    expect(patches()[0]!.bold).toBe(false)
+    expect(patches()[0]!.weight).toBe(400)
   })
 
   it('adds to an existing patch rather than fighting it', async () => {
@@ -336,7 +336,7 @@ describe('SelectionToolbar style actions', () => {
     await w.get('[data-style-italic]').trigger('click')
     // ONE patch per line is load-bearing: two would each cover the other.
     expect(patches()).toHaveLength(1)
-    expect(patches()[0]!.bold).toBe(true)
+    expect(patches()[0]!.weight).toBe(700)
     expect(patches()[0]!.italic).toBe(true)
   })
 
@@ -350,7 +350,7 @@ describe('SelectionToolbar style actions', () => {
     // Line 0 was already bold and needs no patch; line 1 gets one.
     expect(patches()).toHaveLength(1)
     expect(patches()[0]!.lineIndex).toBe(1)
-    expect(patches()[0]!.bold).toBe(true)
+    expect(patches()[0]!.weight).toBe(700)
   })
 })
 
@@ -378,7 +378,7 @@ describe('SelectionToolbar move action', () => {
     bbox: [10, 100 + row * 30, 30, 120 + row * 30] as [number, number, number, number],
     text,
     font: 'Helvetica',
-    bold: false,
+    weight: 400,
     italic: false,
     color: [0, 0, 0] as Color,
     size: 10,
@@ -455,7 +455,7 @@ describe('SelectionToolbar move action', () => {
     expect(patches()).toHaveLength(1)
     expect(edits.selection).toEqual([existing.id])
     // Arming a move must not undo the styling that was already there.
-    expect(patches()[0]!.bold).toBe(true)
+    expect(patches()[0]!.weight).toBe(700)
   })
 
   /**
@@ -489,7 +489,7 @@ describe('SelectionToolbar link action', () => {
     bbox: [10, 100 + row * 30, 10 + text.length * 10, 120 + row * 30] as [number, number, number, number],
     text,
     font: 'Helvetica',
-    bold: false,
+    weight: 400,
     italic: false,
     color: [0, 0, 0] as Color,
     size: 10,

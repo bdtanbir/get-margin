@@ -501,12 +501,12 @@ describe('SelectionChrome', () => {
         lines: [
           {
             bbox: [100, 600, 180, 612], text: 'ab', font: 'Helvetica',
-            bold: false, italic: false, color: [0, 0, 0], size: 10, baseline: 610,
+            weight: 400, italic: false, color: [0, 0, 0], size: 10, baseline: 610,
             chars: [{ char: 'a', quad: [100, 600, 180, 600, 100, 612, 180, 612] }],
           },
           {
             bbox: [300, 204, 380, 216], text: 'cd', font: 'Helvetica',
-            bold: false, italic: false, color: [0, 0, 0], size: 10, baseline: 216,
+            weight: 400, italic: false, color: [0, 0, 0], size: 10, baseline: 216,
             chars: [{ char: 'c', quad: [300, 204, 380, 204, 300, 216, 380, 216] }],
           },
         ],

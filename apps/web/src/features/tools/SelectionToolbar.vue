@@ -22,6 +22,7 @@ import { deleteOpFor } from '@/features/patch/patchDelete'
 import type {
   LineRun, LinkObject, MarkupObject, RedactionObject, EditObject,
 } from '@margin/pdf-core'
+import { isBoldWeight } from '@margin/pdf-core'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const doc = useDocumentStore()
@@ -317,7 +318,19 @@ function currentStyle(index: number, line: LineRun) {
  */
 function allHave(axis: 'bold' | 'italic'): boolean {
   const lines = touchedLines.value
-  return lines.length > 0 && lines.every(({ index, line }) => currentStyle(index, line)[axis])
+  return lines.length > 0 && lines.every(({ index, line }) => {
+    const style = currentStyle(index, line)
+    return axis === 'bold' ? isBoldWeight(style.weight) : style.italic
+  })
+}
+
+/**
+ * What one press of the button stores. Bold is a SWITCH between the two
+ * weights the word means, 700 and 400; the other six are in the
+ * inspector's select, where a list belongs.
+ */
+function change(axis: 'bold' | 'italic', next: boolean): { weight: number } | { italic: boolean } {
+  return axis === 'bold' ? { weight: next ? 700 : 400 } : { italic: next }
 }
 
 const allBold = computed(() => allHave('bold'))
@@ -346,11 +359,12 @@ function toggleStyle(axis: 'bold' | 'italic'): void {
       const existing = patchOnLine(Object.values(edits.doc.objects), props.page.id, index)
 
       if (existing) {
-        const updated = { ...existing, [axis]: next }
+        const patch = change(axis, next)
+        const updated = { ...existing, ...patch }
         if (isPristine(updated, line)) {
           edits.applyOp({ type: 'deleteObject', id: existing.id }, label)
         } else {
-          edits.applyOp({ type: 'updateObject', id: existing.id, patch: { [axis]: next } }, label)
+          edits.applyOp({ type: 'updateObject', id: existing.id, patch }, label)
         }
         continue
       }
@@ -361,7 +375,7 @@ function toggleStyle(axis: 'bold' | 'italic'): void {
         lineIndex: index,
         line,
         fontFamily: DEFAULT_FAMILY,
-        style: { ...documentStyle(line), [axis]: next },
+        style: { ...documentStyle(line), ...change(axis, next) },
         background: sampleBackground(bitmap, lineBox(line), bitmap ? bitmap.scale : 1),
         z: edits.nextZ(),
       })

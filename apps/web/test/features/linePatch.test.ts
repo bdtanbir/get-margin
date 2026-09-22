@@ -6,7 +6,7 @@ const line: LineRun = {
   bbox: [10, 100, 30, 120],
   text: 'ab',
   font: 'Helvetica',
-  bold: false,
+  weight: 400,
   italic: false,
   color: [0, 0, 0] as Color,
   size: 10,
@@ -21,7 +21,7 @@ const patch = (over: Partial<TextPatchObject> = {}): TextPatchObject => ({
   id: 'p1', pageId: 'pg1', kind: 'textPatch',
   lineIndex: 0, originalHash: 'h', originalText: 'ab',
   text: 'ab',
-  fontFamily: 'Inter', bold: false, italic: false, fontSize: 10, baseline: 116,
+  fontFamily: 'Inter', weight: 400, italic: false, fontSize: 10, baseline: 116,
   color: [0, 0, 0], background: [1, 1, 1], backgroundConfidence: 1, fit: 'overflow',
   rect: { x: 10, y: 100, w: 20, h: 20 },
   rotation: 0, z: 1, locked: false, opacity: 1,
@@ -43,7 +43,7 @@ describe('isPristine', () => {
   })
 
   it('is false once the style differs', () => {
-    expect(isPristine(patch({ bold: true }), line)).toBe(false)
+    expect(isPristine(patch({ weight: 700 }), line)).toBe(false)
   })
 
   /**

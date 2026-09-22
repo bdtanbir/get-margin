@@ -5,6 +5,7 @@ import type { PageState } from '@/stores/document'
 import type {
   Color, EditObject, LineRun, PageQuadIndex, TextPatchObject,
 } from '@margin/pdf-core'
+import { isBoldWeight, weightOf } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { useViewportStore } from '@/stores/viewport'
@@ -54,19 +55,20 @@ const patchOn = (lineIndex: number): TextPatchObject | undefined =>
   patchOnLine(Object.values(edits.doc.objects), props.page.id, lineIndex)
 const draft = ref('')
 /**
- * The weight the replacement will be drawn in.
+ * The weight the replacement will be drawn in: CSS 100 to 800.
  *
- * Seeded from the line's OWN font, not from a default. MuPDF reports
- * `isBold()` per glyph run and `buildQuadIndex` carries it through, so
- * retyping a bold heading stays bold. It used to come out regular every
- * time -- the patch hardcoded the default face -- which read as the editor
- * having thrown away formatting it could see perfectly well.
+ * Seeded from the line's OWN font, not from a default. The extraction
+ * reads the weight off the embedded font program and `buildQuadIndex`
+ * carries it through, so retyping a bold heading stays bold and a Medium
+ * one stays Medium. It used to come out regular every time -- the patch
+ * hardcoded the default face -- which read as the editor having thrown
+ * away formatting it could see perfectly well.
  *
  * Held here rather than read off `line` at commit time so that re-editing a
  * patch resumes from the weight the user chose, not from the weight the
  * document started with.
  */
-const bold = ref(false)
+const weight = ref(400)
 /**
  * The size the replacement will be set in, in page units.
  *
@@ -208,7 +210,7 @@ const editSize = computed(() =>
  * paper, and horizontal scrolling inside the field is the lesser evil.
  */
 /** The face being typed in, as the one object every consumer below reads. */
-const face = computed(() => ({ bold: bold.value, italic: italic.value }))
+const face = computed(() => ({ weight: weight.value, italic: italic.value }))
 
 const inputWidth = computed(() => {
   const b = drawnAt.value
@@ -279,7 +281,7 @@ const style = computed(() => {
     // to be. Bold glyphs are wider; typing into a regular field and getting
     // bold on commit would move the text you were just looking at.
     fontFamily: cssFamily(DEFAULT_FAMILY),
-    fontWeight: cssWeight(bold.value),
+    fontWeight: cssWeight(weight.value),
     fontStyle: cssStyle(italic.value),
     // The line's own colour, not the UI's text colour. What is being typed
     // has to look like what will be committed, and the page underneath is
@@ -319,7 +321,7 @@ async function begin(lineIndex: number): Promise<void> {
   const line = props.index?.lines[lineIndex]
   // An existing patch's own weight, otherwise the weight the DOCUMENT set
   // this line in.
-  bold.value = existing ? existing.bold === true : line?.bold === true
+  weight.value = existing ? weightOf(existing) : line?.weight ?? 400
   italic.value = existing ? existing.italic === true : line?.italic === true
   // The patch's own colour once it has one, otherwise the line's.
   //
@@ -347,11 +349,20 @@ async function begin(lineIndex: number): Promise<void> {
   input.value?.select()
 }
 
+/**
+ * Ctrl+B: bold if the line is not, regular if it is. A shortcut is a
+ * switch, so it moves between the two weights the words mean; the other
+ * six are one select away in the inspector.
+ */
+function toggleBold(): void {
+  weight.value = isBoldWeight(weight.value) ? 400 : 700
+}
+
 function cancel(): void {
   editing.value = undefined
   editingId.value = undefined
   draft.value = ''
-  bold.value = false
+  weight.value = 400
   italic.value = false
   size.value = 0
   color.value = [0, 0, 0]
@@ -366,7 +377,7 @@ function cancel(): void {
  * .notdef rather than failing, so without this a patch silently becomes a
  * row of empty boxes.
  */
-watch([draft, bold, italic], async ([text]) => {
+watch([draft, weight, italic], async ([text]) => {
   if (text === '') { missing.value = []; return }
   try {
     // The FACE that will actually be drawn: a bold file is a different font
@@ -391,7 +402,7 @@ watch([draft, bold, italic], async ([text]) => {
  */
 function matchesDocument(l: LineRun): boolean {
   return sameStyle(
-    { bold: bold.value, italic: italic.value, fontSize: size.value, color: color.value },
+    { weight: weight.value, italic: italic.value, fontSize: size.value, color: color.value },
     documentStyle(l),
   )
 }
@@ -447,7 +458,7 @@ function commit(): void {
         id: existing,
         patch: {
           text: draft.value, fit: fit.value, fontSize: size.value,
-          bold: bold.value, italic: italic.value,
+          weight: weight.value, italic: italic.value,
           // Defensive rather than load-bearing, and the distinction is
           // worth stating: reaching this path means the line already had a
           // patch, so the colour was seeded from the STORE, and immer
@@ -471,7 +482,7 @@ function commit(): void {
     line: l,
     fontFamily: DEFAULT_FAMILY,
     style: {
-      bold: bold.value, italic: italic.value, fontSize: size.value, color: color.value,
+      weight: weight.value, italic: italic.value, fontSize: size.value, color: color.value,
     },
     background: background.value,
     z: edits.nextZ(),
@@ -592,8 +603,8 @@ defineExpose({ begin })
         :style="style"
         @keydown.enter.prevent="commit()"
         @keydown.esc.prevent="cancel()"
-        @keydown.ctrl.b.prevent="bold = !bold"
-        @keydown.meta.b.prevent="bold = !bold"
+        @keydown.ctrl.b.prevent="toggleBold()"
+        @keydown.meta.b.prevent="toggleBold()"
         @keydown.ctrl.i.prevent="italic = !italic"
         @keydown.meta.i.prevent="italic = !italic"
         @blur="commit()"

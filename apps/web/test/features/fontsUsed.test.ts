@@ -78,15 +78,15 @@ describe('facesUsed', () => {
    * the same class of failure the stamp case above records, one axis over.
    */
   it('asks for the bold face when an object is bold', () => {
-    expect(facesUsed([object({ kind: 'text', fontFamily: 'Inter', bold: true })]))
-      .toEqual(['Inter Bold'])
+    expect(facesUsed([object({ kind: 'text', fontFamily: 'Inter', weight: 700 })]))
+      .toEqual(['Inter 700'])
   })
 
   it('asks for both faces when a document mixes weights', () => {
     expect(facesUsed([
       object({ kind: 'text', fontFamily: 'Inter' }),
-      object({ kind: 'text', fontFamily: 'Inter', bold: true }),
-    ]).sort()).toEqual(['Inter', 'Inter Bold'])
+      object({ kind: 'text', fontFamily: 'Inter', weight: 700 }),
+    ]).sort()).toEqual(['Inter', 'Inter 700'])
   })
 
   it('treats an absent bold as regular, so a stored document needs no migration', () => {

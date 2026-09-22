@@ -4,7 +4,8 @@
     "jsx": "preserve",
     "types": ["vite/client", "vite-plugin-pwa/client"],
     "paths": { "@/*": ["./src/*"] },
-    "noEmit": true
+    "noEmit": true,
+    "resolveJsonModule": true
   },
   "include": ["src/**/*.ts", "src/**/*.vue", "test/**/*.ts"]
 }

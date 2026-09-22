@@ -38,7 +38,7 @@ function plainIndex(text = 'Issue Date'): PageQuadIndex {
       bbox: [40, 100, 160, 118],
       text,
       font: 'Test',
-      bold: false,
+      weight: 400,
       italic: false,
       color: [0.42, 0.45, 0.5] as Color,
       size: 12,

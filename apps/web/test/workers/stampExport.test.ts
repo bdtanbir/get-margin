@@ -10,7 +10,7 @@ beforeAll(async () => { await generateFixtures() }, 60_000)
 
 const ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 const FONTS = new Map([[
-  'Inter', new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts/Inter.ttf'))),
+  'Inter', new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts/Inter-400.ttf'))),
 ]])
 
 /** Exactly what StampDialog's watermark preset produces. */

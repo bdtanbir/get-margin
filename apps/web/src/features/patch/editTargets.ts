@@ -36,7 +36,7 @@ export type Measure = (
   text: string,
   family: string,
   size: number,
-  style: { bold?: boolean; italic?: boolean },
+  style: { weight?: number; italic?: boolean },
 ) => number
 
 /**

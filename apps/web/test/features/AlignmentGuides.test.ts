@@ -14,7 +14,7 @@ const page: PageState = {
 
 const line = (x0: number, x1: number, baseline: number) => ({
   bbox: [x0, baseline - 10, x1, baseline + 2],
-  text: 'ab', font: 'Helvetica', bold: false, italic: false,
+  text: 'ab', font: 'Helvetica', weight: 400, italic: false,
   color: [0, 0, 0], size: 10, baseline,
   chars: [{ char: 'a', quad: [x0, 0, x1, 0, x0, 0, x1, 0] }],
 })

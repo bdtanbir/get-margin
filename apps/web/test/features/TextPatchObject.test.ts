@@ -91,7 +91,7 @@ describe('TextPatchObject', () => {
    * a different width from the one `measureText` just returned.
    */
   it('asks for the face the patch is set in', () => {
-    expect(faceOf(patch({ bold: true, italic: true })))
+    expect(faceOf(patch({ weight: 700, italic: true })))
       .toEqual({ weight: '700', style: 'italic' })
     expect(faceOf(patch())).toEqual({ weight: '400', style: 'normal' })
   })

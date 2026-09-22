@@ -72,7 +72,8 @@ screen and opened in its own window with no browser chrome.
 
 **Offline.** The service worker precaches the shell — HTML, JS and CSS, about
 820 KB. It deliberately does *not* precache MuPDF's 10 MB WASM binary or the
-1.6 MB of bundled fonts; those are cached at runtime, on first use. The
+12 MB of bundled fonts; those are cached at runtime, on first use, one face
+at a time. The
 practical consequence is that the app works offline **from the second visit
 onwards**: on a first visit the WASM request is already in flight before the
 service worker has activated, so it does not pass through the cache.

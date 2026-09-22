@@ -7,7 +7,7 @@ const line = (x0: number, x1: number, baseline: number, text = 'ab') => ({
   bbox: [x0, baseline - 10, x1, baseline + 2] as [number, number, number, number],
   text,
   font: 'Helvetica',
-  bold: false,
+  weight: 400,
   italic: false,
   color: [0, 0, 0],
   size: 10,
