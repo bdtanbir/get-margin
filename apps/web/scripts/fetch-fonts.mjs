@@ -26,7 +26,7 @@
  *
  * Usage: node scripts/fetch-fonts.mjs
  */
-import { writeFile, mkdir } from 'node:fs/promises'
+import { writeFile, readFile, mkdir } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -37,37 +37,37 @@ const UA =
   '(KHTML, like Gecko) Version/4.0 Safari/534.30'
 
 /**
- * `query` is the Google Fonts `family=` value; `file` is what we write.
+ * The catalogue is `src/lib/fontCatalog.json`, shared with the app so the
+ * picker offers exactly the weights that were fetched. `query` is the
+ * Google Fonts `family=` value; `base` is the file stem.
  *
- * Each body face is fetched in all FOUR styles. Every one is a separate
- * static instance rather than a synthesised one: faux bold (stroking the
- * regular) and faux italic (shearing it) both keep the regular's advance
- * widths, so the export's alignment maths and the browser's preview would
- * agree with each other and disagree with the ink. Bold italic is its own
- * file rather than the bold one on a slant, because in a serif face the
- * italic is a different alphabet, not the roman leaning over.
+ * Every weight of every face is fetched upright and, where the family has
+ * one, italic, and every one is a separate static instance rather than a
+ * synthesised one: faux bold (stroking the regular) and faux italic
+ * (shearing it) both keep the regular's advance widths, so the export's
+ * alignment maths and the browser's preview would agree with each other and
+ * disagree with the ink. An italic is its own file at every weight rather
+ * than the upright on a slant, because in a serif face the italic is a
+ * different alphabet, not the roman leaning over.
+ *
+ * `weights` and `italic` are what the endpoint actually publishes for the
+ * family. Asking it for a weight a family does not have returns an EMPTY
+ * stylesheet, not an error and not the nearest weight, so the list is
+ * spelled out in the catalogue rather than assumed.
+ *
+ * Signature script faces are browser-only -- never embedded in a PDF,
+ * because a typed signature is rasterised to a PNG. See LICENSES.md.
  */
-const FONTS = [
-  ...[
-    { query: 'Inter', base: 'Inter' },
-    { query: 'Roboto', base: 'Roboto' },
-    { query: 'Source+Serif+4', base: 'SourceSerif4' },
-    { query: 'Merriweather', base: 'Merriweather' },
-    { query: 'JetBrains+Mono', base: 'JetBrainsMono' },
-  ].flatMap(({ query, base }) => [
-    { query, spec: '400', file: `${base}.ttf` },
-    { query, spec: '700', file: `${base}-Bold.ttf` },
-    { query, spec: '400italic', file: `${base}-Italic.ttf` },
-    { query, spec: '700italic', file: `${base}-BoldItalic.ttf` },
+const catalog = JSON.parse(
+  await readFile(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'lib', 'fontCatalog.json'), 'utf8'),
+)
+
+const FONTS = [...catalog.families, ...catalog.signature].flatMap(({ query, base, weights, italic }) =>
+  weights.flatMap((w) => [
+    { query, spec: `${w}`, file: `${base}-${w}.ttf` },
+    ...(italic ? [{ query, spec: `${w}italic`, file: `${base}-${w}Italic.ttf` }] : []),
   ]),
-  // Signature script faces. Browser-only -- never embedded in a PDF, because
-  // a typed signature is rasterised to a PNG. See LICENSES.md. One style
-  // only: a signature is written in one hand, and a script face is already
-  // slanted.
-  { query: 'Caveat', spec: '400', file: 'Caveat.ttf' },
-  { query: 'Dancing+Script', spec: '400', file: 'DancingScript.ttf' },
-  { query: 'Great+Vibes', spec: '400', file: 'GreatVibes.ttf' },
-]
+)
 
 async function ttfUrl(query, spec) {
   const css = await (
@@ -90,5 +90,5 @@ for (const { query, spec, file } of FONTS) {
     throw new Error(`${file}: expected TrueType, got magic 0x${magic.toString(16)}`)
   }
   await writeFile(join(OUT, file), bytes)
-  console.log(`${file.padEnd(20)} ${bytes.byteLength} bytes`)
+  console.log(`${file.padEnd(28)} ${bytes.byteLength} bytes`)
 }

@@ -19,7 +19,7 @@ function pageOf(...lines: string[]): PageQuadIndex {
         bbox: [0, li * 20, text.length * 10, li * 20 + 18] as [number, number, number, number],
         text,
         font: 'Test',
-        bold,
+        weight: bold ? 700 : 400,
         italic,
         color: [0, 0, 0],
         size: 12,

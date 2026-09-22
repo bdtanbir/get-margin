@@ -48,25 +48,29 @@ export type TextObject = BaseObject & {
   text: string
   fontFamily: string
   /**
-   * Draw in the family's weight-700 face.
+   * Draw in the family's face of this CSS weight: 100 to 800, in hundreds.
+   * See `WEIGHTS`.
    *
-   * OPTIONAL, and absent means regular -- which is what every text object
-   * written before this existed meant, so no stored document needs
-   * migrating and no schema version had to move. Same reasoning as
-   * `PageEntry.tabOrder`.
+   * OPTIONAL, and absent means 400 -- which is what every text object
+   * written without one meant. Same reasoning as `PageEntry.tabOrder`.
    *
-   * A boolean rather than a numeric weight because two weights are what is
-   * bundled (see apps/web/public/fonts/LICENSES.md). A `fontWeight: 500`
-   * nobody has a file for would be a value the writer could only refuse.
+   * A number rather than the `bold` boolean it replaced, because every
+   * bundled family now ships one file per weight (see
+   * apps/web/public/fonts/LICENSES.md). The v3 -> v4 migration turned
+   * `bold: true` into `weight: 700`, so no consumer reads the old key.
+   *
+   * Not every family reaches every weight. The picker offers what the
+   * family has and snaps to the nearest when the family changes; a weight
+   * the family has no file for is one the writer refuses, not one it
+   * approximates.
    */
-  bold?: boolean
+  weight?: number
   /**
    * Draw in the family's italic face.
    *
-   * Optional and absent means upright, for the same reason as `bold`: no
-   * stored document needs migrating and no schema version moves. The two
-   * combine -- bold italic is a fourth FILE, not a bold file drawn on a
-   * slant.
+   * Optional and absent means upright, for the same reason as `weight`.
+   * The two combine -- a 700 italic is its own FILE, not a bold file drawn
+   * on a slant.
    */
   italic?: boolean
   fontSize: number
@@ -242,21 +246,20 @@ export type TextPatchObject = BaseObject & {
   text: string
   fontFamily: string
   /**
-   * Draw the replacement in the bold face.
+   * The CSS weight to draw the replacement in. See `TextObject.weight`.
    *
    * Defaulted from the ORIGINAL line's own font when the patch is created:
-   * MuPDF's extraction reports `isBold()` per glyph run, so replacing a
-   * bold heading no longer quietly demotes it to regular. Still stored
-   * rather than re-derived at export, because the user can override it and
-   * an override has to survive.
+   * the extraction reads the weight off the embedded font program, so
+   * replacing a medium heading no longer quietly demotes it to regular.
+   * Still stored rather than re-derived at export, because the user can
+   * override it and an override has to survive.
    *
-   * Optional for the same reason as TextObject.bold: absent means regular,
-   * which is what every patch written before this meant.
+   * Optional for the same reason as TextObject.weight: absent means 400.
    */
-  bold?: boolean
+  weight?: number
   /**
    * Draw the replacement on a slant, defaulted from the original line the
-   * same way `bold` is -- MuPDF reports `isItalic()` per run, verified
+   * same way `weight` is -- MuPDF reports `isItalic()` per run, verified
    * against embedded TrueType and not only the standard 14.
    */
   italic?: boolean
@@ -323,7 +326,7 @@ export type TextPatchObject = BaseObject & {
    *
    * Optional, and absent means 0,0 -- which is what every patch written
    * before this meant, so no stored document needs migrating and the schema
-   * version did not have to move. Same reasoning as `bold` above and
+   * version did not have to move. Same reasoning as `weight` above and
    * `PageEntry.tabOrder`.
    */
   offset?: { dx: number; dy: number }
@@ -618,7 +621,7 @@ export type Op =
   | { type: 'setMetadata'; metadata: EditDocument['metadata'] }
   | { type: 'setStripMetadata'; strip: boolean }
 
-export const EDIT_DOCUMENT_VERSION = 3
+export const EDIT_DOCUMENT_VERSION = 4
 
 /**
  * An edit document describing no edits at all.

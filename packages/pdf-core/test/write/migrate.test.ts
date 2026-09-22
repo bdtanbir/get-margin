@@ -106,7 +106,7 @@ describe('v2 -> v3 (forms)', () => {
 
   it('adds the form defaults', () => {
     const out = migrateEditDocument(v2())
-    expect(out.version).toBe(3)
+    expect(out.version).toBe(4)
     expect(out.fieldValues).toEqual({})
     expect(out.flattenForms).toBe(false)
   })
@@ -140,7 +140,7 @@ describe('v2 -> v3 (forms)', () => {
       objects: {},
       nextZ: 1,
     })
-    expect(out.version).toBe(3)
+    expect(out.version).toBe(4)
     expect(out.sources[LEGACY_SOURCE_ID]).toEqual({ hash: 'abc', name: '' })
     expect(out.pages.p0).toEqual({
       sourceId: LEGACY_SOURCE_ID, sourceIndex: 0, rotation: 0, cropBox: null,
@@ -150,6 +150,52 @@ describe('v2 -> v3 (forms)', () => {
   })
 
   it('still refuses a document from a newer build', () => {
-    expect(() => migrateEditDocument({ version: 4 })).toThrow(/newer version/)
+    expect(() => migrateEditDocument({ version: 5 })).toThrow(/newer version/)
+  })
+})
+
+describe('v3 -> v4 (numeric font weight)', () => {
+  const v3 = () => ({
+    version: 3,
+    sources: { 'src-0': { hash: 'h', name: 'a.pdf' } },
+    pageOrder: ['p0'],
+    pages: { p0: { sourceId: 'src-0', sourceIndex: 0, rotation: 0, cropBox: null } },
+    objects: {
+      heading: { id: 'heading', kind: 'text', pageId: 'p0', fontFamily: 'Inter', bold: true, italic: false },
+      body: { id: 'body', kind: 'text', pageId: 'p0', fontFamily: 'Inter', bold: false },
+      old: { id: 'old', kind: 'text', pageId: 'p0', fontFamily: 'Inter' },
+      patch: { id: 'patch', kind: 'textPatch', pageId: 'p0', fontFamily: 'Inter', bold: true },
+      box: { id: 'box', kind: 'rect', pageId: 'p0' },
+    },
+    nextZ: 7,
+    fieldValues: {},
+    flattenForms: false,
+  })
+
+  // `true` was the 700 file. The same file is addressed after, by number.
+  it('turns bold into weight 700', () => {
+    const out = migrateEditDocument(v3())
+    expect(out.version).toBe(4)
+    expect(out.objects.heading).toEqual({
+      id: 'heading', kind: 'text', pageId: 'p0', fontFamily: 'Inter', italic: false, weight: 700,
+    })
+    expect(out.objects.patch).toEqual({
+      id: 'patch', kind: 'textPatch', pageId: 'p0', fontFamily: 'Inter', weight: 700,
+    })
+  })
+
+  // Absent still means 400, so `false` has nothing to become.
+  it('drops a bold that was off and leaves an object that never had one alone', () => {
+    const out = migrateEditDocument(v3())
+    expect(out.objects.body).toEqual({ id: 'body', kind: 'text', pageId: 'p0', fontFamily: 'Inter' })
+    expect(out.objects.old).toEqual({ id: 'old', kind: 'text', pageId: 'p0', fontFamily: 'Inter' })
+    expect(out.objects.box).toEqual({ id: 'box', kind: 'rect', pageId: 'p0' })
+  })
+
+  it('does not mutate its input', () => {
+    const before = v3()
+    migrateEditDocument(before)
+    expect(before.version).toBe(3)
+    expect(before.objects.heading.bold).toBe(true)
   })
 })

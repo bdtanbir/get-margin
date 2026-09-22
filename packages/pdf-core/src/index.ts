@@ -42,7 +42,10 @@ export { replay, WRITERS, type ObjectWriter, type WriteContext } from './write/i
  * app builds its provider map with these keys; the writers look faces up by
  * them. See write/fonts.ts.
  */
-export { faceKey, type FaceStyle, type FontProvider } from './write/fonts.js'
+export {
+  faceKey, weightOf, nearestWeight, WEIGHTS, REGULAR_WEIGHT, BOLD_THRESHOLD,
+  type FaceStyle, type Weight, type FontProvider,
+} from './write/fonts.js'
 export {
   stripActiveContent, anythingStripped, nothingStripped, type StrippedContent,
 } from './write/sanitize.js'
@@ -50,5 +53,6 @@ export {
 // Task 36. Per-page text geometry for selection, in MuPDF page space.
 export { buildQuadIndex } from './text/index.js'
 export type { Quad, CharQuad, LineRun, PageQuadIndex } from './text/index.js'
+export { isBoldWeight, weightFromName, usWeightClass } from './text/fontWeights.js'
 export { pageImages, placementHash, buildImageIndex, cropImage, cropRegion } from './images/index.js'
 export type { ImagePlacement, PageImageIndex } from './images/index.js'

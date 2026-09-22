@@ -392,9 +392,14 @@ export function replay(
     // encrypt=none is NOT redundant. The default is encrypt=keep, so
     // saving a document opened from encrypted bytes preserves the
     // encryption -- and the caller asked for the opposite.
-    if (unprotect) return raw.saveToBuffer(`${SAVE_OPTIONS},encrypt=none`).asUint8Array()
+    // COPIED out of the WASM heap. `asUint8Array` is a view over MuPDF's
+    // own memory, not a copy, and the next thing to grow that heap -- a
+    // render, another open, a font program read out of a stream -- replaces
+    // the backing buffer and leaves every earlier view detached and empty.
+    // The caller then holds a zero-length "PDF" and nothing says why.
+    if (unprotect) return raw.saveToBuffer(`${SAVE_OPTIONS},encrypt=none`).asUint8Array().slice()
 
-    return raw.saveToBuffer(SAVE_OPTIONS).asUint8Array()
+    return raw.saveToBuffer(SAVE_OPTIONS).asUint8Array().slice()
   } finally {
     // Disposal is a correctness requirement: omitting it hard-crashes the
     // WASM heap rather than leaking gradually.

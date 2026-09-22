@@ -18,7 +18,7 @@ const bytes = (n: FixtureName): Uint8Array => new Uint8Array(readFileSync(fixtur
 
 const ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 const FONTS = new Map([[
-  'Inter', new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts/Inter.ttf'))),
+  'Inter', new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts/Inter-400.ttf'))),
 ]])
 
 function docWith(objects: EditObject[], pages = 1): EditDocument {

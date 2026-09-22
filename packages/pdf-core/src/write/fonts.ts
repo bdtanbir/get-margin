@@ -6,21 +6,61 @@ import * as mupdf from 'mupdf'
 export type FontProvider = Map<string, Uint8Array>
 
 /**
+ * The weights a face can be set in: CSS weights 100 (Thin) to 800 (Extra
+ * Bold), in steps of a hundred.
+ *
+ * 900 is deliberately absent. It is what "Black" faces declare, and no
+ * family bundled has a file for it, so a document line detected at 900
+ * edits at 800 -- the nearest weight that exists -- rather than at a value
+ * the writer could only refuse.
+ */
+export const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800] as const
+export type Weight = (typeof WEIGHTS)[number]
+
+/** The weight an object with no `weight` set is drawn in. */
+export const REGULAR_WEIGHT: Weight = 400
+
+/** The weight from which a face reads as bold on the page. */
+export const BOLD_THRESHOLD = 600
+
+/**
  * What distinguishes one face of a family from another.
  *
- * An OBJECT rather than positional flags, and taken as a whole: every
+ * An OBJECT rather than positional arguments, and taken as a whole: every
  * caller has an edit object with exactly these two properties on it, so it
  * passes the object itself and cannot get the argument order wrong.
- * `faceKey(family, false, true)` is a line nobody can read; two booleans
- * that mean opposite things when transposed is a bug waiting for the third
- * axis to be added.
+ * `faceKey(family, 700, true)` is a line nobody can read.
+ *
+ * `weight` is optional and absent means 400 -- which is what every object
+ * stored before weight existed was drawn in.
  */
-export type FaceStyle = { bold?: boolean; italic?: boolean }
+export type FaceStyle = { weight?: number; italic?: boolean }
+
+/** The weight a style is set in, with the format's default applied. */
+export function weightOf(style?: FaceStyle): number {
+  return style?.weight ?? REGULAR_WEIGHT
+}
+
+/**
+ * The nearest of `available` to `weight`, or the nearest bundled weight
+ * when no list is given.
+ *
+ * Ties go DOWN: a detected 650 -- possible, `usWeightClass` is any number
+ * -- becomes 600 rather than 700, because the lighter reading is the one
+ * that changes the least on a page whose text was not actually bold.
+ */
+export function nearestWeight(weight: number, available: readonly number[] = WEIGHTS): number {
+  let best = available[0] ?? REGULAR_WEIGHT
+  for (const w of available) {
+    if (Math.abs(w - weight) < Math.abs(best - weight)) best = w
+  }
+  return best
+}
 
 /**
  * The key a family-and-style combination is stored and looked up under.
  *
- * Neither weight nor slope is a property of a font program -- Inter Bold
+ * Neither weight nor slope is a property of a font program -- Inter 500
  * Italic is a different FILE from Inter, with its own outlines and its own
  * advance widths -- so everything downstream of this point (the provider
  * map, the registry cache, the measurer's cache, the /Font resource) has to
@@ -32,12 +72,16 @@ export type FaceStyle = { bold?: boolean; italic?: boolean }
  * `Map<string, _>` keyed by exactly this, and a tuple key would need a
  * comparator in each of them.
  *
- * The suffixes append in a fixed order -- "Bold Italic", never "Italic
- * Bold" -- because the key IS the identity. Two spellings of one face would
- * embed the same font program twice under two resource names.
+ * Weight 400 is left off, so the regular is addressed by its bare family
+ * name -- `Inter`, not `Inter 400` -- and the suffixes append in a fixed
+ * order, "500 Italic" and never "Italic 500", because the key IS the
+ * identity. Two spellings of one face would embed the same font program
+ * twice under two resource names.
  */
 export function faceKey(family: string, style?: FaceStyle): string {
-  const suffix = `${style?.bold ? ' Bold' : ''}${style?.italic ? ' Italic' : ''}`
+  const weight = weightOf(style)
+  const suffix =
+    `${weight === REGULAR_WEIGHT ? '' : ` ${weight}`}${style?.italic ? ' Italic' : ''}`
   return `${family}${suffix}`
 }
 
@@ -52,15 +96,15 @@ export function faceKey(family: string, style?: FaceStyle): string {
  * capability, and keeping a second PDF library out of the export path while
  * that path is still being proven is worth roughly 180KB per document. The
  * bundled faces are static single-weight instances precisely because of
- * this -- one file per family per weight, not a variable font carrying the
- * whole axis: see apps/web/public/fonts/LICENSES.md.
+ * this -- one file per family per weight per slope, not a variable font
+ * carrying the whole axis: see apps/web/public/fonts/LICENSES.md.
  *
  * 'Latin' encoding means non-Latin scripts are out of scope this phase.
  * That is a known, stated limitation, not an oversight.
  *
  * Keyed by FACE, so a document with a bold heading over regular body copy
- * registers two font programs and two resource names. It has to: bold and
- * italic are separate files, not flags on this one.
+ * registers two font programs and two resource names. It has to: every
+ * weight and every slope is a separate file, not a flag on this one.
  */
 export class FontRegistry {
   #cache = new Map<string, { name: string; obj: mupdf.PDFObject }>()

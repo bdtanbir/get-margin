@@ -16,7 +16,7 @@ const bytes = (n: FixtureName): Uint8Array => new Uint8Array(readFileSync(fixtur
 
 const ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 const FONTS = new Map([
-  ['Inter', new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts/Inter.ttf')))],
+  ['Inter', new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts/Inter-400.ttf')))],
 ])
 
 /** A small opaque-ink-on-transparent PNG, standing in for a signature. */

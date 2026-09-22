@@ -10,7 +10,7 @@ import { generateFixtures, fixturePath } from '../fixtures/index.js'
 beforeAll(async () => { await generateFixtures() }, 60_000)
 
 const ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
-const INTER = new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts/Inter.ttf')))
+const INTER = new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts/Inter-400.ttf')))
 const src = () => new Uint8Array(readFileSync(fixturePath('simple-text')))
 
 function doc(text: string, align: 'left' | 'right'): EditDocument {

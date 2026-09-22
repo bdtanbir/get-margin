@@ -174,7 +174,8 @@ export function recompressImages(
       }
     }
 
-    const bytes = raw.saveToBuffer(SAVE_OPTIONS).asUint8Array()
+    // Copied out of the WASM heap; see the note in replay().
+    const bytes = raw.saveToBuffer(SAVE_OPTIONS).asUint8Array().slice()
 
     // THE FLOOR. Measured, not assumed -- see the module comment.
     if (bytes.length >= original.length) {

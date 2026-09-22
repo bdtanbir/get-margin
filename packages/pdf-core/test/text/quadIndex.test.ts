@@ -57,15 +57,17 @@ describe('buildQuadIndex', () => {
    *
    * This is what the patch editor inherits from, and its absence was the
    * bug: with nothing here to read, replacing a line defaulted to the
-   * regular face, so retyping a bold heading silently un-bolded it.
+   * regular face, so retyping a bold heading silently un-bolded it. It
+   * is a number now, for the Medium heading a boolean demoted the same way.
    */
-  describe('bold', () => {
-    it('marks the bold run and only the bold run', () => {
+  describe('weight', () => {
+    it('marks the bold run 700 and only the bold run', () => {
       withDoc('mixed-fonts', (doc) => {
         const lines = buildQuadIndex(doc, 0).lines
-        const bold = lines.filter((l) => l.bold).map((l) => l.text)
+        const bold = lines.filter((l) => l.weight >= 600).map((l) => l.text)
         expect(bold).toHaveLength(1)
         expect(bold[0]).toContain('Helvetica-Bold')
+        expect(lines.find((l) => l.text.includes('Helvetica-Bold'))!.weight).toBe(700)
       })
     })
 
@@ -73,9 +75,47 @@ describe('buildQuadIndex', () => {
       withDoc('mixed-fonts', (doc) => {
         const lines = buildQuadIndex(doc, 0).lines
         for (const name of ['Helvetica-Oblique', 'Times-Roman', 'Times-Italic', 'Courier']) {
-          expect(lines.find((l) => l.text.includes(name))!.bold).toBe(false)
+          expect(lines.find((l) => l.text.includes(name))!.weight).toBe(400)
         }
       })
+    })
+
+    /**
+     * The case the boolean could not answer.
+     *
+     * A Medium heading is neither regular nor bold, and `isBold()` says
+     * "no" for it -- so under the boolean, retyping it demoted it to 400.
+     * The weight is read off the embedded font program's own OS/2 table,
+     * which is exact. Written with the app's own writer and read back, so
+     * the two halves are pinned together: what the writer embeds is what
+     * the extractor reports.
+     */
+    it.each([100, 300, 500, 600, 800])('reads an embedded weight-%i face back as %i', (weight) => {
+      const fonts = new Map([
+        ['Inter', fontFile('Inter-400.ttf')],
+        [`Inter ${weight}`, fontFile(`Inter-${weight}.ttf`)],
+      ])
+      const out = replay(new Map([['src-0', bytes('simple-text')]]), {
+        ...emptyEditDocument(),
+        sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+        pageOrder: ['p0'],
+        pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
+        objects: {
+          h: {
+            id: 'h', pageId: 'p0', kind: 'text', text: 'Weighted heading',
+            rect: { x: 60, y: 500, w: 400, h: 30 },
+            rotation: 0, z: 1, locked: false, opacity: 1,
+            fontFamily: 'Inter', weight, fontSize: 18,
+            color: [0, 0, 0], align: 'left',
+          },
+        },
+      }, { fonts })
+
+      const doc = PdfDocument.open(out)
+      try {
+        const line = buildQuadIndex(doc, 0).lines.find((l) => l.text.includes('Weighted heading'))
+        expect(line?.weight).toBe(weight)
+      } finally { doc.close() }
     })
   })
 
@@ -118,8 +158,8 @@ describe('buildQuadIndex', () => {
      */
     it('recognises an embedded bold italic TrueType', () => {
       const fonts = new Map([
-        ['Inter', fontFile('Inter.ttf')],
-        ['Inter Bold Italic', fontFile('Inter-BoldItalic.ttf')],
+        ['Inter', fontFile('Inter-400.ttf')],
+        ['Inter 700 Italic', fontFile('Inter-700Italic.ttf')],
       ])
       const out = replay(new Map([['src-0', bytes('simple-text')]]), {
         ...emptyEditDocument(),
@@ -131,7 +171,7 @@ describe('buildQuadIndex', () => {
             id: 'h', pageId: 'p0', kind: 'text', text: 'Embedded emphasis',
             rect: { x: 60, y: 500, w: 400, h: 30 },
             rotation: 0, z: 1, locked: false, opacity: 1,
-            fontFamily: 'Inter', bold: true, italic: true, fontSize: 18,
+            fontFamily: 'Inter', weight: 700, italic: true, fontSize: 18,
             color: [0, 0, 0], align: 'left',
           },
         },
@@ -141,7 +181,7 @@ describe('buildQuadIndex', () => {
       try {
         const line = buildQuadIndex(doc, 0).lines
           .find((l) => l.text.includes('Embedded emphasis'))
-        expect(line?.bold).toBe(true)
+        expect(line?.weight).toBe(700)
         expect(line?.italic).toBe(true)
       } finally { doc.close() }
     })
@@ -159,8 +199,8 @@ describe('buildQuadIndex', () => {
      */
     it('recognises an embedded bold TrueType, not just the standard 14', () => {
       const fonts = new Map([
-        ['Inter', fontFile('Inter.ttf')],
-        ['Inter Bold', fontFile('Inter-Bold.ttf')],
+        ['Inter', fontFile('Inter-400.ttf')],
+        ['Inter 700', fontFile('Inter-700.ttf')],
       ])
       const out = replay(new Map([['src-0', bytes('simple-text')]]), {
         ...emptyEditDocument(),
@@ -172,7 +212,7 @@ describe('buildQuadIndex', () => {
             id: 'h', pageId: 'p0', kind: 'text', text: 'Embedded heading',
             rect: { x: 60, y: 500, w: 400, h: 30 },
             rotation: 0, z: 1, locked: false, opacity: 1,
-            fontFamily: 'Inter', bold: true, fontSize: 18,
+            fontFamily: 'Inter', weight: 700, fontSize: 18,
             color: [0, 0, 0], align: 'left',
           },
         },
@@ -181,7 +221,7 @@ describe('buildQuadIndex', () => {
       const doc = PdfDocument.open(out)
       try {
         const line = buildQuadIndex(doc, 0).lines.find((l) => l.text.includes('Embedded heading'))
-        expect(line?.bold).toBe(true)
+        expect(line?.weight).toBe(700)
       } finally { doc.close() }
     })
   })

@@ -57,11 +57,33 @@ function toV3(doc: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
+ * v3 -> v4. Numeric font weight.
+ *
+ * Text objects and text patches carried `bold?: boolean`; they now carry
+ * `weight?: number`, 100 to 800. `true` was the 700 file and `false` or
+ * absent was the 400 one, and absent still means 400, so `true` becomes
+ * `weight: 700` and everything else simply loses the key. What a document
+ * exports does not change: the same two files are addressed, by number
+ * instead of by flag.
+ */
+function toV4(doc: Record<string, unknown>): Record<string, unknown> {
+  const objects = isRecord(doc.objects) ? doc.objects : {}
+  const migrated = Object.fromEntries(
+    Object.entries(objects).map(([id, o]) => {
+      if (!isRecord(o) || !('bold' in o)) return [id, o]
+      const { bold, ...rest } = o
+      return [id, bold === true ? { ...rest, weight: 700 } : rest]
+    }),
+  )
+  return { ...doc, version: 4, objects: migrated }
+}
+
+/**
  * Lift a stored edit document to the schema this build understands.
  *
  * A pure function of its input; never mutates what it is given. Applied one
  * version at a time rather than as a set of special cases, so a v1 document
- * reaches v3 through the same v2 step a v2 document was written by -- there
+ * reaches v4 through the same v2 step a v2 document was written by -- there
  * is one path per version boundary, not one per pair of versions.
  */
 export function migrateEditDocument(input: unknown): EditDocument {
@@ -79,6 +101,7 @@ export function migrateEditDocument(input: unknown): EditDocument {
   let doc: Record<string, unknown> = input
   if (doc.version === 1) doc = toV2(doc as unknown as V1)
   if (doc.version === 2) doc = toV3(doc)
+  if (doc.version === 3) doc = toV4(doc)
 
   return doc as unknown as EditDocument
 }

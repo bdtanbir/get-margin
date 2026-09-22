@@ -1,5 +1,6 @@
 import type { PdfDocument } from '../engine.js'
 import type { Color } from '../write/types.js'
+import { detectWeight, pageFontWeights } from './fontWeights.js'
 
 /** 8 numbers: the four corners of one character's box, in MuPDF page space. */
 export type Quad = [number, number, number, number, number, number, number, number]
@@ -12,25 +13,20 @@ export type LineRun = {
   text: string
   font: string
   /**
-   * Whether the run is set in a BOLD face.
+   * The CSS weight the run is set in: 100 to 800, in hundreds.
    *
    * Carried because editing a line has to be able to redraw it at the
    * weight it was already in. Without this the patch editor had nothing to
    * inherit from and defaulted every replacement to regular, so retyping a
    * bold heading silently demoted it -- the one thing about the original
-   * the user could see and the edit could not preserve.
+   * the user could see and the edit could not preserve. A boolean was the
+   * first answer; a Medium heading came back as regular under it, which is
+   * the same demotion one step lighter.
    *
-   * `isBold()` is the authority and it is reliable for both the standard 14
-   * (`Helvetica-Bold` -> true) and embedded TrueType subsets, which is the
-   * real-world case. The name check behind it is for generators that embed
-   * a bold face without setting the OS/2 macStyle bit -- the flag is then
-   * false and the name is the only remaining evidence.
-   *
-   * Note that `isSerif()` is NOT carried, deliberately: it returns true for
-   * every embedded TTF this was tested against, Inter included, so it would
-   * be a coin flip dressed up as a fact.
+   * Read from the embedded font program's own OS/2 weight class first,
+   * then from the face's name, then from `isBold()`. See fontWeights.ts.
    */
-  bold: boolean
+  weight: number
   /**
    * Whether the run is set on a SLANT.
    *
@@ -91,25 +87,10 @@ export type PageQuadIndex = { lines: LineRun[] }
  * boxes overlap -- superscripts, tight leading, and rotated runs.
  */
 /**
- * Names that mean bold even when the font's own weight flag does not say so.
- *
- * Not a substitute for `isBold()` -- a supplement to it. Some generators
- * embed a subset of a bold face and leave the OS/2 macStyle bit clear, and
- * for those the PostScript name is the only thing left that knows. Kept
- * narrow on purpose: "Semibold" and "Demibold" are here because they read
- * as bold on the page, while "Medium" is not, because it does not.
- */
-const BOLD_IN_NAME = /bold|black|heavy|semibold|demibold|-bd\b/i
-
-function isBoldFace(font: { isBold(): boolean; getName(): string }): boolean {
-  return font.isBold() || BOLD_IN_NAME.test(font.getName())
-}
-
-/**
  * Names that mean italic even when the font's own flag does not say so.
  *
- * The same supplement `BOLD_IN_NAME` is, for the same reason: a generator
- * can embed a subset of an oblique face and leave the fsSelection bit
+ * A supplement to `isItalic()`, not a substitute for it: a generator can
+ * embed a subset of an oblique face and leave the fsSelection bit
  * clear, and then the PostScript name is all that is left. "Oblique" counts
  * because it is what the standard 14 call theirs.
  */
@@ -142,11 +123,13 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
   const page = doc._raw().loadPage(pageIndex)
   try {
     const text = page.toStructuredText('')
+    // Once per page, not per glyph: it decompresses every font program.
+    const declaredWeights = pageFontWeights(page)
     const lines: LineRun[] = []
     let chars: CharQuad[] = []
     let bbox: [number, number, number, number] | undefined
     let font = ''
-    let bold = false
+    let weight = 400
     let italic = false
     let color: Color = [0, 0, 0]
     let size = 0
@@ -157,7 +140,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         bbox = [lineBox[0], lineBox[1], lineBox[2], lineBox[3]]
         chars = []
         font = ''
-        bold = false
+        weight = 400
         italic = false
         color = [0, 0, 0]
         size = 0
@@ -170,7 +153,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         // line that ends with whitespace carrying no font.
         if (!font) {
           font = charFont.getName()
-          bold = isBoldFace(charFont)
+          weight = detectWeight(charFont, declaredWeights)
           italic = isItalicFace(charFont)
           color = toRgb(charColor)
           size = charSize
@@ -188,7 +171,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
             bbox,
             text: chars.map((c) => c.char).join(''),
             font,
-            bold,
+            weight,
             italic,
             color,
             size,

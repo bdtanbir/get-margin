@@ -97,7 +97,8 @@ export function protectedSave(
   parts.push(`owner-password=${ownerPassword || userPassword}`)
   parts.push(`permissions=${permissionMask(permissions)}`)
 
-  const bytes = raw.saveToBuffer(parts.filter(Boolean).join(',')).asUint8Array()
+  // Copied out of the WASM heap; see the note in replay().
+  const bytes = raw.saveToBuffer(parts.filter(Boolean).join(',')).asUint8Array().slice()
 
   // The proof. Only meaningful when there IS an open password: a
   // permissions-only document is deliberately openable without one, and

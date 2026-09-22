@@ -18,10 +18,10 @@ const ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 const fontFile = (f: string): Uint8Array =>
   new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts', f)))
 const FONTS = new Map([
-  ['Inter', fontFile('Inter.ttf')],
-  ['Inter Bold', fontFile('Inter-Bold.ttf')],
-  ['Inter Italic', fontFile('Inter-Italic.ttf')],
-  ['Inter Bold Italic', fontFile('Inter-BoldItalic.ttf')],
+  ['Inter', fontFile('Inter-400.ttf')],
+  ['Inter 700', fontFile('Inter-700.ttf')],
+  ['Inter Italic', fontFile('Inter-400Italic.ttf')],
+  ['Inter 700 Italic', fontFile('Inter-700Italic.ttf')],
 ])
 const src = (): Uint8Array => new Uint8Array(readFileSync(fixturePath('simple-text')))
 
@@ -67,14 +67,14 @@ const write = (objects: EditObject[]): Uint8Array =>
   replay(new Map([['src-0', src()]]), doc(objects), { fonts: FONTS })
 
 /**
- * Whether the exported line containing `needle` is drawn bold, asked of
- * MuPDF rather than of the object that produced it -- the same call the app
- * uses to inherit weight from a document it did not write.
+ * The weight the exported line containing `needle` is drawn in, asked of
+ * the extraction rather than of the object that produced it -- the same
+ * path the app uses to inherit weight from a document it did not write.
  */
-function boldnessOf(pdf: Uint8Array, needle: string): boolean | undefined {
+function weightOf(pdf: Uint8Array, needle: string): number | undefined {
   const d = PdfDocument.open(pdf)
   try {
-    return buildQuadIndex(d, 0).lines.find((l) => l.text.includes(needle))?.bold
+    return buildQuadIndex(d, 0).lines.find((l) => l.text.includes(needle))?.weight
   } finally { d.close() }
 }
 
@@ -310,18 +310,18 @@ describe('missingGlyphs', () => {
  *
  * The reported bug: editing a line that was set bold gave back regular. The
  * writer half of the fix is here -- the patch has to reach for the bold FACE
- * -- and the inheriting half is in the app, which seeds `bold` from
- * `LineRun.bold`. Both halves are needed and neither is sufficient.
+ * -- and the inheriting half is in the app, which seeds `weight` from
+ * `LineRun.weight`. Both halves are needed and neither is sufficient.
  */
 describe('text patch weight', () => {
   it('draws the replacement in the bold face when the patch says so', () => {
-    const out = write([patch({ text: 'Bold replacement', bold: true }) as EditObject])
-    expect(boldnessOf(out, 'Bold replacement')).toBe(true)
+    const out = write([patch({ text: 'Bold replacement', weight: 700 }) as EditObject])
+    expect(weightOf(out, 'Bold replacement')).toBe(700)
   })
 
   it('draws it regular when the patch does not', () => {
     const out = write([patch({ text: 'Plain replacement' }) as EditObject])
-    expect(boldnessOf(out, 'Plain replacement')).toBe(false)
+    expect(weightOf(out, 'Plain replacement')).toBe(400)
   })
 
   it('refuses rather than quietly substituting the regular', () => {
@@ -329,8 +329,8 @@ describe('text patch weight', () => {
     // the wrong weight would look like a formatting bug in the user's
     // source document rather than a missing file in ours.
     expect(() => replay(new Map([['src-0', src()]]), doc([
-      patch({ text: 'Bold replacement', bold: true }) as EditObject,
-    ]), { fonts: new Map([['Inter', fontFile('Inter.ttf')]]) })).toThrow(/Inter Bold/)
+      patch({ text: 'Bold replacement', weight: 700 }) as EditObject,
+    ]), { fonts: new Map([['Inter', fontFile('Inter-400.ttf')]]) })).toThrow(/Inter 700/)
   })
 
   it('draws bold wider than regular for the same string', () => {
@@ -339,7 +339,7 @@ describe('text patch weight', () => {
     // regular. 'overflow' so nothing rescales it on the way.
     const same = 'Identical replacement string'
     const regular = write([patch({ id: 'r', text: same, fit: 'overflow' }) as EditObject])
-    const bold = write([patch({ id: 'b', text: same, fit: 'overflow', bold: true }) as EditObject])
+    const bold = write([patch({ id: 'b', text: same, fit: 'overflow', weight: 700 }) as EditObject])
     expect(widthOf(bold, 'Identical')).toBeGreaterThan(widthOf(regular, 'Identical'))
   })
 
@@ -366,7 +366,7 @@ describe('text patch weight', () => {
       }) as EditObject
     }
     const regular = write([on1({ id: 'r' })])
-    const bold = write([on1({ id: 'b', bold: true })])
+    const bold = write([on1({ id: 'b', weight: 700 })])
     expect(textOf(bold, 'A rep').length).toBeLessThan(textOf(regular, 'A rep').length)
   })
 })
@@ -467,7 +467,7 @@ describe('a style-only patch', () => {
     try {
       return buildQuadIndex(d, 0).lines
         .filter((l) => l.text.includes(needle))
-        .map((l) => ({ bold: l.bold, italic: l.italic, text: l.text }))
+        .map((l) => ({ weight: l.weight, italic: l.italic, text: l.text }))
     } finally { d.close() }
   }
 
@@ -475,19 +475,19 @@ describe('a style-only patch', () => {
 
   it('redraws the same words in the new face', () => {
     const out = write([patch({
-      text: original(), bold: true, italic: true, fit: 'overflow',
+      text: original(), weight: 700, italic: true, fit: 'overflow',
     }) as EditObject])
     const drawn = drawnStyles(out, 'Hello margin')
     // The covered original, upright and regular, and the redraw over it.
-    expect(drawn).toContainEqual({ text: original(), bold: false, italic: false })
-    expect(drawn).toContainEqual({ text: original(), bold: true, italic: true })
+    expect(drawn).toContainEqual({ text: original(), weight: 400, italic: false })
+    expect(drawn).toContainEqual({ text: original(), weight: 700, italic: true })
   })
 
   it('still passes the hash guard, because the ORIGINAL is what is hashed', () => {
     // The guard compares the document's line against `originalHash`. A
     // style-only patch leaves both alone, so this is really a check that
     // nothing in the style path recomputes the hash from the replacement.
-    expect(() => write([patch({ text: original(), bold: true }) as EditObject])).not.toThrow()
+    expect(() => write([patch({ text: original(), weight: 700 }) as EditObject])).not.toThrow()
   })
 
   /**
@@ -503,7 +503,7 @@ describe('a style-only patch', () => {
    * distinction earned a test of its own here rather than a comment.
    */
   it('leaves the original extractable, because covering is not removing', () => {
-    const out = write([patch({ text: original(), bold: true, fit: 'overflow' }) as EditObject])
+    const out = write([patch({ text: original(), weight: 700, fit: 'overflow' }) as EditObject])
     expect(linesOf(out).filter((l) => l.includes('Hello margin'))).toHaveLength(2)
   })
 })

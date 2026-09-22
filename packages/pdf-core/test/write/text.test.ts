@@ -17,14 +17,14 @@ const fontFile = (f: string): Uint8Array =>
   new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts', f)))
 
 const FONTS = new Map([
-  ['Inter', fontFile('Inter.ttf')],
-  ['Inter Bold', fontFile('Inter-Bold.ttf')],
-  ['Inter Italic', fontFile('Inter-Italic.ttf')],
-  ['Inter Bold Italic', fontFile('Inter-BoldItalic.ttf')],
+  ['Inter', fontFile('Inter-400.ttf')],
+  ['Inter 700', fontFile('Inter-700.ttf')],
+  ['Inter Italic', fontFile('Inter-400Italic.ttf')],
+  ['Inter 700 Italic', fontFile('Inter-700Italic.ttf')],
   // A serif whose italic is a genuinely different alphabet rather than a
   // metrically-matched companion. See the measurement test below.
-  ['Source Serif 4', fontFile('SourceSerif4.ttf')],
-  ['Source Serif 4 Italic', fontFile('SourceSerif4-Italic.ttf')],
+  ['Source Serif 4', fontFile('SourceSerif4-400.ttf')],
+  ['Source Serif 4 Italic', fontFile('SourceSerif4-400Italic.ttf')],
 ])
 
 function docWith(objects: EditObject[]): EditDocument {
@@ -40,7 +40,7 @@ function textObject(
   text: string,
   align: 'left' | 'center' | 'right' = 'left',
   y = 600,
-  bold?: boolean,
+  weight?: number,
   italic?: boolean,
 ): EditObject {
   return {
@@ -48,7 +48,7 @@ function textObject(
     // Clear of the fixture's own text, which sits in the top ~130pt.
     rect: { x: 60, y, w: 400, h: 30 },
     rotation: 0, z: 1, locked: false, opacity: 1,
-    fontFamily: 'Inter', bold, italic, fontSize: 18, color: [0, 0, 0], align,
+    fontFamily: 'Inter', weight, italic, fontSize: 18, color: [0, 0, 0], align,
   } as EditObject
 }
 
@@ -182,7 +182,7 @@ describe('text writer', () => {
     it('embeds the bold face as a font program of its own', () => {
       const regular = replay(new Map([['src-0', bytes('simple-text')]]), docWith([textObject('Heading')]), { fonts: FONTS })
       const both = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
-        textObject('Heading', 'left', 600, true),
+        textObject('Heading', 'left', 600, 700),
         textObject('Body', 'left', 560),
       ]), { fonts: FONTS })
       // Two weights are two font programs, and no subsetting means the
@@ -195,9 +195,9 @@ describe('text writer', () => {
       // nothing downstream would report it.
       expect(() => replay(
         new Map([['src-0', bytes('simple-text')]]),
-        docWith([textObject('Heading', 'left', 600, true)]),
-        { fonts: new Map([['Inter', fontFile('Inter.ttf')]]) },
-      )).toThrow(/Inter Bold/)
+        docWith([textObject('Heading', 'left', 600, 700)]),
+        { fonts: new Map([['Inter', fontFile('Inter-400.ttf')]]) },
+      )).toThrow(/Inter 700/)
     })
 
     it('measures bold text at the bold face’s own advances', () => {
@@ -205,7 +205,7 @@ describe('text writer', () => {
       // must START further left than the same string set regular -- which
       // it only does if the alignment maths read the bold file.
       const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
-        textObject('Widths', 'center', 600, true),
+        textObject('Widths', 'center', 600, 700),
         textObject('Widths', 'center', 560),
       ]), { fonts: FONTS })
       const blocks = JSON.parse(extract(out)).blocks as Array<{
@@ -223,14 +223,14 @@ describe('text writer', () => {
 
     it('reads back as bold from the exported file', () => {
       const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
-        textObject('Heading', 'left', 600, true),
+        textObject('Heading', 'left', 600, 700),
       ]), { fonts: FONTS })
       expect(styleOf(out, 'Heading')?.bold).toBe(true)
     })
 
-    it('leaves an object with no bold set drawn regular', () => {
-      // Absent means regular. This is what lets every document stored
-      // before weight existed replay unchanged, with no migration.
+    it('leaves an object with no weight set drawn regular', () => {
+      // Absent means 400, which is what every object written without a
+      // weight was drawn in.
       const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
         textObject('Heading'),
       ]), { fonts: FONTS })
@@ -249,14 +249,14 @@ describe('text writer', () => {
   describe('italic', () => {
     it('reads back as italic from the exported file', () => {
       const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
-        textObject('Slanted', 'left', 600, false, true),
+        textObject('Slanted', 'left', 600, undefined, true),
       ]), { fonts: FONTS })
       expect(styleOf(out, 'Slanted')).toEqual({ bold: false, italic: true })
     })
 
     it('combines with bold as a fourth face, not bold on a slant', () => {
       const out = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
-        textObject('Emphatic', 'left', 600, true, true),
+        textObject('Emphatic', 'left', 600, 700, true),
       ]), { fonts: FONTS })
       expect(styleOf(out, 'Emphatic')).toEqual({ bold: true, italic: true })
     })
@@ -267,9 +267,9 @@ describe('text writer', () => {
       ]), { fonts: FONTS })
       const four = replay(new Map([['src-0', bytes('simple-text')]]), docWith([
         textObject('One', 'left', 600),
-        textObject('Two', 'left', 560, true),
-        textObject('Three', 'left', 520, false, true),
-        textObject('Four', 'left', 480, true, true),
+        textObject('Two', 'left', 560, 700),
+        textObject('Three', 'left', 520, undefined, true),
+        textObject('Four', 'left', 480, 700, true),
       ]), { fonts: FONTS })
       // Three more font programs at ~66KB each, with no subsetting.
       expect(four.byteLength).toBeGreaterThan(one.byteLength + 60_000)
@@ -278,9 +278,9 @@ describe('text writer', () => {
     it('refuses to fall back when the bold italic was not supplied', () => {
       expect(() => replay(
         new Map([['src-0', bytes('simple-text')]]),
-        docWith([textObject('Emphatic', 'left', 600, true, true)]),
-        { fonts: new Map([['Inter', fontFile('Inter.ttf')]]) },
-      )).toThrow(/Inter Bold Italic/)
+        docWith([textObject('Emphatic', 'left', 600, 700, true)]),
+        { fonts: new Map([['Inter', fontFile('Inter-400.ttf')]]) },
+      )).toThrow(/Inter 700 Italic/)
     })
 
     /**
