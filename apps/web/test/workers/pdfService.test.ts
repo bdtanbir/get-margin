@@ -372,3 +372,56 @@ describe('PdfService.listFields', () => {
     expect(svc.listFields(added.sourceId, 5)).toEqual([])
   })
 })
+
+describe('PdfService.regionCrop', () => {
+  // The web package has no PNG decoder and does not want one: the pixels
+  // themselves are pinned in pdf-core's cropEditedRegion tests. This layer
+  // is a pass-through, and what it must prove is that the EDIT DOCUMENT
+  // reaches the crop at all -- which a source-only crop, by definition,
+  // cannot show.
+  const RECT = { x: 100, y: 412, w: 120, h: 80 }
+  const plain = () => ({
+    ...emptyEditDocument(),
+    sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+    pageOrder: ['p0'],
+    pages: { p0: { sourceId: 'src-0', sourceIndex: 0, rotation: 0, cropBox: null } },
+  })
+  // A red rect at PDF 100,300..220,380 on a 792pt page fills RECT above,
+  // which is the same box top-down -- the space the overlay hands over.
+  const edited = () => ({
+    ...plain(),
+    objects: {
+      r: {
+        id: 'r', pageId: 'p0', kind: 'rect' as const,
+        rect: { x: 100, y: 300, w: 120, h: 80 },
+        rotation: 0, z: 1, locked: false, opacity: 1,
+        fill: [1, 0, 0] as [number, number, number], stroke: null, strokeWidth: 0,
+      },
+    },
+  })
+
+  it('lifts the page as edited, so an edit already made comes with the copy', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    const before = svc.regionCrop(plain(), 'p0', RECT, 1)!
+    const after = svc.regionCrop(edited(), 'p0', RECT, 1)!
+    expect(Array.from(after.data.subarray(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47])
+    expect(Array.from(after.data)).not.toEqual(Array.from(before.data))
+    svc.close()
+  })
+
+  it('leaves the rendered document untouched', () => {
+    const svc = new PdfService()
+    svc.open(bytes('simple-text'))
+    svc.regionCrop(edited(), 'p0', RECT, 1)
+    const { rgba, width } = svc.render({ id: 1, page: 0, scale: 1 })!
+    const i = (452 * width + 160) * 4
+    expect(rgba[i]).toBeGreaterThan(240)
+    expect(rgba[i + 1]).toBeGreaterThan(240)
+    svc.close()
+  })
+
+  it('throws when no document is open', () => {
+    expect(() => new PdfService().regionCrop(plain(), 'p0', RECT, 1)).toThrow('no document open')
+  })
+})

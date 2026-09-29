@@ -111,9 +111,38 @@ describe('LiftTool', () => {
   })
 
   it('asks the worker for exactly the area drawn', async () => {
-    seed()
+    const edits = seed()
+    // The document as it stood when the drag ended -- `edits.doc` after
+    // the lift already holds the lift's own object.
+    const before = edits.doc
     await dragBox(mountIt(), 50, 60, 150, 160)
-    expect(regionCrop).toHaveBeenCalledWith('src-0', 0, { x: 50, y: 60, w: 100, h: 100 }, 4)
+    expect(regionCrop).toHaveBeenCalledWith(
+      before, 'p1', { x: 50, y: 60, w: 100, h: 100 }, 4, new Map(),
+    )
+  })
+
+  /**
+   * The lift is of the page AS EDITED. A total already changed by a text
+   * patch exists only in the edit document, and a crop of the source page
+   * carried the document's original value up the page with the box. So
+   * the worker is handed the edit document as it stands at the moment of
+   * the drag -- with the earlier edit in it, and before this lift's own
+   * object has been added.
+   */
+  it('hands the worker the page as edited, before this lift is added', async () => {
+    const edits = seed()
+    edits.applyOp({
+      type: 'addObject',
+      object: {
+        id: 'w1', pageId: 'p1', kind: 'whiteout', fill: [1, 1, 1],
+        rect: { x: 60, y: 600, w: 40, h: 20 }, rotation: 0, z: 1, locked: false, opacity: 1,
+      },
+    }, 'Whiteout')
+    await dragBox(mountIt(), 50, 60, 150, 160)
+    const sent = regionCrop.mock.calls[0]![0] as typeof edits.doc
+    expect(Object.keys(sent.objects)).toEqual(['w1'])
+    // And the lift itself landed on top of the earlier edit, not instead of it.
+    expect(Object.keys(edits.doc.objects)).toHaveLength(2)
   })
 
   /**

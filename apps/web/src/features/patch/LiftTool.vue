@@ -7,6 +7,7 @@ import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { useViewportStore } from '@/stores/viewport'
 import { getPdfClient } from '@/workers/pdfClient'
+import { fontsForExport, facesUsed } from '@/lib/fonts'
 import { sampleBackground } from './sampleBackground'
 import { plainColor, plainRect } from './linePatch'
 
@@ -66,9 +67,15 @@ async function lift(rect: { x: number; y: number; w: number; h: number }): Promi
   const scale = bitmap ? bitmap.scale : 1
   const background = sampleBackground(bitmap, rect, scale, SAMPLE_BAND_PT * scale)
 
-  const crop = await getPdfClient().regionCrop(
-    props.page.sourceId, props.page.sourceIndex, rect, LIFT_SCALE,
-  )
+  /**
+   * The page AS EDITED, not the source page. A value already changed by a
+   * text patch lives only in the edit document, and a crop of the source
+   * would carry the document's original value up the page with the box.
+   * The worker writes the page's objects first, so it needs the fonts
+   * their text is set in -- gathered the way Download gathers them.
+   */
+  const fonts = await fontsForExport(facesUsed(Object.values(edits.doc.objects)))
+  const crop = await getPdfClient().regionCrop(edits.doc, props.page.id, rect, LIFT_SCALE, fonts)
   // No pixels means no lift. Covering the area and drawing nothing back
   // would read as a deletion the user did not ask for.
   if (!crop) return

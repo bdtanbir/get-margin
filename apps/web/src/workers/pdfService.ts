@@ -1,6 +1,6 @@
 import {
   PdfDocument, renderPage, rasterisePage, rasterSize, replay, buildQuadIndex, buildImageIndex,
-  cropImage, cropRegion,
+  cropImage, cropEditedRegion,
   listFields,
   readMetadata, recompressImages,
   findInPage, missingGlyphsFor,
@@ -360,21 +360,31 @@ export class PdfService {
   }
 
   /**
-   * ANY rectangle of a page, as pixels.
+   * ANY rectangle of a page, as pixels -- the page AS EDITED.
    *
    * The counterpart to `imageCrop` for everything that is not an image --
-   * vector logos, tables, a block of text. Not cached, for the same
-   * reason: a crop is asked for once, at the moment a region is lifted.
+   * vector logos, tables, a block of text. Unlike `imageCrop` it renders
+   * the page with the edit document's objects written onto it, through the
+   * same `replay` that Download uses: a lift is the one place the user
+   * expects to pick up what they see, and what they see includes every
+   * edit already made. See `cropEditedRegion` for why, and for the space
+   * `rect` is in.
+   *
+   * Not cached, for the same reason as `imageCrop`: a crop is asked for
+   * once, at the moment a region is lifted.
    */
   regionCrop(
-    sourceId: SourceId | undefined,
-    page: number,
+    editDoc: EditDocument,
+    pageId: string,
     rect: { x: number; y: number; w: number; h: number },
     scale: number,
+    fonts?: Map<string, Uint8Array>,
   ): { data: Uint8Array } | undefined {
-    const doc = this.#docFor(sourceId)
-    if (!doc) throw new Error('no document open')
-    return cropRegion(doc, page, rect, scale)
+    if (!this.#primarySource) throw new Error('no document open')
+    return cropEditedRegion(this.#sources, editDoc, pageId, rect, scale, {
+      ...(fonts ? { fonts } : {}),
+      ...(this.#passwords.size > 0 ? { passwords: this.#passwords } : {}),
+    })
   }
 
   /**

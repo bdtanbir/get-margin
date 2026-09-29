@@ -86,16 +86,19 @@ export type PdfClient = {
     scale: number,
   ): Promise<{ data: Uint8Array; hash: string } | undefined>
   /**
-   * Any rectangle of a page, as PNG pixels. See PdfService.regionCrop.
+   * Any rectangle of a page AS EDITED, as PNG pixels. See
+   * PdfService.regionCrop.
    *
-   * `rect` is MuPDF page space, like everything else about the page's own
-   * geometry.
+   * `rect` is MuPDF page space of the page as the user sees it, like
+   * everything else about the page's own geometry. `fonts` is what the
+   * page's text needs to be drawn, gathered the way Download gathers it.
    */
   regionCrop(
-    sourceId: SourceId | undefined,
-    page: number,
+    editDoc: EditDocument,
+    pageId: string,
     rect: { x: number; y: number; w: number; h: number },
     scale: number,
+    fonts?: Map<string, Uint8Array>,
   ): Promise<{ data: Uint8Array } | undefined>
   /**
    * The form fields on one page. See PdfService.listFields.
@@ -353,9 +356,9 @@ export function createPdfClient(): PdfClient {
       return remote.imageCrop(sourceId, page, imageIndex, scale)
     },
 
-    async regionCrop(sourceId, page, rect, scale) {
+    async regionCrop(editDoc, pageId, rect, scale, fonts) {
       await ready
-      return remote.regionCrop(sourceId, page, rect, scale)
+      return remote.regionCrop(editDoc, pageId, rect, scale, fonts)
     },
 
     async addSource(bytes) {
