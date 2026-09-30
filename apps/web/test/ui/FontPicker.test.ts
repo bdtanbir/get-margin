@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import FontPicker from '@/ui/FontPicker.vue'
 import * as fonts from '@/lib/fonts'
 
@@ -29,7 +30,7 @@ describe('FontPicker', () => {
     const load = vi.spyOn(fonts, 'loadFont').mockResolvedValue()
     const w = mount(FontPicker, { props: { modelValue: 'Inter', options }, attachTo: document.body })
     expect(load).not.toHaveBeenCalled()
-    await w.get('button').trigger('pointerdown', { button: 0, pointerType: 'mouse', ctrlKey: false })
+    await w.get('button').trigger('click')
     await nextTick()
     const item = document.body.querySelector('[data-font-option="Outfit"]') as HTMLElement
     expect(item).not.toBeNull()
@@ -39,5 +40,25 @@ describe('FontPicker', () => {
     expect(load.mock.calls.map((c) => c[0])).toEqual(['Inter', 'Outfit', 'Tinos'])
     w.unmount()
     load.mockRestore()
+  })
+
+  it('filters by what the reader types, including the name a face stands in for', async () => {
+    const w = mount(FontPicker, { props: { modelValue: 'Inter', options }, attachTo: document.body })
+    await w.get('button').trigger('click')
+    await nextTick()
+    const input = document.body.querySelector('[data-font-search]') as HTMLInputElement
+    expect(input).not.toBeNull()
+    input.value = 'times'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const left = [...document.body.querySelectorAll('[data-font-option]')]
+      .map((e) => e.getAttribute('data-font-option'))
+    expect(left).toEqual(['Tinos'])
+    input.value = 'zzz'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    expect(document.body.querySelectorAll('[data-font-option]').length).toBe(0)
+    expect(document.body.textContent).toContain('No fonts match')
+    w.unmount()
   })
 })
