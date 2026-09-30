@@ -111,6 +111,13 @@ const italic = ref(false)
  * than a format change.
  */
 const fit = ref<'shrink' | 'overflow' | 'truncate'>('overflow')
+/**
+ * The letter spacing the patch already carries, in points, so the field
+ * types at the width the committed line will be drawn at. Set from the
+ * inspector, never here: the field has no control for it, and a commit
+ * leaves it alone.
+ */
+const spacing = ref(0)
 const missing = ref<string[]>([])
 const input = ref<HTMLInputElement | null>(null)
 
@@ -270,6 +277,9 @@ const style = computed(() => {
     width: `${drawnBox.value.width / scale}px`,
     height: `${drawnBox.value.height / scale}px`,
     fontSize: `${fontSize}px`,
+    // In the same zoom-compensated pixels as the size, so the caret lands
+    // between the letters where the export will put them.
+    letterSpacing: `${(spacing.value * props.zoom) / scale}px`,
     transform: `scale(${scale})`,
     // From the top-left corner, so the field stays over the line it
     // replaces. The default centre origin would slide it up and left by
@@ -377,6 +387,7 @@ async function begin(lineIndex: number): Promise<void> {
   // real number rather than showing the sentinel back to the user.
   size.value = (existing && existing.fontSize > 0 ? existing.fontSize : line?.size) ?? 0
   fit.value = existing ? existing.fit : 'overflow'
+  spacing.value = existing?.letterSpacing ?? 0
   missing.value = []
   // The face the field is about to be styled with, so the caret sits
   // against its real metrics rather than the fallback's -- the same reason
@@ -407,6 +418,7 @@ function cancel(): void {
   italic.value = false
   size.value = 0
   color.value = [0, 0, 0]
+  spacing.value = 0
   missing.value = []
 }
 

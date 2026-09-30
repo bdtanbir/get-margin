@@ -120,6 +120,24 @@ function faceFields(o: { fontFamily: string }): Field[] {
     : [FONT_FAMILY, weightField(o.fontFamily)]
 }
 
+/**
+ * Extra points between each pair of characters. Reaches below zero because
+ * tightening a heading is as ordinary a request as loosening one, and
+ * stops at -2 because further than that the letters overprint.
+ */
+const LETTER_SPACING: Field = {
+  key: 'letterSpacing', label: 'Letter spacing', type: 'number', min: -2, max: 20, step: 0.1,
+}
+
+/**
+ * Line pitch as a multiple of the size, the number a word processor
+ * shows: 1 is set solid, 1.2 is the default every stored object was laid
+ * out at, 2 is double-spaced.
+ */
+const LINE_HEIGHT_FIELD: Field = {
+  key: 'lineHeight', label: 'Line spacing', type: 'number', min: 0.8, max: 3, step: 0.05,
+}
+
 const text = (o: { fontFamily: string }): Field[] => [
   ...faceFields(o),
   { key: 'fontSize', label: 'Size', type: 'number', min: 4, max: 144, step: 1 },
@@ -132,6 +150,7 @@ const text = (o: { fontFamily: string }): Field[] => [
       { value: 'right', label: 'Right' },
     ],
   },
+  LETTER_SPACING, LINE_HEIGHT_FIELD,
   OPACITY, ROTATION,
 ]
 
@@ -161,6 +180,9 @@ const textPatch = (o: { fontFamily: string }): Field[] => [
   ...faceFields(o),
   { key: 'fontSize', label: 'Size', type: 'number', min: 1, max: 144, step: 0.5 },
   { key: 'color', label: 'Colour', type: 'color' },
+  // Letter spacing only. A patch replaces ONE line, so there is nothing
+  // for a line height to space.
+  LETTER_SPACING,
 ]
 
 /**

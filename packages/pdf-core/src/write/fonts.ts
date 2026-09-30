@@ -180,6 +180,31 @@ export function createMeasurer(
 }
 
 /**
+ * The width a line takes up: its glyph advances plus the letter spacing
+ * between each pair of characters.
+ *
+ * BETWEEN, not after: the content stream's `Tc` operator adds the spacing
+ * after every glyph including the last, but the last one moves only the
+ * pen and draws nothing, so the ink ends a gap short of where the pen
+ * does. Alignment and fit are about the ink. The preview measures the
+ * same way (`spacedWidth` in apps/web/src/lib/fonts.ts), which is what
+ * keeps a centred spaced line centred after export.
+ *
+ * Counted in code points, like `createMeasurer`, so a character outside
+ * the BMP is one gap and not two.
+ */
+export function spacedAdvance(
+  measure: (text: string, face: string, size: number) => number,
+  text: string,
+  face: string,
+  size: number,
+  spacing: number | undefined,
+): number {
+  const gaps = Math.max(0, [...text].length - 1)
+  return measure(text, face, size) + (spacing ?? 0) * gaps
+}
+
+/**
  * Escape a PDF literal string: backslash and both parentheses. An unescaped
  * `)` in user text would terminate the string early and corrupt every
  * operator after it in the content stream.

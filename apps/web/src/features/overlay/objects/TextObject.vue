@@ -1,23 +1,26 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { TextObject } from '@margin/pdf-core'
-import { cssFamily, cssWeight, cssStyle, measureText, ASCENT_RATIO, LINE_HEIGHT } from '@/lib/fonts'
+import { cssFamily, cssWeight, cssStyle, spacedWidth, ASCENT_RATIO, LINE_HEIGHT } from '@/lib/fonts'
 import { rgb } from './svgPaint'
 
 const props = defineProps<{ object: TextObject }>()
 
 /**
  * One <text> per line, positioned exactly as write/objects/text.ts positions
- * it: baseline ASCENT_RATIO below the box top, successive lines LINE_HEIGHT
- * apart. The two share those constants (lib/fonts.ts re-exports them) so
- * preview and export cannot drift.
+ * it: baseline ASCENT_RATIO below the box top, successive lines the stored
+ * line height (LINE_HEIGHT when there is none) apart. The two share those
+ * constants (lib/fonts.ts re-exports them) so preview and export cannot
+ * drift, and both measure a line with the letter spacing between its
+ * characters counted in.
  */
 const lines = computed(() => {
   const o = props.object
   const { x, y, w, h } = o.rect
+  const pitch = o.fontSize * (o.lineHeight ?? LINE_HEIGHT)
   return o.text.split('\n').map((text, i) => {
-    const baseline = y + h - o.fontSize * ASCENT_RATIO - i * o.fontSize * LINE_HEIGHT
-    const advance = measureText(text, o.fontFamily, o.fontSize, o)
+    const baseline = y + h - o.fontSize * ASCENT_RATIO - i * pitch
+    const advance = spacedWidth(text, o.fontFamily, o.fontSize, o, o.letterSpacing)
     const offset =
       o.align === 'center' ? (w - advance) / 2 : o.align === 'right' ? w - advance : 0
     return { text, x: x + offset, baseline }
@@ -34,6 +37,13 @@ const family = computed(() => cssFamily(props.object.fontFamily))
  */
 const weight = computed(() => cssWeight(props.object.weight))
 const slope = computed(() => cssStyle(props.object.italic))
+/**
+ * Absent rather than 0 when there is none: an attribute of "0" is the
+ * same glyphs, but it is a different element from the one every stored
+ * object rendered as, and the snapshot-style assertions in the tests
+ * would have to know that.
+ */
+const spacing = computed(() => props.object.letterSpacing || undefined)
 </script>
 
 <template>
@@ -54,6 +64,7 @@ const slope = computed(() => cssStyle(props.object.italic))
     :font-weight="weight"
     :font-style="slope"
     :font-size="props.object.fontSize"
+    :letter-spacing="spacing"
     style="white-space: pre"
   >{{ l.text }}</text>
 </template>

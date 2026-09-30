@@ -5,7 +5,7 @@ import { appendContent, addResource, fillColor } from '../content.js'
 import {
   num, pageBoxToContent, pagePointToContent, pageDeltaToContent, pageDirToContent, textMatrix,
 } from '../coords.js'
-import { pdfString, faceKey } from '../fonts.js'
+import { pdfString, faceKey, spacedAdvance } from '../fonts.js'
 import { ASCENT_RATIO } from './text.js'
 
 /**
@@ -223,7 +223,10 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
      */
     let size = o.fontSize > 0 ? o.fontSize : line.size > 0 ? line.size : across * 0.8
     let text = o.text
-    const advance = () => ctx.measure(text, face, size)
+    const spacing = o.letterSpacing ?? 0
+    // Measured WITH the spacing: the fit rules decide against the ink the
+    // line will actually take up, and a spaced line takes up more.
+    const advance = () => spacedAdvance(ctx.measure, text, face, size, spacing)
 
     /**
      * A MOVED patch always overflows, whatever `fit` says.
@@ -287,6 +290,8 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
       fillColor(o.color),
       'BT',
       `/${font.name} ${num(size)} Tf`,
+      // See the text writer: points per gap, and only when there are any.
+      ...(spacing !== 0 ? [`${num(spacing)} Tc`] : []),
       textMatrix(u, pen.x + shift.x, pen.y + shift.y),
       `${pdfString(text)} Tj`,
       'ET',

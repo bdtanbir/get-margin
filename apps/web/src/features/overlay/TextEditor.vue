@@ -50,7 +50,11 @@ const style = computed(() => {
     transform: `scale(${scale})`,
     // From the top-left, so the box stays over the object it is editing.
     transformOrigin: 'top left',
-    lineHeight: String(LINE_HEIGHT),
+    lineHeight: String(o.lineHeight ?? LINE_HEIGHT),
+    // The spacing the glyphs will be drawn with, in the same
+    // zoom-compensated pixels as the type size, so the caret lands between
+    // the letters where the export will put them.
+    letterSpacing: `${((o.letterSpacing ?? 0) * props.zoom) / scale}px`,
     fontFamily: cssFamily(o.fontFamily),
     fontWeight: cssWeight(o.weight),
     fontStyle: cssStyle(o.italic),

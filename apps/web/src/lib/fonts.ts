@@ -288,6 +288,27 @@ export function measureText(
   return ctx.measureText(text).width
 }
 
+/**
+ * The width a line takes up: `measureText` plus the letter spacing between
+ * each pair of characters.
+ *
+ * BETWEEN, not after. The writer's `spacedAdvance` counts the same gaps,
+ * and the two have to agree or a centred spaced line lands off-centre on
+ * export. Not the canvas's own `letterSpacing`, which is newer than the
+ * browsers this runs in and which counts a gap after the last glyph too.
+ * Code points, like the writer, so a character outside the BMP is one gap.
+ */
+export function spacedWidth(
+  text: string,
+  family: string,
+  size: number,
+  style: FaceStyle | undefined,
+  spacing: number | undefined,
+): number {
+  const gaps = Math.max(0, [...text].length - 1)
+  return measureText(text, family, size, style) + (spacing ?? 0) * gaps
+}
+
 /** The raw file, for the worker to embed. Same bytes the browser rendered. */
 export async function fontBytes(family: string, style?: FaceStyle): Promise<Uint8Array> {
   const res = await fetch(fontUrl(family, style))

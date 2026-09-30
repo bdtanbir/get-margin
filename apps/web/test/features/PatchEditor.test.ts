@@ -463,6 +463,19 @@ describe('PatchEditor', () => {
       expect(target).toContain('top: 160px')
     })
 
+    /**
+     * A patch given letter spacing in the inspector types at that spacing,
+     * or the field shows a tighter line than the one it commits and the
+     * text jumps on Enter.
+     */
+    it('types with the spacing the patch already carries', async () => {
+      const { w } = withMoved({ letterSpacing: 3 })
+      await w.get('[data-patch-target="0"]').trigger('click')
+      const style = (w.get('[data-patch-input]').element as HTMLInputElement).style
+      const scale = Number(/scale\(([\d.]+)\)/.exec(style.transform)?.[1] ?? 1)
+      expect(Number.parseFloat(style.letterSpacing) * scale).toBeCloseTo(3, 6)
+    })
+
     it('opens the field where the text is now', async () => {
       const { w } = withMoved()
       await w.get('[data-patch-target="0"]').trigger('click')

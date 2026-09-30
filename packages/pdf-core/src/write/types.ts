@@ -76,6 +76,24 @@ export type TextObject = BaseObject & {
   fontSize: number
   color: Color
   align: 'left' | 'center' | 'right'
+  /**
+   * Extra space between each pair of characters, in points.
+   *
+   * Optional and absent means none, so every stored object keeps the
+   * width it had. Points rather than a fraction of the size because it is
+   * what the content stream's own character-spacing operator takes, and
+   * the preview adds the same number to each gap.
+   */
+  letterSpacing?: number
+  /**
+   * Successive baselines are this multiple of the font size apart.
+   *
+   * Optional and absent means `LINE_HEIGHT`, which is the pitch every
+   * stored object was laid out at. A multiple rather than points so a
+   * change of size keeps the same look, the way a word processor's line
+   * spacing does.
+   */
+  lineHeight?: number
 }
 
 export type ImageObject = BaseObject & {
@@ -273,6 +291,12 @@ export type TextPatchObject = BaseObject & {
    * in its box rather than a zero the reader has to know the meaning of.
    */
   fontSize: number
+  /**
+   * Extra space between each pair of characters, in points. See
+   * `TextObject.letterSpacing`. Absent means none: the replacement is set
+   * as tight as the line it replaces.
+   */
+  letterSpacing?: number
   /**
    * Where the pen sat on the original line, in MuPDF PAGE space -- the same
    * space `rect` uses for this kind. See `LineRun.baseline`.

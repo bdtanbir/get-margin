@@ -2,7 +2,7 @@ import type { ObjectWriter } from '../index.js'
 import type { TextObject } from '../types.js'
 import { appendContent, addResource, fillColor, alphaState } from '../content.js'
 import { contentRectToPage, pagePointToContent, pageBasis, textMatrix, num } from '../coords.js'
-import { pdfString, faceKey } from '../fonts.js'
+import { pdfString, faceKey, spacedAdvance } from '../fonts.js'
 
 /**
  * Baseline sits this fraction of the font size below the line's top, and
@@ -41,16 +41,26 @@ export const writeText: ObjectWriter = (ctx, object) => {
   addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
 
   const lines = o.text.split('\n')
+  const spacing = o.letterSpacing ?? 0
+  const pitch = o.fontSize * (o.lineHeight ?? LINE_HEIGHT)
   const ops: string[] = []
   if (o.opacity < 1) ops.push(alphaState(ctx.raw, ctx.page, `gs${o.id}`, o.opacity))
   ops.push(fillColor(o.color), 'BT', `/${font.name} ${num(o.fontSize)} Tf`)
+  /**
+   * Character spacing is a text-state parameter in unscaled text space
+   * units, and `textMatrix` below is a unit rotation, so the number here
+   * is the number of points each gap grows by. Only emitted when there is
+   * one, so an unspaced object writes the stream it always did.
+   */
+  if (spacing !== 0) ops.push(`${num(spacing)} Tc`)
 
   lines.forEach((line, i) => {
     // Page space is top-down, so successive baselines run DOWN from the top
     // of the box -- the same stack the old bottom-up arithmetic described
-    // from the other end.
-    const fromTop = o.fontSize * ASCENT_RATIO + i * o.fontSize * LINE_HEIGHT
-    const advance = ctx.measure(line, face, o.fontSize)
+    // from the other end. The first baseline does not move with the pitch:
+    // line spacing is the distance BETWEEN lines, not a margin above them.
+    const fromTop = o.fontSize * ASCENT_RATIO + i * pitch
+    const advance = spacedAdvance(ctx.measure, line, face, o.fontSize, spacing)
     const offset =
       o.align === 'center' ? (box.w - advance) / 2 : o.align === 'right' ? box.w - advance : 0
     const pen = pagePointToContent({ x: box.x + offset, y: box.y + fromTop }, g)

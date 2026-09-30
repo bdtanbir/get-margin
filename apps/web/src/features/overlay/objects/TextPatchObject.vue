@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { TextPatchObject } from '@margin/pdf-core'
-import { cssFamily, cssWeight, cssStyle, measureText, ASCENT_RATIO } from '@/lib/fonts'
+import { cssFamily, cssWeight, cssStyle, spacedWidth, ASCENT_RATIO } from '@/lib/fonts'
 import { rgb } from './svgPaint'
 
 /**
@@ -69,7 +69,10 @@ const laid = computed(() => {
   const { w, h } = o.rect
   let size = o.fontSize > 0 ? o.fontSize : h * 0.8
   let text = o.text
-  const advance = (): number => measureText(text, o.fontFamily, size, o)
+  // With the letter spacing counted, as the writer counts it: the fit
+  // rules are about the ink the line takes up, and a spaced line takes
+  // up more.
+  const advance = (): number => spacedWidth(text, o.fontFamily, size, o, o.letterSpacing)
 
   // A moved patch overflows whatever `fit` says, because both fit rules
   // measure against `w` -- the width of the line being replaced -- and the
@@ -115,6 +118,8 @@ const family = computed(() => cssFamily(props.object.fontFamily))
 /** The style the line was already in, unless the user has overridden it. */
 const weight = computed(() => cssWeight(props.object.weight))
 const slope = computed(() => cssStyle(props.object.italic))
+/** Absent when there is none, for the reason TextObject gives. */
+const spacing = computed(() => props.object.letterSpacing || undefined)
 </script>
 
 <template>
@@ -141,6 +146,7 @@ const slope = computed(() => cssStyle(props.object.italic))
       :font-weight="weight"
       :font-style="slope"
       :font-size="laid.size"
+      :letter-spacing="spacing"
       style="white-space: pre"
     >{{ laid.text }}</text>
   </g>
