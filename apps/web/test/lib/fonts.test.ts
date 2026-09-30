@@ -5,7 +5,7 @@ import {
   FONTS, SIGNATURE_FACES, DEFAULT_FAMILY, fontUrl, cssFamily, fontBytes, fontsForExport,
   faceFile, faceKey, cssWeight, cssStyle, weightsOf, hasItalic, fitStyle, familyLabel, stylesOf,
 } from '@/lib/fonts'
-import { ASCENT_RATIO, LINE_HEIGHT } from '@/lib/fonts'
+import { ASCENT_RATIO, LINE_HEIGHT, familyForFont } from '@/lib/fonts'
 
 describe('the curated font set', () => {
   it('has a default that is actually in the set', () => {
@@ -376,5 +376,33 @@ describe('every face of every family', () => {
     } finally {
       globalThis.fetch = original
     }
+  })
+})
+
+describe('familyForFont', () => {
+  const cases: Array<[string, string]> = [
+    ['ABCDEF+Outfit-Regular', 'Outfit'],
+    ['Outfit', 'Outfit'],
+    ['CormorantGaramond-BoldItalic', 'Cormorant Garamond'],
+    ['ABCDEF+Poppins-SemiBold', 'Poppins'],
+    ['PlayfairDisplay-Bold', 'Playfair Display'],
+    ['Roboto-Regular', 'Roboto'],
+    ['RobotoMono-Medium', 'Roboto Mono'],
+    ['ArialMT', 'Arimo'],
+    ['Arial-BoldMT', 'Arimo'],
+    ['TimesNewRomanPS-BoldMT', 'Tinos'],
+    ['CourierNewPSMT', 'Cousine'],
+    ['Georgia-Italic', 'Gelasio'],
+  ]
+  for (const [name, family] of cases) {
+    it(`${name} is ${family}`, () => expect(familyForFont(name)).toBe(family))
+  }
+
+  it('gives Inter to a font it does not carry, and to a lookalike name', () => {
+    expect(familyForFont('Calibri-Bold')).toBe('Inter')
+    expect(familyForFont('')).toBe('Inter')
+    // A different face that merely starts with a family's name.
+    expect(familyForFont('InterDisplay-Regular')).toBe('Inter')
+    expect(familyForFont('OutfitSlab-Regular')).toBe('Inter')
   })
 })

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { familyForFont } from '@/lib/fonts'
 import { buildReplacements } from '@/features/find/buildReplacements'
 import type { PageMatch } from '@/stores/find'
 import type { Quad, TextPatchObject } from '@margin/pdf-core'
@@ -16,6 +17,7 @@ function match(over: Partial<PageMatch> = {}): PageMatch {
     end,
     text: lineText.slice(start, end),
     lineText,
+    font: 'Helvetica',
     weight: 400,
     italic: false,
     size: 12,
@@ -147,6 +149,14 @@ describe('buildReplacements over a line that is already patched', () => {
 })
 
 describe('buildReplacements', () => {
+  it('draws the patch in the family the line is already set in, when we carry it', () => {
+    const familyOf = familyForFont
+    const plan = buildReplacements([match({ font: 'ABCDEF+Outfit-Regular' })], 'a', ctx({ familyOf }))
+    expect(plan.patches[0]!.fontFamily).toBe('Outfit')
+    const other = buildReplacements([match({ font: 'Calibri' })], 'a', ctx({ familyOf }))
+    expect(other.patches[0]!.fontFamily).toBe('Inter')
+  })
+
   it('turns one match into one patch', () => {
     const plan = buildReplacements([match()], 'a', ctx())
     expect(plan.patches).toHaveLength(1)

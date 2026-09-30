@@ -23,6 +23,8 @@ export type Match = {
    * work the search has already done.
    */
   lineText: string
+  /** The PostScript name of the line's font. See `LineRun.font`. */
+  font: string
   /**
    * The CSS weight the line is set in. See `LineRun.weight`.
    *
@@ -163,6 +165,7 @@ export function findInPage(
           end,
           text: source.slice(start, end),
           lineText: source,
+          font: line.font,
           weight: line.weight,
           italic: line.italic,
           size: line.size,

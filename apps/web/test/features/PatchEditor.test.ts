@@ -267,6 +267,19 @@ describe('PatchEditor', () => {
     expect(patch.background).toEqual([1, 1, 1])
   })
 
+  it('takes the family the line is set in when we carry it, and Inter when we do not', async () => {
+    for (const [font, family] of [['ABCDEF+Outfit-Regular', 'Outfit'], ['Calibri', 'Inter']] as const) {
+      const edits = seed()
+      vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+      const index = indexOf('Original line')
+      index.lines[0]!.font = font
+      const w = mountEditor(index)
+      await w.get('[data-patch-target="0"]').trigger('click')
+      expect(patches(edits)[0]!.fontFamily).toBe(family)
+      w.unmount()
+    }
+  })
+
   it('selects that layer, so the inspector offers its font, weight, size and colour', async () => {
     const edits = seed()
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())

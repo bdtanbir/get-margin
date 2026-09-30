@@ -94,6 +94,40 @@ export const LINE_HEIGHT = 1.2
 const entry = (family: string): FontEntry | undefined =>
   ALL_FACES.find((f) => f.family === family)
 
+const squash = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/** Style and foundry suffixes that follow a family in a PostScript name. */
+const STYLE_TAIL =
+  /^(ps|mt|regular|book|normal|roman|thin|hairline|extralight|ultralight|light|medium|semibold|demibold|bold|extrabold|ultrabold|black|heavy|italic|oblique|it)*$/
+
+/**
+ * The family in our set that a document's font is, or DEFAULT_FAMILY.
+ *
+ * `name` is the PostScript name MuPDF reports for a line's font --
+ * `ABCDEF+Outfit-Regular`, `CormorantGaramond-BoldItalic`,
+ * `TimesNewRomanPS-BoldMT`. The subset tag is dropped and what is left is
+ * matched against each family's name, its file stem and the proprietary face
+ * it stands in for, so Arial lands on Arimo and Times New Roman on Tinos.
+ * What follows the family must be nothing but style words: "Inter" is a
+ * prefix of "InterDisplay", which is a different face, and taking it for
+ * Inter would be a wrong answer presented as a match.
+ *
+ * The longest matching name wins, so "Roboto Mono" is not read as "Roboto".
+ * A font we do not carry gets Inter, which is what a patch used before it
+ * knew anything about the line.
+ */
+export function familyForFont(name: string): FontFamily {
+  const bare = squash(name.replace(/^[A-Z]{6}\+/, ''))
+  let best: { family: string; length: number } | undefined
+  for (const f of FONTS) {
+    for (const key of [f.family, f.base, f.alias ?? ''].map(squash)) {
+      if (!key || !bare.startsWith(key) || key.length <= (best?.length ?? 0)) continue
+      if (STYLE_TAIL.test(bare.slice(key.length))) best = { family: f.family, length: key.length }
+    }
+  }
+  return best?.family ?? DEFAULT_FAMILY
+}
+
 /**
  * What the weights are called, for the picker. CSS's own names, which are
  * also what the type designers call them.

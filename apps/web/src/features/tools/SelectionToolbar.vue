@@ -12,7 +12,7 @@ import { useDocumentStore } from '@/stores/document'
 import { useEditsStore } from '@/stores/edits'
 import { useSelectionStore } from '@/stores/selection'
 import { useViewportStore } from '@/stores/viewport'
-import { DEFAULT_FAMILY } from '@/lib/fonts'
+import { familyForFont } from '@/lib/fonts'
 import { askForUri, normalizeUri } from '@/lib/linkUrl'
 import { sampleBackground } from '@/features/patch/sampleBackground'
 import {
@@ -374,7 +374,7 @@ function toggleStyle(axis: 'bold' | 'italic'): void {
         pageId: props.page.id,
         lineIndex: index,
         line,
-        fontFamily: DEFAULT_FAMILY,
+        fontFamily: familyForFont(line.font),
         style: { ...documentStyle(line), ...change(axis, next) },
         background: sampleBackground(bitmap, lineBox(line), bitmap ? bitmap.scale : 1),
         z: edits.nextZ(),
@@ -422,7 +422,7 @@ function moveLine(): void {
         pageId: props.page.id,
         lineIndex: index,
         line,
-        fontFamily: DEFAULT_FAMILY,
+        fontFamily: familyForFont(line.font),
         style: documentStyle(line),
         background: sampleBackground(bitmap, lineBox(line), bitmap ? bitmap.scale : 1),
         z: edits.nextZ(),

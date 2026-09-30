@@ -6,7 +6,7 @@ import { useFindStore } from '@/stores/find'
 import { useViewportStore } from '@/stores/viewport'
 import { useEditsStore } from '@/stores/edits'
 import { useViewportStore as useVp } from '@/stores/viewport'
-import { DEFAULT_FAMILY } from '@/lib/fonts'
+import { DEFAULT_FAMILY, familyForFont } from '@/lib/fonts'
 import { sampleBackground } from '@/features/patch/sampleBackground'
 import { patchOnLine } from '@/features/patch/linePatch'
 import { buildReplacements } from './buildReplacements'
@@ -120,6 +120,7 @@ function apply(matches: PageMatch[], label: string): void {
     patchOnLine: (pageId, lineIndex) =>
       patchOnLine(Object.values(edits.doc.objects), pageId, lineIndex),
     fontFamily: DEFAULT_FAMILY,
+    familyOf: familyForFont,
     nextZ: () => edits.nextZ(),
   })
 

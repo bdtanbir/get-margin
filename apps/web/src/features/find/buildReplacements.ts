@@ -17,6 +17,8 @@ export type ReplacementContext = {
    */
   patchOnLine: (pageId: string, lineIndex: number) => TextPatchObject | undefined
   fontFamily: string
+  /** The family a line's own font is, when we carry it; `fontFamily` otherwise. */
+  familyOf?: (font: string) => string
   nextZ: () => number
 }
 
@@ -152,7 +154,7 @@ export function buildReplacements(
       originalHash: hashText(original),
       originalText: original,
       text,
-      fontFamily: ctx.fontFamily,
+      fontFamily: ctx.familyOf?.(first.font) ?? ctx.fontFamily,
       // The weight and slope the line is already set in, so Replace All
       // does not un-bold or straighten every heading it touches. The match
       // carries them out of the extraction for exactly this.

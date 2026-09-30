@@ -13,6 +13,7 @@ import { getPdfClient } from '@/workers/pdfClient'
 import {
   fontsForExport, measureText, cssFamily, cssWeight, cssStyle, faceKey, loadFont,
   DEFAULT_FAMILY,
+  familyForFont,
 } from '@/lib/fonts'
 import { rgb } from '@/features/overlay/objects/svgPaint'
 import { noZoomTextSize } from '@/lib/textFieldZoom'
@@ -69,6 +70,17 @@ const draft = ref('')
  * document started with.
  */
 const weight = ref(400)
+/**
+ * The family the replacement is drawn in: the one the line's own font is,
+ * when it is in our set, and Inter when it is not. The patch's own family
+ * once it has one, read live from the store, so a change made in the
+ * inspector while the field is open is the family typed in.
+ */
+const seededFamily = ref(DEFAULT_FAMILY)
+const family = computed(() => {
+  const stored = editingId.value ? edits.doc.objects[editingId.value] : undefined
+  return (stored && 'fontFamily' in stored && stored.fontFamily) || seededFamily.value
+})
 /**
  * The size the replacement will be set in, in page units.
  *
@@ -222,7 +234,7 @@ const face = computed(() => ({ weight: weight.value, italic: italic.value }))
 const inputWidth = computed(() => {
   const b = drawnAt.value
   if (!b) return 0
-  const measured = measureText(draft.value || ' ', DEFAULT_FAMILY, editSize.value, face.value)
+  const measured = measureText(draft.value || ' ', family.value, editSize.value, face.value)
   // A little slack so the caret at the end of the text is never against the
   // border, and a floor so an emptied field stays clickable.
   const wanted = Math.max(b.w, measured + editSize.value, 40)
@@ -290,7 +302,7 @@ const style = computed(() => {
     // width it will be measured at rather than whatever the UI font happens
     // to be. Bold glyphs are wider; typing into a regular field and getting
     // bold on commit would move the text you were just looking at.
-    fontFamily: cssFamily(DEFAULT_FAMILY),
+    fontFamily: cssFamily(family.value),
     fontWeight: cssWeight(weight.value),
     fontStyle: cssStyle(italic.value),
     // The line's own colour, not the UI's text colour. What is being typed
@@ -347,7 +359,7 @@ function ensurePatch(lineIndex: number): TextPatchObject | undefined {
     pageId: props.page.id,
     lineIndex,
     line: l,
-    fontFamily: DEFAULT_FAMILY,
+    fontFamily: familyForFont(l.font),
     style: documentStyle(l),
     background: background.value,
     z: edits.nextZ(),
@@ -367,6 +379,7 @@ async function begin(lineIndex: number): Promise<void> {
   // having been lost.
   const existing = ensurePatch(lineIndex)
   editingId.value = existing?.id
+  seededFamily.value = familyForFont(props.index?.lines[lineIndex]?.font ?? '')
   if (existing) edits.select([existing.id])
   draft.value = existing ? existing.text : originalText.value
   const line = props.index?.lines[lineIndex]
@@ -395,7 +408,7 @@ async function begin(lineIndex: number): Promise<void> {
   // the file the browser fakes the weight by stroking whatever it does
   // have, and the fake is a different width from the one that will be
   // exported.
-  await loadFont(DEFAULT_FAMILY, face.value)
+  await loadFont(family.value, face.value)
   await nextTick()
   input.value?.focus()
   input.value?.select()
@@ -430,13 +443,13 @@ function cancel(): void {
  * .notdef rather than failing, so without this a patch silently becomes a
  * row of empty boxes.
  */
-watch([draft, weight, italic], async ([text]) => {
+watch([draft, weight, italic, family], async ([text]) => {
   if (text === '') { missing.value = []; return }
   try {
     // The FACE that will actually be drawn: a bold file is a different font
     // program with its own coverage, so checking the regular would answer a
     // question nobody asked.
-    const key = faceKey(DEFAULT_FAMILY, face.value)
+    const key = faceKey(family.value, face.value)
     const bytes = (await fontsForExport([key])).get(key)
     if (!bytes) { missing.value = []; return }
     missing.value = await getPdfClient().missingGlyphs(bytes, key, text)
@@ -520,7 +533,7 @@ function commit(): void {
     pageId: props.page.id,
     lineIndex: at,
     line: l,
-    fontFamily: DEFAULT_FAMILY,
+    fontFamily: familyForFont(l.font),
     style: {
       weight: weight.value, italic: italic.value, fontSize: size.value, color: color.value,
     },
