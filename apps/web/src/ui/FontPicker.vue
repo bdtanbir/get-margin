@@ -38,7 +38,7 @@ function onOpen(open: boolean): void {
     data-font-picker
     :model-value="props.modelValue"
     :disabled="props.disabled"
-    @update:model-value="(v) => emit('update:modelValue', String(v))"
+    @update:model-value="(v: unknown) => emit('update:modelValue', String(v))"
     @update:open="onOpen"
   >
     <SelectTrigger
