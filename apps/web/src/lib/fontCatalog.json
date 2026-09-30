@@ -77,6 +77,20 @@
       "alias": "Comic Sans MS"
     },
     {
+      "family": "Cormorant Garamond",
+      "base": "CormorantGaramond",
+      "query": "Cormorant+Garamond",
+      "fallback": "serif",
+      "weights": [
+        300,
+        400,
+        500,
+        600,
+        700
+      ],
+      "italic": true
+    },
+    {
       "family": "Cousine",
       "base": "Cousine",
       "query": "Cousine",
@@ -254,6 +268,23 @@
       "italic": false
     },
     {
+      "family": "Outfit",
+      "base": "Outfit",
+      "query": "Outfit",
+      "fallback": "sans-serif",
+      "weights": [
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800
+      ],
+      "italic": false
+    },
+    {
       "family": "Pacifico",
       "base": "Pacifico",
       "query": "Pacifico",
@@ -269,6 +300,23 @@
       "query": "Playfair+Display",
       "fallback": "serif",
       "weights": [
+        400,
+        500,
+        600,
+        700,
+        800
+      ],
+      "italic": true
+    },
+    {
+      "family": "Poppins",
+      "base": "Poppins",
+      "query": "Poppins",
+      "fallback": "sans-serif",
+      "weights": [
+        100,
+        200,
+        300,
         400,
         500,
         600,

@@ -10,7 +10,7 @@ The catalogue is `src/lib/fontCatalog.json`: the fetch script reads it to know
 what to download, the app reads it to know what to offer, and the test in
 `test/lib/fonts.test.ts` checks that every file the catalogue claims exists,
 every file that exists is claimed, and every file declares the style its name
-says. 236 files, 11.3 MB, fetched on demand -- a document pays only for
+says. 270 files, 14 MB, fetched on demand -- a document pays only for
 the faces it uses.
 
 ## Body faces
@@ -35,6 +35,7 @@ picker shows both names.
 | Comfortaa | `Comfortaa-<weight>.ttf` | 300, 400, 500, 600, 700 | no | Copyright 2011 The Comfortaa Project Authors (https://github.com/alexeiva/comfortaa), with Reserved Font Name "Comfortaa". |
 | Comic Neue (stands in for Comic Sans MS) | `ComicNeue-<weight>.ttf`, `ComicNeue-<weight>Italic.ttf` | 300, 400, 700 | yes | Copyright 2014 The Comic Neue Project Authors (https://github.com/crozynski/comicneue) |
 | Cousine (stands in for Courier New) | `Cousine-<weight>.ttf`, `Cousine-<weight>Italic.ttf` | 400, 700 | yes | Copyright 2026 The Cousine Project Authors (https://github.com/googlefonts/cousine) |
+| Cormorant Garamond | `CormorantGaramond-<weight>.ttf`, `CormorantGaramond-<weight>Italic.ttf` | 300, 400, 500, 600, 700 | yes | Copyright 2015 The Cormorant Project Authors (github.com/CatharsisFonts/Cormorant) |
 | EB Garamond | `EBGaramond-<weight>.ttf`, `EBGaramond-<weight>Italic.ttf` | 400, 500, 600, 700, 800 | yes | Copyright 2017 The EB Garamond Project Authors (https://github.com/octaviopardo/EBGaramond12) |
 | Gelasio (stands in for Georgia) | `Gelasio-<weight>.ttf`, `Gelasio-<weight>Italic.ttf` | 400, 500, 600, 700 | yes | Copyright 2022 The Gelasio Project Authors (https://github.com/SorkinType/Gelasio) |
 | Inter | `Inter-<weight>.ttf`, `Inter-<weight>Italic.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter) |
@@ -46,8 +47,10 @@ picker shows both names.
 | Montserrat | `Montserrat-<weight>.ttf`, `Montserrat-<weight>Italic.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2011 The Montserrat Project Authors (https://github.com/JulietaUla/Montserrat) |
 | Nunito | `Nunito-<weight>.ttf`, `Nunito-<weight>Italic.ttf` | 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito) |
 | Oswald | `Oswald-<weight>.ttf` | 200, 300, 400, 500, 600, 700 | no | Copyright 2016 The Oswald Project Authors (https://github.com/googlefonts/OswaldFont) |
+| Outfit | `Outfit-<weight>.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | no | Copyright 2021 The Outfit Project Authors (https://github.com/Outfitio/Outfit-Fonts) |
 | Pacifico | `Pacifico-<weight>.ttf` | 400 | no | Copyright 2018 The Pacifico Project Authors (https://github.com/googlefonts/Pacifico) |
 | Playfair Display | `PlayfairDisplay-<weight>.ttf`, `PlayfairDisplay-<weight>Italic.ttf` | 400, 500, 600, 700, 800 | yes | Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfair-Display), with Reserved Font Name "Playfair Display". |
+| Poppins | `Poppins-<weight>.ttf`, `Poppins-<weight>Italic.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins) |
 | Roboto | `Roboto-<weight>.ttf`, `Roboto-<weight>Italic.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2011 The Roboto Project Authors (https://github.com/googlefonts/roboto-classic) |
 | Roboto Mono | `RobotoMono-<weight>.ttf`, `RobotoMono-<weight>Italic.ttf` | 100, 200, 300, 400, 500, 600, 700 | yes | Copyright 2015 The Roboto Mono Project Authors (https://github.com/googlefonts/robotomono) |
 | Roboto Serif | `RobotoSerif-<weight>.ttf`, `RobotoSerif-<weight>Italic.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2020 The Roboto Serif Project Authors (https://github.com/googlefonts/RobotoSerif) |
