@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
+import FontPicker from '@/ui/FontPicker.vue'
 import Inspector from '@/features/tools/Inspector.vue'
 import { useEditsStore } from '@/stores/edits'
 import { useDocumentStore } from '@/stores/document'
@@ -483,7 +484,8 @@ describe('Inspector weight controls', () => {
     }, 'add')
     edits.select(['t1'])
     const w = mount(Inspector)
-    await w.get('[data-field="fontFamily"]').get('select').setValue('Lobster')
+    w.getComponent(FontPicker).vm.$emit('update:modelValue', 'Lobster')
+    await w.vm.$nextTick()
     const o = edits.doc.objects.t1 as { fontFamily: string; weight?: number; italic?: boolean }
     expect(o.fontFamily).toBe('Lobster')
     expect(o.weight).toBe(400)

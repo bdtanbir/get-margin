@@ -6,6 +6,7 @@ import { ChevronLeft } from 'lucide-vue-next'
 import { fieldsFor, patchFor, toDisplay, fromDisplay, type Field } from './inspectorFields'
 import { toHex, fromHex } from './colorInput'
 import TabOrderList from './TabOrderList.vue'
+import FontPicker from '@/ui/FontPicker.vue'
 import LayersPanel from '@/features/layers/LayersPanel.vue'
 import { layerLabel } from '@/features/layers/layerLabel'
 
@@ -45,6 +46,13 @@ function onSelect(field: Field, e: Event): void {
   const o = selected.value
   if (!o) return
   writePatch(patchFor(o, field, (e.target as HTMLSelectElement).value))
+  onCommit(field)
+}
+
+function onFamily(field: Field, family: string): void {
+  const o = selected.value
+  if (!o) return
+  writePatch(patchFor(o, field, family))
   onCommit(field)
 }
 
@@ -200,8 +208,17 @@ function handleInput(field: Field, e: Event): void {
       >
         <label :for="`insp-${f.key}`" class="text-[13px] text-text-muted">{{ f.label }}</label>
 
+        <FontPicker
+          v-if="f.type === 'select' && f.key === 'fontFamily'"
+          :id="`insp-${f.key}`"
+          :disabled="selected.locked"
+          :model-value="String(valueOf(f.key))"
+          :options="f.options"
+          @update:model-value="(v) => onFamily(f, v)"
+        />
+
         <select
-          v-if="f.type === 'select'"
+          v-else-if="f.type === 'select'"
           :id="`insp-${f.key}`"
           class="min-h-8 rounded-control border border-border bg-surface-sunken px-2 text-[13px]"
           :disabled="selected.locked"
