@@ -49,7 +49,7 @@ the weights the chosen family has, hides Italic for a family without one,
 and a family change snaps the weight and slope to the nearest face the new
 family has, in the same undo step.
 
-That is 270 files, 14 MB in the repo. Still fetched on demand, so a document
+That is 275 files, 14 MB in the repo. Still fetched on demand, so a document
 pays only for the faces it uses. The test that reads each file's own OS/2
 table asserts every file's `usWeightClass` matches the weight in its name
 (Inter's two lightest declare 250, so those are held to "under 300"), that

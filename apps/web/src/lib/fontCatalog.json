@@ -131,6 +131,16 @@
       "alias": "Georgia"
     },
     {
+      "family": "Herr Von Muellerhoff",
+      "base": "HerrVonMuellerhoff",
+      "query": "Herr+Von+Muellerhoff",
+      "fallback": "cursive",
+      "weights": [
+        400
+      ],
+      "italic": false
+    },
+    {
       "family": "Inter",
       "base": "Inter",
       "query": "Inter",
@@ -220,6 +230,16 @@
       "italic": true
     },
     {
+      "family": "Monsieur La Doulaise",
+      "base": "MonsieurLaDoulaise",
+      "query": "Monsieur+La+Doulaise",
+      "fallback": "cursive",
+      "weights": [
+        400
+      ],
+      "italic": false
+    },
+    {
       "family": "Montserrat",
       "base": "Montserrat",
       "query": "Montserrat",
@@ -235,6 +255,26 @@
         800
       ],
       "italic": true
+    },
+    {
+      "family": "Mr De Haviland",
+      "base": "MrDeHaviland",
+      "query": "Mr+De+Haviland",
+      "fallback": "cursive",
+      "weights": [
+        400
+      ],
+      "italic": false
+    },
+    {
+      "family": "Mrs Saint Delafield",
+      "base": "MrsSaintDelafield",
+      "query": "Mrs+Saint+Delafield",
+      "fallback": "cursive",
+      "weights": [
+        400
+      ],
+      "italic": false
     },
     {
       "family": "Nunito",
@@ -374,6 +414,16 @@
         800
       ],
       "italic": true
+    },
+    {
+      "family": "Sacramento",
+      "base": "Sacramento",
+      "query": "Sacramento",
+      "fallback": "cursive",
+      "weights": [
+        400
+      ],
+      "italic": false
     },
     {
       "family": "Source Serif 4",
