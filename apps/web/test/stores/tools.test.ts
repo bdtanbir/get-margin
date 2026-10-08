@@ -6,8 +6,8 @@ import { useEditsStore } from '@/stores/edits'
 describe('useToolsStore', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
-  it('starts on the select tool', () => {
-    expect(useToolsStore().active).toBe('select')
+  it('starts on the Edit text tool', () => {
+    expect(useToolsStore().active).toBe('patch')
   })
 
   it('switches tools', () => {

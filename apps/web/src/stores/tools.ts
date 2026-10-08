@@ -33,7 +33,9 @@ export type Draft = { pageId: string; rect: Rect }
  * through edits.applyOp and this store forgets it.
  */
 export const useToolsStore = defineStore('tools', () => {
-  const active = ref<ToolId>('select')
+  // Edit text is the default: opening a document most often means fixing the
+  // words it already has, so that is one click fewer.
+  const active = ref<ToolId>('patch')
   /**
    * Which kind of field the field tool draws next. Lives here rather than
    * in edit history: it is a tool setting, not a document edit.
