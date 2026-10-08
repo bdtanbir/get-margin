@@ -59,4 +59,23 @@ describe('PasswordPrompt', () => {
     await w.vm.$nextTick()
     expect((w.find('input').element as HTMLInputElement).value).toBe('')
   })
+
+  it('unlocks and downloads a copy from the entered password', async () => {
+    const doc = useDocumentStore()
+    const spy = vi.spyOn(doc, 'unlockAndDownload').mockResolvedValue()
+    const open = vi.spyOn(doc, 'submitPassword').mockResolvedValue()
+    const w = mount(PasswordPrompt)
+    await w.find('input').setValue('hunter2')
+    await w.get('[data-unlock-download]').trigger('click')
+    expect(spy).toHaveBeenCalledWith('hunter2')
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('does not unlock with an empty password', async () => {
+    const doc = useDocumentStore()
+    const spy = vi.spyOn(doc, 'unlockAndDownload').mockResolvedValue()
+    const w = mount(PasswordPrompt)
+    await w.get('[data-unlock-download]').trigger('click')
+    expect(spy).not.toHaveBeenCalled()
+  })
 })

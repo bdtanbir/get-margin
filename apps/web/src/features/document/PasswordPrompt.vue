@@ -8,11 +8,12 @@ const doc = useDocumentStore()
 const password = ref('')
 const busy = ref(false)
 
-async function submit(): Promise<void> {
+async function submit(unlockCopy = false): Promise<void> {
   if (!password.value) return
   busy.value = true
   try {
-    await doc.submitPassword(password.value)
+    if (unlockCopy) await doc.unlockAndDownload(password.value)
+    else await doc.submitPassword(password.value)
   } finally {
     busy.value = false
     // Never keep the value around after an attempt (spec §4: passwords in
@@ -30,7 +31,7 @@ async function submit(): Promise<void> {
   <div class="flex h-dvh w-full items-center justify-center bg-canvas p-6">
     <form
       class="flex w-full max-w-sm flex-col gap-4 rounded-panel border border-border bg-surface p-6 shadow-low"
-      @submit.prevent="submit"
+      @submit.prevent="submit()"
     >
       <div class="flex items-center gap-2.5">
         <div class="rounded-full bg-surface-sunken p-2 text-text-muted">
@@ -56,6 +57,13 @@ async function submit(): Promise<void> {
 
       <div class="flex justify-end gap-2">
         <Button variant="ghost" size="sm" @click="doc.reset()">Choose another file</Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          data-unlock-download
+          :disabled="busy"
+          @click="submit(true)"
+        >Unlock &amp; download</Button>
         <Button variant="primary" size="sm" type="submit" :loading="busy">Open</Button>
       </div>
     </form>

@@ -9,6 +9,7 @@ import { useEditsStore } from '@/stores/edits'
 import { useFieldsStore } from '@/stores/fields'
 import { usePageSelectionStore } from '@/stores/pageSelection'
 import { useAutosaveStore } from '@/stores/autosave'
+import { downloadBytes, pdfFileName } from '@/lib/exportFile'
 
 export type PageId = string
 export type SourceId = string
@@ -339,6 +340,29 @@ export const useDocumentStore = defineStore('document', {
         // Stay in needs-password so the user can retry without re-picking the file.
         this.status = 'needs-password'
         this.error = e instanceof Error ? e.message : 'Incorrect password'
+      }
+    },
+
+    /**
+     * Open a protected file with its password and download a copy with the
+     * password removed, in one step.
+     *
+     * The password still has to be right: this authenticates exactly as
+     * submitPassword does, then saves with the protection dropped (the
+     * writer reopens its own output and refuses to hand back a file that
+     * still demands a password). The document stays open afterwards, so
+     * nothing is lost if the user wanted to edit it too.
+     */
+    async unlockAndDownload(password: string): Promise<void> {
+      await this.submitPassword(password)
+      if (this.status !== 'ready') return // wrong password or too large; error already set
+      try {
+        const bytes = await getPdfClient().save(
+          useEditsStore().doc, new Map(), undefined, undefined, undefined, true,
+        )
+        downloadBytes(bytes, pdfFileName(this.fileName))
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : 'The password could not be removed.'
       }
     },
 
