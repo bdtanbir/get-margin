@@ -4,7 +4,9 @@ import IconButton from '@/ui/IconButton.vue'
 import Tooltip from '@/ui/Tooltip.vue'
 import { useToolsStore } from '@/stores/tools'
 import { useDialogsStore } from '@/stores/dialogs'
+import ToolPreview from './ToolPreview.vue'
 import { TOOLS } from './toolList'
+import { PREVIEW_HINTS } from './toolPreviews'
 
 const tools = useToolsStore()
 const dialogs = useDialogsStore()
@@ -25,6 +27,8 @@ const dialogs = useDialogsStore()
     -->
     <div class="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto scrollbar-none">
       <Tooltip v-for="t in TOOLS" :key="t.id" :content="t.label" side="right">
+        <template #preview><ToolPreview :tool="t.id" /></template>
+        <template #hint>{{ PREVIEW_HINTS[t.id] }}</template>
         <!--
           aria-pressed is left to IconButton, which derives it from `active`.
           Setting it here as well would make it a fallthrough attribute that
