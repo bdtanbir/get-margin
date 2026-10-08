@@ -29,6 +29,7 @@ export function looksLikePdf(bytes: Uint8Array): boolean {
 export class PdfDocument {
   #doc: mupdf.PDFDocument | undefined
   #geometryCache = new Map<number, PageGeometry>()
+  #authenticated = false
 
   private constructor(doc: mupdf.PDFDocument) {
     this.#doc = doc
@@ -53,14 +54,24 @@ export class PdfDocument {
     return this.#live().countPages()
   }
 
+  /**
+   * True while the document is still locked.
+   *
+   * MuPDF's own needsPassword() keeps returning true AFTER a successful
+   * authenticatePassword, so it cannot be asked twice. Callers building a
+   * DocumentInfo after authenticating got pageCount 0 and an empty page
+   * list for a perfectly open document -- a blank editor.
+   */
   needsPassword(): boolean {
-    return this.#live().needsPassword()
+    return !this.#authenticated && this.#live().needsPassword()
   }
 
   /** Returns true if the password was accepted. */
   authenticate(password: string): boolean {
     // MuPDF returns 0 on failure, non-zero for various success flavours.
-    return Boolean(this.#live().authenticatePassword(password))
+    const ok = Boolean(this.#live().authenticatePassword(password))
+    if (ok) this.#authenticated = true
+    return ok
   }
 
   pageGeometry(index: number): PageGeometry {

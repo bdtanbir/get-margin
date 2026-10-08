@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import * as mupdf from 'mupdf'
-import { PdfDocument, PdfOpenError, looksLikePdf } from '../src/index.js'
+import { PdfDocument, PdfOpenError, looksLikePdf, protectedSave } from '../src/index.js'
 import { generateFixtures, fixturePath } from './fixtures/index.js'
 
 beforeAll(async () => { await generateFixtures() }, 60_000)
@@ -24,6 +24,28 @@ describe('PdfDocument.open', () => {
   it('reports no password needed for a plain document', () => {
     const doc = PdfDocument.open(bytes('simple-text'))
     expect(doc.needsPassword()).toBe(false)
+    doc.close()
+  })
+
+  /**
+   * MuPDF keeps answering needsPassword() === true AFTER a successful
+   * authenticatePassword, so the worker's DocumentInfo reported 0 pages for
+   * an open document and the editor came up blank. needsPassword() must mean
+   * "still locked".
+   */
+  it('stops needing a password once authenticated', () => {
+    const plain = mupdf.PDFDocument.openDocument(bytes('simple-text'), 'application/pdf') as mupdf.PDFDocument
+    const locked = protectedSave(
+      plain, { userPassword: 'pw', ownerPassword: '', permissions: ['print'] }, 'compress',
+    )
+    plain.destroy()
+    const doc = PdfDocument.open(locked)
+    expect(doc.needsPassword()).toBe(true)
+    expect(doc.authenticate('wrong')).toBe(false)
+    expect(doc.needsPassword()).toBe(true)
+    expect(doc.authenticate('pw')).toBe(true)
+    expect(doc.needsPassword()).toBe(false)
+    expect(doc.pageCount).toBe(1)
     doc.close()
   })
 
