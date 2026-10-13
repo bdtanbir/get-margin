@@ -4,6 +4,7 @@ import { X } from 'lucide-vue-next'
 import IconButton from '@/ui/IconButton.vue'
 import { useFocusTrap } from '@/lib/useFocusTrap'
 import { TOOLS } from '@/features/tools/toolList'
+import ToolPreview from '@/features/tools/ToolPreview.vue'
 import { TOOL_DOCS } from './toolGuide'
 
 /**
@@ -55,7 +56,7 @@ useFocusTrap(surface, { onEscape: () => emit('close') })
           v-for="(tool, i) in TOOLS"
           :key="tool.id"
           :data-tool-doc="tool.id"
-          class="flex gap-3 border-t border-border py-4 first:border-t-0 first:pt-0"
+          class="flex flex-wrap gap-3 border-t border-border py-4 first:border-t-0 first:pt-0"
         >
           <!--
             The icon is the thing the user is actually looking for, so it is
@@ -71,7 +72,7 @@ useFocusTrap(surface, { onEscape: () => emit('close') })
             <component :is="tool.icon" :size="16" :stroke-width="1.5" />
           </div>
 
-          <div class="min-w-0 space-y-1.5">
+          <div class="min-w-0 flex-1 basis-56 space-y-1.5">
             <h3 class="text-[14px] font-medium">
               <span class="text-text-subtle tabular-nums">{{ i + 1 }}.</span>
               {{ tool.label }}
@@ -90,6 +91,19 @@ useFocusTrap(surface, { onEscape: () => emit('close') })
               :data-tool-caution="tool.id"
               class="border-l-2 border-warning py-0.5 pl-2.5 text-[13px] text-text-muted"
             >{{ TOOL_DOCS[tool.id].caution }}</p>
+          </div>
+
+          <!--
+            The same looping drawing the rail's hover card shows. Decorative:
+            the prose beside it says everything it does. Wraps under the text
+            on a narrow screen rather than squeezing it.
+          -->
+          <div
+            class="w-40 shrink-0 self-start overflow-hidden rounded-control bg-surface-sunken
+                   max-sm:ml-11"
+            aria-hidden="true"
+          >
+            <ToolPreview :tool="tool.id" />
           </div>
         </li>
       </ol>
