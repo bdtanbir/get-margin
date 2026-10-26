@@ -153,3 +153,29 @@ describe('a moved text patch', () => {
     expect(moved.text.content).toBe(long)
   })
 })
+
+describe('a patch in more than one style', () => {
+  const svgMount = (o: TextPatchObject) =>
+    mount({ components: { TextPatchObjectView }, template: '<svg><TextPatchObjectView :object="o" /></svg>', data: () => ({ o }) })
+
+  it('draws each piece with its own weight, size and baseline', () => {
+    const w = svgMount(patch({
+      text: 'Hi Arafat 14th',
+      spans: [{ text: 'Hi ' }, { text: 'Arafat', weight: 700 }, { text: ' 14' }, { text: 'th', scale: 0.5, rise: 0.25 }],
+    }))
+    const runs = w.findAll('[data-patch-run]')
+    expect(runs.map((r) => r.element.textContent)).toEqual(['Hi ', 'Arafat', ' 14', 'th'])
+    expect(runs[1]!.attributes('font-weight')).toBe('700')
+    expect(runs[0]!.attributes('font-weight')).toBe('400')
+    expect(runs[3]!.attributes('font-size')).toBe('6')
+    // 3pt above the 114 baseline.
+    expect(runs[3]!.attributes('y')).toBe('111')
+    expect(runs[2]!.attributes('y')).toBe('114')
+  })
+
+  it('draws a one-style patch as plain text, as before', () => {
+    const w = svgMount(patch())
+    expect(w.findAll('[data-patch-run]')).toHaveLength(0)
+    expect(w.get('text').text()).toBe('Replacement')
+  })
+})

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PatchEditor from '@/features/patch/PatchEditor.vue'
 import { useEditsStore } from '@/stores/edits'
@@ -10,6 +10,18 @@ import {
 } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
 import { forgetReplacements } from '@/lib/fontMatch'
+
+
+/**
+ * Replace the field's text, as selecting everything and typing would. The
+ * field is an editable element, not an <input>, so `setValue` does not
+ * apply: the text goes in and the browser's `input` event follows.
+ */
+async function typeInto(w: VueWrapper, text: string): Promise<void> {
+  const field = w.get('[data-patch-input]')
+  field.element.textContent = text
+  await field.trigger('input')
+}
 
 const missingGlyphs = vi.fn<() => Promise<string[]>>()
 vi.mock('@/workers/pdfClient', () => ({
@@ -108,7 +120,7 @@ describe('PatchEditor', () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
 
-    const input = w.get('[data-patch-input]').element as HTMLInputElement
+    const input = w.get('[data-patch-input]').element as HTMLElement
     expect(input.style.backgroundColor).toBe('rgb(255, 255, 255)')
     // Not merely "some inline colour": the theme token must be gone, or a
     // dark theme would still win wherever the inline value is absent.
@@ -124,7 +136,7 @@ describe('PatchEditor', () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
 
-    const input = w.get('[data-patch-input]').element as HTMLInputElement
+    const input = w.get('[data-patch-input]').element as HTMLElement
     expect(input.style.backgroundColor).toBe('rgb(200, 200, 200)')
   })
 
@@ -140,7 +152,7 @@ describe('PatchEditor', () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
 
-    const input = w.get('[data-patch-input]').element as HTMLInputElement
+    const input = w.get('[data-patch-input]').element as HTMLElement
     expect(Number.parseFloat(input.style.fontSize)).toBeGreaterThanOrEqual(16)
     // 12px asked for, 16px declared, so the element is drawn at 0.75.
     expect(input.style.transform).toContain('scale(0.75)')
@@ -156,7 +168,7 @@ describe('PatchEditor', () => {
   it('opens an input with the line’s current text selected', async () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    expect((w.get('[data-patch-input]').element as HTMLInputElement).value).toBe('Original line')
+    expect((w.get('[data-patch-input]').element as HTMLElement).textContent).toBe('Original line')
   })
 
   /**
@@ -175,7 +187,7 @@ describe('PatchEditor', () => {
       Number(/width:\s*([\d.]+)px/.exec(w.get('[data-patch-input]').attributes('style') ?? '')?.[1] ?? 0)
 
     const before = width()
-    await w.get('[data-patch-input]').setValue('something considerably longer than Notes')
+    await typeInto(w, 'something considerably longer than Notes')
     expect(width()).toBeGreaterThan(before)
   })
 
@@ -187,7 +199,7 @@ describe('PatchEditor', () => {
       Number(/width:\s*([\d.]+)px/.exec(w.get('[data-patch-input]').attributes('style') ?? '')?.[1] ?? 0)
 
     const before = width()
-    await w.get('[data-patch-input]').setValue('x')
+    await typeInto(w, 'x')
     // Still covers the line it is replacing: that is the area being painted
     // over, and collapsing to the width of one character would hide it.
     expect(width()).toBe(before)
@@ -214,7 +226,7 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('Replacement')
+    await typeInto(w, 'Replacement')
     await w.get('[data-patch-input]').trigger('keydown.enter')
 
     const made = patches(edits)
@@ -233,7 +245,7 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('Replacement')
+    await typeInto(w, 'Replacement')
     await w.get('[data-patch-input]').trigger('keydown.enter')
 
     expect(patches(edits)[0]!.originalHash).toBe(hashText('Original line'))
@@ -245,7 +257,7 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('Replacement')
+    await typeInto(w, 'Replacement')
     await w.get('[data-patch-input]').trigger('keydown.enter')
 
     expect(patches(edits)[0]!.background).toEqual([1, 1, 1])
@@ -357,7 +369,7 @@ describe('PatchEditor', () => {
       await w.get('[data-patch-target="0"]').trigger('click')
       await w.get('[data-font-replace]').trigger('click')
       await flushPromises()
-      ;(w.get('[data-patch-input]').element as HTMLInputElement).blur()
+      ;(w.get('[data-patch-input]').element as HTMLElement).blur()
       await w.get('[data-patch-input]').trigger('keydown', { key: 'Escape' })
       await flushPromises()
       await w.get('[data-patch-target="0"]').trigger('click')
@@ -409,7 +421,7 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('Replacement')
+    await typeInto(w, 'Replacement')
     await w.get('[data-patch-input]').trigger('keydown.esc')
     expect(patches(edits)).toHaveLength(1)
     expect(patches(edits)[0]!.text).toBe('Original line')
@@ -433,7 +445,7 @@ describe('PatchEditor', () => {
 
     expect(w.find('[data-patch-fit]').exists()).toBe(false)
 
-    await w.get('[data-patch-input]').setValue('A much longer replacement')
+    await typeInto(w, 'A much longer replacement')
     await w.get('[data-patch-input]').trigger('keydown.enter')
     expect(patches(edits)[0]!.fit).toBe('overflow')
   })
@@ -444,7 +456,7 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('Committed by blurring')
+    await typeInto(w, 'Committed by blurring')
     await w.get('[data-patch-input]').trigger('blur')
 
     expect(patches(edits)).toHaveLength(1)
@@ -457,7 +469,7 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('Abandoned')
+    await typeInto(w, 'Abandoned')
     await w.get('[data-patch-input]').trigger('keydown.esc')
     expect(patches(edits)[0]!.text).toBe('Original line')
   })
@@ -476,12 +488,12 @@ describe('PatchEditor', () => {
       const w = mountEditor(INDEX)
 
       await w.get('[data-patch-target="0"]').trigger('click')
-      await w.get('[data-patch-input]').setValue(first)
+      await typeInto(w, first)
       await w.get('[data-patch-input]').trigger('keydown.enter')
 
       await w.get('[data-patch-target="0"]').trigger('click')
-      const reopened = (w.get('[data-patch-input]').element as HTMLInputElement).value
-      await w.get('[data-patch-input]').setValue(second)
+      const reopened = (w.get('[data-patch-input]').element as HTMLElement).textContent
+      await typeInto(w, second)
       await w.get('[data-patch-input]').trigger('keydown.enter')
 
       return { edits, reopened }
@@ -570,7 +582,7 @@ describe('PatchEditor', () => {
     it('types with the spacing the patch already carries', async () => {
       const { w } = withMoved({ letterSpacing: 3 })
       await w.get('[data-patch-target="0"]').trigger('click')
-      const style = (w.get('[data-patch-input]').element as HTMLInputElement).style
+      const style = (w.get('[data-patch-input]').element as HTMLElement).style
       const scale = Number(/scale\(([\d.]+)\)/.exec(style.transform)?.[1] ?? 1)
       expect(Number.parseFloat(style.letterSpacing) * scale).toBeCloseTo(3, 6)
     })
@@ -609,7 +621,7 @@ describe('PatchEditor', () => {
     it('keeps the move when the text is edited', async () => {
       const { edits, w } = withMoved()
       await w.get('[data-patch-target="0"]').trigger('click')
-      await w.get('[data-patch-input]').setValue('Retyped')
+      await typeInto(w, 'Retyped')
       await w.get('[data-patch-input]').trigger('keydown.enter')
       expect(patches(edits)[0]!.text).toBe('Retyped')
       expect(patches(edits)[0]!.offset).toEqual(OFFSET)
@@ -640,7 +652,7 @@ describe('PatchEditor', () => {
     it('keeps an unmoved patch that is typed back, now saying the original', async () => {
       const { edits, w } = withMoved({ offset: { dx: 0, dy: 0 }, text: 'Changed' })
       await w.get('[data-patch-target="0"]').trigger('click')
-      await w.get('[data-patch-input]').setValue('Original line')
+      await typeInto(w, 'Original line')
       await w.get('[data-patch-input]').trigger('keydown.enter')
       expect(patches(edits)).toHaveLength(1)
       expect(patches(edits)[0]!.text).toBe('Original line')
@@ -707,7 +719,7 @@ describe('warnings before committing', () => {
     missingGlyphs.mockResolvedValue(['A', 'B'])
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('something')
+    await typeInto(w, 'something')
     await flushPromises()
     expect(w.get('[data-patch-missing]').text()).toContain('A B')
   })
@@ -716,7 +728,7 @@ describe('warnings before committing', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('plain text')
+    await typeInto(w, 'plain text')
     await flushPromises()
     expect(w.find('[data-patch-missing]').exists()).toBe(false)
   })
@@ -726,7 +738,7 @@ describe('warnings before committing', () => {
     missingGlyphs.mockRejectedValue(new Error('no font'))
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('something')
+    await typeInto(w, 'something')
     await flushPromises()
     expect(w.find('[data-patch-missing]').exists()).toBe(false)
     // Still editable: a font that cannot be checked is not a reason to stop.
@@ -756,7 +768,7 @@ describe('weight', () => {
     const edits = useEditsStore()
     const w = mountEditor(indexOf('Bold heading', true))
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('New heading')
+    await typeInto(w, 'New heading')
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
     expect(patches(edits)[0]!.weight).toBe(700)
@@ -766,7 +778,7 @@ describe('weight', () => {
     const edits = useEditsStore()
     const w = mountEditor(indexOf('Body text'))
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('New body text')
+    await typeInto(w, 'New body text')
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
     expect(patches(edits)[0]!.weight).toBe(400)
@@ -785,7 +797,7 @@ describe('weight', () => {
     const edits = useEditsStore()
     const w = mountEditor(indexOf('Bold heading', true))
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('New heading')
+    await typeInto(w, 'New heading')
     await w.get('[data-patch-input]').trigger('keydown', { key: 'b', ctrlKey: true })
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
@@ -798,14 +810,14 @@ describe('weight', () => {
     const edits = useEditsStore()
     const w = mountEditor(indexOf('Bold heading', true))
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('First edit')
+    await typeInto(w, 'First edit')
     await w.get('[data-patch-input]').trigger('keydown', { key: 'b', ctrlKey: true })
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
 
     await w.get('[data-patch-target="0"]').trigger('click')
     expect(w.get('[data-patch-input]').attributes('style')).toContain('font-weight: 400')
-    await w.get('[data-patch-input]').setValue('Second edit')
+    await typeInto(w, 'Second edit')
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
     expect(patches(edits)).toHaveLength(1)
@@ -834,7 +846,7 @@ describe('size', () => {
   /** The fixture's line reports size 12 and a baseline at 114. */
   const commit = async (w: ReturnType<typeof mountEditor>, text: string) => {
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue(text)
+    await typeInto(w, text)
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
   }
@@ -864,7 +876,7 @@ describe('size', () => {
     // reason to zoom the page (lib/textFieldZoom.ts). What this test is
     // about is the size the user SEES, which is the product of the two and
     // is still the line's own 12.
-    const style = (w.get('[data-patch-input]').element as HTMLInputElement).style
+    const style = (w.get('[data-patch-input]').element as HTMLElement).style
     const declared = Number.parseFloat(style.fontSize)
     const scale = Number(/scale\(([\d.]+)\)/.exec(style.transform)?.[1] ?? 1)
     expect(declared * scale).toBeCloseTo(12, 6)
@@ -917,7 +929,7 @@ describe('colour', () => {
 
   const commit = async (w: ReturnType<typeof mountEditor>, text: string) => {
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue(text)
+    await typeInto(w, text)
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
   }
@@ -979,7 +991,7 @@ describe('slope', () => {
 
   const commit = async (w: ReturnType<typeof mountEditor>, text: string) => {
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue(text)
+    await typeInto(w, text)
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
   }
@@ -1006,7 +1018,7 @@ describe('slope', () => {
     const edits = useEditsStore()
     const w = mountEditor(italicIndex('Emphasised'))
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('Not emphasised')
+    await typeInto(w, 'Not emphasised')
     await w.get('[data-patch-input]').trigger('keydown', { key: 'i', ctrlKey: true })
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
@@ -1118,6 +1130,144 @@ describe('a style-only edit', () => {
  * its own page and open that line, whether the request arrived before it
  * was mounted or after.
  */
+/**
+ * Reported on a letter: editing "This letter is to confirm that **Arafat
+ * Hussain Chowdhury** (employee ID...)" turned the name regular, because
+ * the field and the patch could only hold one style.
+ */
+describe('a line in more than one style', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    missingGlyphs.mockResolvedValue([])
+    seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+  })
+
+  function mixed(): PageQuadIndex {
+    const index = indexOf('Hi Arafat ok')
+    const style = { font: 'Inter-Regular', italic: false, size: 12, color: [0, 0, 0] as Color, rise: 0 }
+    index.lines[0]!.spans = [
+      { ...style, text: 'Hi ', weight: 400 },
+      { ...style, text: 'Arafat', font: 'Inter-Bold', weight: 700 },
+      { ...style, text: ' ok', weight: 400 },
+    ]
+    return index
+  }
+
+  const attached = (index: PageQuadIndex) =>
+    mount(PatchEditor, { props: { page, zoom: 1, index }, attachTo: document.body })
+
+  it('opens with the bold word bold, in the field and in the layer', async () => {
+    const edits = seed()
+    const w = mountEditor(mixed())
+    await w.get('[data-patch-target="0"]').trigger('click')
+    const bold = w.get('[data-patch-input] [data-run="1"]').element as HTMLElement
+    expect(bold.textContent).toBe('Arafat')
+    expect(bold.style.fontWeight).toBe('700')
+    expect(patches(edits)[0]!.spans).toEqual([
+      { text: 'Hi ' }, { text: 'Arafat', weight: 700 }, { text: ' ok' },
+    ])
+  })
+
+  it('keeps the bold word bold after the words around it are retyped', async () => {
+    const edits = seed()
+    const w = mountEditor(mixed())
+    await w.get('[data-patch-target="0"]').trigger('click')
+    w.get('[data-patch-input] [data-run="0"]').element.textContent = 'Hello '
+    await w.get('[data-patch-input]').trigger('input')
+    await w.get('[data-patch-input]').trigger('keydown.enter')
+    const patch = patches(edits)[0]!
+    expect(patch.text).toBe('Hello Arafat ok')
+    expect(patch.weight).toBe(400)
+    expect(patch.spans).toEqual([
+      { text: 'Hello ' }, { text: 'Arafat', weight: 700 }, { text: ' ok' },
+    ])
+  })
+
+  it('bolds only the selected words on Ctrl+B', async () => {
+    const edits = seed()
+    const w = attached(mixed())
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await flushPromises()
+    const field = w.get('[data-patch-input]').element as HTMLElement
+    const last = field.querySelector('[data-run="2"]')!.firstChild!
+    const range = document.createRange()
+    range.setStart(last, 1)
+    range.setEnd(last, 3)
+    document.getSelection()!.removeAllRanges()
+    document.getSelection()!.addRange(range)
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'b', ctrlKey: true })
+    await w.get('[data-patch-input]').trigger('keydown.enter')
+    expect(patches(edits)[0]!.spans).toEqual([
+      { text: 'Hi ' }, { text: 'Arafat', weight: 700 }, { text: ' ' }, { text: 'ok', weight: 700 },
+    ])
+    w.unmount()
+  })
+
+  /**
+   * Reported: "in Edit text mode, how can I make text bold?" -- Ctrl+B
+   * worked and nothing on screen said so.
+   */
+  it('shows a Bold / Italic bar for the selection, and it bolds just that', async () => {
+    const edits = seed()
+    const w = attached(mixed())
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await flushPromises()
+    // The field opens with everything selected, so the bar is already up.
+    expect(w.find('[data-patch-format-bar]').exists()).toBe(true)
+
+    const field = w.get('[data-patch-input]').element as HTMLElement
+    const first = field.querySelector('[data-run="0"]')!.firstChild!
+    const range = document.createRange()
+    range.setStart(first, 0)
+    range.setEnd(first, 2)
+    document.getSelection()!.removeAllRanges()
+    document.getSelection()!.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+    await flushPromises()
+    expect(w.get('[data-patch-bold]').attributes('aria-pressed')).toBe('false')
+
+    await w.get('[data-patch-bold]').trigger('click')
+    expect(w.get('[data-patch-bold]').attributes('aria-pressed')).toBe('true')
+    // Still editing: the button did not take focus and commit.
+    expect(w.find('[data-patch-input]').exists()).toBe(true)
+    await w.get('[data-patch-input]').trigger('keydown.enter')
+    const patch = patches(edits)[0]!
+    expect(patch.weight).toBe(700)
+    expect(patch.spans).toEqual([
+      { text: 'Hi' }, { text: ' ', weight: 400 }, { text: 'Arafat' }, { text: ' ok', weight: 400 },
+    ])
+    w.unmount()
+  })
+
+  it('hides the bar when nothing is selected', async () => {
+    const w = attached(mixed())
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await flushPromises()
+    const field = w.get('[data-patch-input]').element as HTMLElement
+    const first = field.querySelector('[data-run="0"]')!.firstChild!
+    document.getSelection()!.collapse(first, 1)
+    document.dispatchEvent(new Event('selectionchange'))
+    await flushPromises()
+    expect(w.find('[data-patch-format-bar]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('bolds the whole line on Ctrl+B with it all selected, leaving one style', async () => {
+    const edits = seed()
+    const w = attached(mixed())
+    await w.get('[data-patch-target="0"]').trigger('click')
+    await flushPromises()
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'b', ctrlKey: true })
+    await w.get('[data-patch-input]').trigger('keydown.enter')
+    const patch = patches(edits)[0]!
+    expect(patch.weight).toBe(700)
+    expect(patch.spans).toBeUndefined()
+    w.unmount()
+  })
+})
+
 describe('opening on request', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -1130,15 +1280,16 @@ describe('opening on request', () => {
   it('opens the requested line with its text selected', async () => {
     const tools = useToolsStore()
     tools.requestPatch('p1', 0)
-    const w = mountEditor(INDEX)
+    // Attached: a selection lives in the document, not in a detached tree.
+    const w = mount(PatchEditor, { props: { page, zoom: 1, index: INDEX }, attachTo: document.body })
     await flushPromises()
 
-    const input = w.get('[data-patch-input]').element as HTMLInputElement
-    expect(input.value).toBe('Original line')
+    const input = w.get('[data-patch-input]').element as HTMLElement
+    expect(input.textContent).toBe('Original line')
     // Selected, so typing REPLACES the line rather than appending to it --
     // the whole point of asking to edit the text you double-clicked.
-    expect(input.selectionStart).toBe(0)
-    expect(input.selectionEnd).toBe('Original line'.length)
+    expect(document.getSelection()?.toString()).toBe('Original line')
+    w.unmount()
   })
 
   it('forgets the request once it has been honoured', async () => {
@@ -1177,7 +1328,7 @@ describe('opening on request', () => {
 
     await w.setProps({ index: INDEX })
     await flushPromises()
-    expect((w.get('[data-patch-input]').element as HTMLInputElement).value)
+    expect((w.get('[data-patch-input]').element as HTMLElement).textContent)
       .toBe('Original line')
   })
 })

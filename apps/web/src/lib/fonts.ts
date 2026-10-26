@@ -1,5 +1,5 @@
 import type { EditObject } from '@margin/pdf-core'
-import { faceKey, nearestWeight, weightOf, REGULAR_WEIGHT, type FaceStyle } from '@margin/pdf-core'
+import { faceKey, nearestWeight, weightOf, patchRuns, REGULAR_WEIGHT, type FaceStyle } from '@margin/pdf-core'
 import catalog from './fontCatalog.json'
 
 export { faceKey, type FaceStyle }
@@ -386,6 +386,11 @@ export function facesUsed(objects: Iterable<EditObject>): string[] {
     const family = (object as { fontFamily?: unknown }).fontFamily
     if (typeof family !== 'string' || family === '') continue
     faces.add(faceKey(family, object as FaceStyle))
+    // A text patch with differently-styled pieces needs each piece's face:
+    // a line with a bold name in it embeds the regular and the bold.
+    if (object.kind === 'textPatch') {
+      for (const run of patchRuns(object)) faces.add(faceKey(family, run))
+    }
   }
   return [...faces]
 }

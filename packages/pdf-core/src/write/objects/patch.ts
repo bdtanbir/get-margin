@@ -6,7 +6,8 @@ import { appendContent, addResource, fillColor } from '../content.js'
 import {
   num, pageBoxToContent, pagePointToContent, pageDeltaToContent, pageDirToContent, textMatrix,
 } from '../coords.js'
-import { pdfString, faceKey, spacedAdvance } from '../fonts.js'
+import { pdfString, faceKey } from '../fonts.js'
+import { patchRuns, runsAdvance, truncateRuns, type PatchRun } from '../patchRuns.js'
 import { ASCENT_RATIO } from './text.js'
 
 /**
@@ -201,9 +202,22 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
   const moved = dx !== 0 || dy !== 0
   const shift = pageDeltaToContent({ x: dx, y: dy }, geometry)
 
-  const face = faceKey(o.fontFamily, o)
-  const font = ctx.fonts.resolve(face)
-  addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
+  /**
+   * One face per differently-styled run. A line with a bold name in it
+   * needs the regular AND the bold embedded, each registered once however
+   * many runs use it.
+   */
+  const runFace = (run: PatchRun): string =>
+    faceKey(o.fontFamily, { weight: run.weight, italic: run.italic })
+  const allRuns = patchRuns(o)
+  const fontFor = new Map<string, { name: string }>()
+  for (const run of allRuns) {
+    const face = runFace(run)
+    if (fontFor.has(face)) continue
+    const font = ctx.fonts.resolve(face)
+    addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
+    fontFor.set(face, font)
+  }
 
   // A little bleed, because glyph quads sit tight against the ink and
   // antialiased edges extend past them -- covering exactly the bbox leaves
@@ -226,11 +240,15 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
      * different size from the text around it.
      */
     let size = o.fontSize > 0 ? o.fontSize : line.size > 0 ? line.size : across * 0.8
-    let text = o.text
+    let runs = allRuns
+    let count = [...o.text].length
     const spacing = o.letterSpacing ?? 0
     // Measured WITH the spacing: the fit rules decide against the ink the
-    // line will actually take up, and a spaced line takes up more.
-    const advance = () => spacedAdvance(ctx.measure, text, face, size, spacing)
+    // line will actually take up, and a spaced line takes up more. Each run
+    // in its own face, because a bold word is wider than the same word
+    // regular.
+    const advance = () =>
+      runsAdvance(runs, size, spacing, (run, at) => ctx.measure(run.text, runFace(run), at))
 
     /**
      * A MOVED patch always overflows, whatever `fit` says.
@@ -249,7 +267,7 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
       // for and would look like a different edit.
       while (size > 4 && advance() > along) size -= 0.5
     } else if (o.fit === 'truncate') {
-      while (text.length > 1 && advance() > along) text = text.slice(0, -1)
+      while (count > 1 && advance() > along) runs = truncateRuns(allRuns, --count)
     }
     // 'overflow' does nothing on purpose: the user chose to let it run
     // past, and surrounding content is never pushed around (§2.4).
@@ -290,16 +308,31 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
      */
     const u = pageDirToContent(line.dir, geometry)
 
+    /**
+     * ONE text object, the runs drawn one after another with `Tj`. Each
+     * `Tj` moves the pen by its own glyphs' advances, so a run starts
+     * exactly where the previous one ended -- no x is computed here that
+     * the viewer could disagree with. Between runs only the state changes:
+     * colour, face and size, and `Ts` for a raised or lowered piece. The
+     * `q`/`Q` around this stream resets `Ts` and `Tc` afterwards.
+     */
     ops.push(
-      fillColor(o.color),
       'BT',
-      `/${font.name} ${num(size)} Tf`,
       // See the text writer: points per gap, and only when there are any.
       ...(spacing !== 0 ? [`${num(spacing)} Tc`] : []),
       textMatrix(u, pen.x + shift.x, pen.y + shift.y),
-      `${pdfString(text)} Tj`,
-      'ET',
     )
+    let rise = 0
+    for (const run of runs) {
+      const font = fontFor.get(runFace(run))!
+      ops.push(fillColor(run.color), `/${font.name} ${num(size * run.scale)} Tf`)
+      if (run.rise !== rise) {
+        rise = run.rise
+        ops.push(`${num(size * rise)} Ts`)
+      }
+      ops.push(`${pdfString(run.text)} Tj`)
+    }
+    ops.push('ET')
   }
 
   appendContent(ctx.raw, ctx.page, ops.join('\n'))

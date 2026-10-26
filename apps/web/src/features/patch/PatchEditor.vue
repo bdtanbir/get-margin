@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { Bold, Italic } from 'lucide-vue-next'
+import IconButton from '@/ui/IconButton.vue'
 import { pageViewSize } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import type {
   Color, EditObject, PageQuadIndex, TextPatchObject,
 } from '@margin/pdf-core'
-import { isBoldWeight, weightOf } from '@margin/pdf-core'
+import { isBoldWeight, patchRuns, runsAdvance, weightOf } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { useViewportStore } from '@/stores/viewport'
@@ -23,6 +25,12 @@ import {
   buildLinePatch, documentStyle, lineBox, patchOnLine, plainColor,
 } from './linePatch'
 import { lineTargetRect } from './editTargets'
+import {
+  mergeRuns, readRuns, renderRuns, restyleRange, runsIn, selectOffsets, selectionOffsets,
+  textOf, toPatchFields, type EditRun,
+} from './richLine'
+import { sameSpans } from './linePatch'
+import { fitStyle, hasItalic } from '@/lib/fonts'
 
 const props = defineProps<{
   page: PageState
@@ -147,7 +155,147 @@ const askingBox = computed(() => {
   const l = askingLine.value
   return l && l.chars.length > 0 ? lineBox(l) : undefined
 })
-const input = ref<HTMLInputElement | null>(null)
+const input = ref<HTMLElement | null>(null)
+
+/**
+ * The line being typed, as styled runs: a bold name stays bold in the
+ * field and in the stored patch. See richLine.ts.
+ *
+ * `draft`, `weight`, `italic` and `color` above are kept as the FIRST
+ * run's, which is what the patch stores as its own style; the other runs
+ * are stored as overrides of it.
+ */
+const runs = ref<EditRun[]>([])
+/** The styles the field's spans were last rendered with, by index. */
+let rendered: EditRun[] = []
+
+const fallbackRun = (): EditRun => ({
+  text: '', weight: weight.value, italic: italic.value, scale: 1, rise: 0,
+  color: plainColor(color.value),
+})
+
+function syncFromRuns(): void {
+  draft.value = textOf(runs.value)
+  const first = runs.value[0]
+  if (first) {
+    weight.value = first.weight
+    italic.value = first.italic
+    color.value = first.color
+  }
+}
+
+/** Re-render the field from `next`, keeping the selection where it was. */
+function showRuns(next: EditRun[], selection?: [number, number]): void {
+  runs.value = mergeRuns(next)
+  syncFromRuns()
+  const el = input.value
+  if (!el) return
+  rendered = renderRuns(el, runs.value)
+  if (selection) selectOffsets(el, selection[0], selection[1])
+}
+
+/**
+ * The field's element, bound as Vue creates it -- and filled, selected and
+ * focused right then, in the same render, rather than after the fonts have
+ * loaded. Filling it later left a window where the field was on screen
+ * and empty: an Enter pressed in it committed nothing.
+ */
+let bound: HTMLElement | null = null
+function bindField(el: unknown): void {
+  const field = el instanceof HTMLElement ? el : null
+  input.value = field
+  if (!field || field === bound) { if (!field) bound = null; return }
+  bound = field
+  rendered = renderRuns(field, runs.value)
+  // Focus and selection only take on an element in the document, and when
+  // this editor itself is mounting, its field is bound before the editor
+  // is inserted. So those two wait a tick when they have to.
+  const activate = (): void => {
+    if (bound !== field || !field.isConnected) return
+    field.focus()
+    selectOffsets(field, 0, [...draft.value].length)
+    updateFieldSelection()
+  }
+  if (field.isConnected) activate()
+  else void nextTick(activate)
+}
+
+/** What the browser did to the field, read back into runs. */
+function onInput(): void {
+  const el = input.value
+  if (!el) return
+  runs.value = readRuns(el, rendered, fallbackRun())
+  syncFromRuns()
+}
+
+/** Pasted text arrives as plain text on one line, in the style at the caret. */
+function onPaste(e: ClipboardEvent): void {
+  e.preventDefault()
+  const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/[\r\n]+/g, ' ')
+  if (text) document.execCommand('insertText', false, text)
+}
+
+/** The browser's own formatting and line breaks are not this field's: it is one line, styled by us. */
+function onBeforeInput(e: InputEvent): void {
+  if (e.inputType.startsWith('format') || e.inputType === 'insertParagraph' ||
+      e.inputType === 'insertLineBreak') {
+    e.preventDefault()
+  }
+}
+
+/**
+ * The characters selected in the field, and where that selection is on
+ * screen -- so a Bold / Italic bar can sit above it. Undefined when nothing
+ * is selected.
+ *
+ * The reported question was "in Edit text mode, how do I make text bold?":
+ * Ctrl+B worked and nothing on screen said so. The bar is the visible way,
+ * and it appears for the selection the field opens with too, so it is
+ * there to be found the moment a line is clicked.
+ */
+const layer = ref<HTMLElement | null>(null)
+const fieldSelection = ref<{ start: number; end: number; left: number; top: number } | undefined>()
+
+function updateFieldSelection(): void {
+  const el = input.value
+  const sel = el ? selectionOffsets(el) : undefined
+  if (!el || !sel || sel[1] <= sel[0]) { fieldSelection.value = undefined; return }
+  const range = el.ownerDocument.getSelection()?.getRangeAt(0)
+  const at = range?.getBoundingClientRect?.()
+  const origin = layer.value?.getBoundingClientRect()
+  const field = el.getBoundingClientRect()
+  // jsdom has no layout and reports zeros; the field's own corner is the
+  // fallback, which is also where the bar belongs for a whole-line selection.
+  const left = at && at.width > 0 ? at.left : field.left
+  const top = at && at.height > 0 ? at.top : field.top
+  fieldSelection.value = {
+    start: sel[0], end: sel[1],
+    left: left - (origin?.left ?? 0),
+    top: top - (origin?.top ?? 0),
+  }
+}
+
+onMounted(() => document.addEventListener('selectionchange', updateFieldSelection))
+onBeforeUnmount(() => document.removeEventListener('selectionchange', updateFieldSelection))
+
+/** Whether every visible selected run is already bold / italic: the buttons' pressed state. */
+function selectionHas(axis: 'bold' | 'italic'): boolean {
+  const s = fieldSelection.value
+  if (!s) return false
+  const inRange = runsIn(runs.value, s.start, s.end)
+  const visible = inRange.filter((r) => r.text.trim() !== '')
+  const judged = visible.length > 0 ? visible : inRange
+  return judged.length > 0 &&
+    judged.every((r) => (axis === 'bold' ? isBoldWeight(r.weight) : r.italic))
+}
+const selectionBold = computed(() => selectionHas('bold'))
+const selectionItalic = computed(() => selectionHas('italic'))
+const canItalic = computed(() => hasItalic(family.value))
+
+/** Load every face the runs use, so the field shows the real bold, not a faked one. */
+function loadRunFaces(): Promise<unknown> {
+  return Promise.all(runs.value.map((r) => loadFont(family.value, r).catch(() => {})))
+}
 
 const line = computed(() => (editing.value === undefined ? undefined : props.index?.lines[editing.value]))
 
@@ -250,7 +398,9 @@ const face = computed(() => ({ weight: weight.value, italic: italic.value }))
 const inputWidth = computed(() => {
   const b = drawnAt.value
   if (!b) return 0
-  const measured = measureText(draft.value || ' ', family.value, editSize.value, face.value)
+  const measured = runs.value.length === 0
+    ? measureText(' ', family.value, editSize.value, face.value)
+    : runsAdvance(runs.value, editSize.value, 0, (r, at) => measureText(r.text, family.value, at, r))
   // A little slack so the caret at the end of the text is never against the
   // border, and a floor so an emptied field stays clickable.
   const wanted = Math.max(b.w, measured + editSize.value, 40)
@@ -304,6 +454,9 @@ const style = computed(() => {
     // values here that the scale touches.
     width: `${drawnBox.value.width / scale}px`,
     height: `${drawnBox.value.height / scale}px`,
+    // An <input> centres its line; an editable block puts it at the top.
+    // A line-height of the full box puts it back in the middle.
+    lineHeight: `${drawnBox.value.height / scale}px`,
     fontSize: `${fontSize}px`,
     // In the same zoom-compensated pixels as the size, so the caret lands
     // between the letters where the export will put them.
@@ -435,17 +588,19 @@ async function begin(lineIndex: number, chosen?: string): Promise<void> {
   // the file the browser fakes the weight by stroking whatever it does
   // have, and the fake is a different width from the one that will be
   // exported.
-  await loadFont(family.value, face.value)
-  await nextTick()
-  input.value?.focus()
-  input.value?.select()
+  // The line as styled runs: the patch's own, which `ensurePatch` seeded
+  // from the line's pieces -- so a bold name opens bold. Set BEFORE the
+  // field renders: `bindField` fills it from these.
+  runs.value = mergeRuns(existing
+    ? patchRuns(existing)
+    : [{ ...fallbackRun(), text: draft.value }])
+  // The faces the field is styled with, so its glyphs are the real ones
+  // rather than the browser's fake bold -- which is a different width from
+  // the one that will be exported. The field is already up and typeable;
+  // it re-lays itself out when they arrive.
+  await Promise.all([loadFont(family.value, face.value).catch(() => {}), loadRunFaces()])
 }
 
-/**
- * Ctrl+B: bold if the line is not, regular if it is. A shortcut is a
- * switch, so it moves between the two weights the words mean; the other
- * six are one select away in the inspector.
- */
 /** The dialog's answer: remember it if asked to, then open the line in it. */
 function onReplacementChosen(family: string, always: boolean): void {
   const at = asking.value
@@ -456,14 +611,50 @@ function onReplacementChosen(family: string, always: boolean): void {
   void begin(at, family)
 }
 
-function toggleBold(): void {
-  weight.value = isBoldWeight(weight.value) ? 400 : 700
+/**
+ * Ctrl+B / Ctrl+I over the SELECTION when there is one, otherwise over the
+ * whole line -- which is also what the field opens with selected, so
+ * pressing Ctrl+B straight away still means "make this line bold".
+ *
+ * The direction is decided by every visible run in range, as the toolbar
+ * decides it: a selection that is partly bold goes bold. A shortcut is a
+ * switch, so Bold moves between the two weights the words mean; the other
+ * six are one select away in the inspector.
+ */
+function toggleAxis(axis: 'bold' | 'italic'): void {
+  const el = input.value
+  const length = [...draft.value].length
+  if (length === 0 || runs.value.length === 0) {
+    if (axis === 'bold') weight.value = isBoldWeight(weight.value) ? 400 : 700
+    else italic.value = !italic.value
+    return
+  }
+  const selection = el ? selectionOffsets(el) : undefined
+  const [a, b] = selection && selection[1] > selection[0] ? selection : [0, length]
+  const inRange = runsIn(runs.value, a, b)
+  const visible = inRange.filter((r) => r.text.trim() !== '')
+  const judged = visible.length > 0 ? visible : inRange
+  if (axis === 'italic' && !hasItalic(family.value)) return
+  const on = judged.every((r) => (axis === 'bold' ? isBoldWeight(r.weight) : r.italic))
+  showRuns(
+    restyleRange(runs.value, a, b, (r) => {
+      if (axis === 'italic') return { italic: !on }
+      const target = on ? 400 : 700
+      return { weight: fitStyle(family.value, { weight: target, italic: r.italic }).weight ?? target }
+    }),
+    selection ?? [a, b],
+  )
+  updateFieldSelection()
+  void loadRunFaces()
 }
 
 function cancel(): void {
   editing.value = undefined
   editingId.value = undefined
   draft.value = ''
+  runs.value = []
+  rendered = []
+  fieldSelection.value = undefined
   weight.value = 400
   italic.value = false
   size.value = 0
@@ -503,6 +694,15 @@ function commit(): void {
   if (!l || !b || at === undefined) return
 
   const existing = editingId.value
+  // The field as it is NOW, in case the browser changed it without an
+  // input event reaching us.
+  if (input.value) {
+    runs.value = readRuns(input.value, rendered, fallbackRun())
+    syncFromRuns()
+  }
+  const fields = toPatchFields(runs.value, {
+    weight: weight.value, italic: italic.value, color: plainColor(color.value),
+  })
 
   /**
    * Committing UPDATES the patch the click made -- which is every commit,
@@ -534,10 +734,11 @@ function commit(): void {
     // what the user means is "take back the click".
     const stored = patchOn(at)
     if (
-      stored && stored.text === draft.value && stored.fit === fit.value &&
-      stored.fontSize === size.value && weightOf(stored) === weight.value &&
-      (stored.italic === true) === italic.value &&
-      stored.color.every((channel, i) => channel === color.value[i])
+      stored && stored.text === fields.text && stored.fit === fit.value &&
+      stored.fontSize === size.value && weightOf(stored) === fields.weight &&
+      (stored.italic === true) === fields.italic &&
+      stored.color.every((channel, i) => channel === fields.color[i]) &&
+      sameSpans(stored.spans, fields.spans)
     ) {
       cancel()
       return
@@ -547,8 +748,9 @@ function commit(): void {
         type: 'updateObject',
         id: existing,
         patch: {
-          text: draft.value, fit: fit.value, fontSize: size.value,
-          weight: weight.value, italic: italic.value,
+          text: fields.text, fit: fit.value, fontSize: size.value,
+          weight: fields.weight, italic: fields.italic,
+          spans: fields.spans,
           // Defensive rather than load-bearing, and the distinction is
           // worth stating: reaching this path means the line already had a
           // patch, so the colour was seeded from the STORE, and immer
@@ -557,7 +759,7 @@ function commit(): void {
           // That is a conclusion about two libraries' internals, not about
           // this code, and it stops being true the day auto-freeze is
           // turned off. Everything else in this patch is a primitive.
-          color: plainColor(color.value),
+          color: plainColor(fields.color),
         },
       },
       'Edit text',
@@ -572,12 +774,13 @@ function commit(): void {
     line: l,
     fontFamily: family.value,
     style: {
-      weight: weight.value, italic: italic.value, fontSize: size.value, color: color.value,
+      weight: fields.weight, italic: fields.italic, fontSize: size.value, color: fields.color,
     },
     background: background.value,
     z: edits.nextZ(),
-    text: draft.value,
+    text: fields.text,
     fit: fit.value,
+    spans: fields.spans ?? [],
   })
 
   // Only reachable when `begin` could not make the layer, which it can
@@ -617,7 +820,7 @@ defineExpose({ begin })
 </script>
 
 <template>
-  <div class="pointer-events-none absolute inset-0" data-patch-layer>
+  <div ref="layer" class="pointer-events-none absolute inset-0" data-patch-layer>
     <!--
       Teleported: the page overlay is transformed for zoom, and a fixed
       element inside a transformed one is fixed to IT, not to the window.
@@ -702,23 +905,73 @@ defineExpose({ begin })
         rarer case of wanting a different style from the original, and the
         inspector shows both checkboxes once the patch exists.
       -->
-      <input
-        ref="input"
-        v-model="draft"
-        type="text"
+      <!--
+        An editable element rather than an <input>, because an <input> can
+        show only one style -- see richLine.ts. Its children are rendered
+        by `showRuns`, never by the template, so Vue does not reset what the
+        user has typed when this component re-renders.
+      -->
+      <div
+        :ref="bindField"
+        contenteditable="true"
+        role="textbox"
+        aria-multiline="false"
+        spellcheck="false"
         data-patch-input
         aria-label="Replacement text"
-        class="pointer-events-auto absolute box-border border border-accent px-0.5
-               leading-none focus:outline-none"
+        class="pointer-events-auto absolute box-border overflow-hidden whitespace-pre
+               border border-accent px-0.5 focus:outline-none"
         :style="style"
+        @input="onInput"
+        @paste="onPaste"
+        @drop.prevent
+        @beforeinput="onBeforeInput"
         @keydown.enter.prevent="commit()"
         @keydown.esc.prevent="cancel()"
-        @keydown.ctrl.b.prevent="toggleBold()"
-        @keydown.meta.b.prevent="toggleBold()"
-        @keydown.ctrl.i.prevent="italic = !italic"
-        @keydown.meta.i.prevent="italic = !italic"
+        @keydown.ctrl.b.prevent="toggleAxis('bold')"
+        @keydown.meta.b.prevent="toggleAxis('bold')"
+        @keydown.ctrl.i.prevent="toggleAxis('italic')"
+        @keydown.meta.i.prevent="toggleAxis('italic')"
         @blur="commit()"
+      />
+
+      <!--
+        Bold and Italic for the selected text, above the selection.
+
+        mousedown is prevented so pressing a button does not take focus
+        from the field: losing focus is what COMMITS an edit, and the
+        selection the button acts on would be gone with it.
+      -->
+      <div
+        v-if="fieldSelection"
+        data-patch-format-bar
+        class="pointer-events-auto absolute z-20 flex items-center gap-0.5 rounded-control
+               border border-border bg-surface-raised px-1 py-0.5 shadow-high"
+        :style="{ left: `${fieldSelection.left}px`, top: `${fieldSelection.top}px`,
+                  transform: 'translateY(calc(-100% - 6px))' }"
+        @mousedown.prevent
+        @pointerdown.prevent.stop
       >
+        <IconButton
+          size="sm"
+          label="Bold"
+          data-patch-bold
+          :active="selectionBold"
+          @click="toggleAxis('bold')"
+        >
+          <Bold :size="16" :stroke-width="1.5" />
+        </IconButton>
+        <IconButton
+          v-if="canItalic"
+          size="sm"
+          label="Italic"
+          data-patch-italic
+          :active="selectionItalic"
+          @click="toggleAxis('italic')"
+        >
+          <Italic :size="16" :stroke-width="1.5" />
+        </IconButton>
+      </div>
 
       <!--
         Warnings only, and only when there are any.

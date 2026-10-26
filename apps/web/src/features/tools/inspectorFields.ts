@@ -1,5 +1,19 @@
 import type { EditObject, FieldObject } from '@margin/pdf-core'
 import { FONTS, WEIGHT_NAMES, familyLabel, fitStyle, hasItalic, weightsOf } from '@/lib/fonts'
+import { normalizeSpans, stripAxes } from '@/features/patch/linePatch'
+import { weightOf, type TextPatchObject } from '@margin/pdf-core'
+
+/**
+ * A patch's pieces moved to a new family: each piece's own weight and
+ * slope snapped to faces the family has, as the patch's own are.
+ */
+function refitSpans(o: TextPatchObject, family: string): TextPatchObject['spans'] {
+  return normalizeSpans(o.spans?.map((s) => {
+    if (s.weight === undefined && s.italic === undefined) return s
+    const fitted = fitStyle(family, { weight: s.weight ?? weightOf(o), italic: s.italic ?? o.italic === true })
+    return { ...s, ...fitted }
+  }))
+}
 import { normalizeUri } from '@/lib/linkUrl'
 
 export type Field =
@@ -201,7 +215,25 @@ export function patchFor(
 ): Record<string, unknown> {
   const stored = field.type === 'select' && field.numeric ? Number(value) : value
   if (field.key === 'fontFamily' && typeof stored === 'string') {
-    return { fontFamily: stored, ...fitStyle(stored, object as { weight?: number; italic?: boolean }) }
+    return {
+      fontFamily: stored,
+      ...fitStyle(stored, object as { weight?: number; italic?: boolean }),
+      ...(object.kind === 'textPatch' && object.spans ? { spans: refitSpans(object, stored) } : {}),
+    }
+  }
+  /**
+   * On a line with differently-styled pieces, the inspector's Weight,
+   * Italic and Colour are WHOLE-LINE settings: choosing 700 makes every
+   * word bold, including the ones that already were. So the pieces' own
+   * overrides for that axis go, in the same undo step. Size does not --
+   * pieces store their size as a fraction of the line's, so a superscript
+   * grows with it.
+   */
+  if (object.kind === 'textPatch' && object.spans) {
+    const axis = ({ weight: 'weight', italic: 'italic', color: 'color' } as const)[
+      field.key as 'weight' | 'italic' | 'color'
+    ]
+    if (axis) return { [field.key]: stored, spans: stripAxes(object.spans, [axis]) }
   }
   return { [field.key]: stored }
 }

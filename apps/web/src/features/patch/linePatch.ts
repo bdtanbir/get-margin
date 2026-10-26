@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid'
 import { hashText, weightOf } from '@margin/pdf-core'
 import { fitStyle } from '@/lib/fonts'
 import { familyForLine } from '@/lib/fontMatch'
-import type { Color, EditObject, LineRun, TextPatchObject } from '@margin/pdf-core'
+import type { Color, EditObject, LineRun, PatchSpan, TextPatchObject } from '@margin/pdf-core'
 import type { BackgroundSample } from './sampleBackground'
 
 /**
@@ -175,8 +175,104 @@ export function isPristine(patch: TextPatchObject, line: LineRun): boolean {
   return (
     patch.text === line.text &&
     !isMoved(patch) &&
-    sameStyle(styleOf(patch), documentStyle(line))
+    sameStyle(styleOf(patch), documentStyle(line)) &&
+    sameSpans(patch.spans, documentSpans(line, patch.fontFamily))
   )
+}
+
+/** The style axes a span can override. */
+export type SpanAxis = 'weight' | 'italic' | 'scale' | 'rise' | 'color'
+const AXES: readonly SpanAxis[] = ['weight', 'italic', 'scale', 'rise', 'color']
+
+const sameColor = (a: Color | undefined, b: Color | undefined): boolean =>
+  a === b || (!!a && !!b && a.every((v, i) => v === b[i]))
+
+const sameOverrides = (a: PatchSpan, b: PatchSpan): boolean =>
+  a.weight === b.weight && a.italic === b.italic && a.scale === b.scale &&
+  a.rise === b.rise && sameColor(a.color, b.color)
+
+const overridesAnything = (s: PatchSpan): boolean => AXES.some((k) => s[k] !== undefined)
+
+/**
+ * A span list in its one canonical form: empty pieces dropped, neighbours
+ * with the same overrides merged, and UNDEFINED when nothing is
+ * overridden -- a list that overrides nothing draws exactly what no list
+ * draws, and storing it would make two equal patches compare unequal.
+ */
+export function normalizeSpans(spans: readonly PatchSpan[] | undefined): PatchSpan[] | undefined {
+  if (!spans) return undefined
+  const out: PatchSpan[] = []
+  for (const span of spans) {
+    if (span.text === '') continue
+    const last = out[out.length - 1]
+    if (last && sameOverrides(last, span)) {
+      out[out.length - 1] = { ...last, text: last.text + span.text }
+    } else {
+      out.push({ ...span, ...(span.color ? { color: plainColor(span.color) } : {}) })
+    }
+  }
+  return out.some(overridesAnything) ? out : undefined
+}
+
+export function sameSpans(a: readonly PatchSpan[] | undefined, b: readonly PatchSpan[] | undefined): boolean {
+  const x = normalizeSpans(a)
+  const y = normalizeSpans(b)
+  if (!x || !y) return !x && !y
+  return x.length === y.length &&
+    x.every((s, i) => s.text === y[i]!.text && sameOverrides(s, y[i]!))
+}
+
+/**
+ * Drop overrides for `axes` from every span: what a WHOLE-LINE change
+ * means. Pressing Bold over a line, or picking a weight in the inspector,
+ * makes every word that weight -- including the one that was bold.
+ */
+export function stripAxes(
+  spans: readonly PatchSpan[] | undefined,
+  axes: readonly SpanAxis[],
+): PatchSpan[] | undefined {
+  if (!spans) return undefined
+  return normalizeSpans(spans.map((s) => {
+    const copy: PatchSpan = { ...s }
+    for (const k of axes) delete copy[k]
+    return copy
+  }))
+}
+
+/** Rounded so a 8.0399999 / 12 ratio stores as a number a person can read. */
+const ratio = (v: number): number => Math.round(v * 1000) / 1000
+
+/**
+ * The line's own styled pieces as span overrides relative to `base`, with
+ * each piece's weight snapped to what `family` has -- or undefined for a
+ * line that is one style throughout.
+ */
+export function spansOf(line: LineRun, family: string, base: PatchStyle): PatchSpan[] | undefined {
+  const pieces = line.spans
+  if (!pieces || pieces.length === 0 || pieces.map((p) => p.text).join('') !== line.text) {
+    return undefined
+  }
+  return normalizeSpans(pieces.map((p) => {
+    const face = fitStyle(family, { weight: p.weight, italic: p.italic })
+    const weight = face.weight ?? p.weight
+    const italic = face.italic ?? p.italic
+    const span: PatchSpan = { text: p.text }
+    if (weight !== base.weight) span.weight = weight
+    if (italic !== base.italic) span.italic = italic
+    if (base.fontSize > 0) {
+      const scale = ratio(p.size / base.fontSize)
+      if (scale !== 1) span.scale = scale
+      const rise = ratio(p.rise / base.fontSize)
+      if (rise !== 0) span.rise = rise
+    }
+    if (!sameColor(plainColor(p.color), base.color)) span.color = plainColor(p.color)
+    return span
+  }))
+}
+
+/** The pieces the DOCUMENT sets a line in, relative to its own first piece. */
+export function documentSpans(line: LineRun, family: string): PatchSpan[] | undefined {
+  return spansOf(line, family, documentStyle(line, family))
 }
 
 /** Everything a new patch needs that is not derivable from the line. */
@@ -191,6 +287,13 @@ export type NewLinePatch = {
   z: number
   text?: string
   fit?: TextPatchObject['fit']
+  /**
+   * The styled pieces. Left out, a patch over an UNCHANGED line inherits
+   * the line's own pieces -- so moving a line, or restyling one axis of
+   * it, keeps its bold words bold -- minus any axis `style` sets
+   * differently from the document, which is a whole-line change.
+   */
+  spans?: PatchSpan[]
 }
 
 /**
@@ -204,14 +307,26 @@ export type NewLinePatch = {
  */
 export function buildLinePatch(args: NewLinePatch): TextPatchObject {
   const box = lineBox(args.line)
+  const text = args.text ?? args.line.text
+  let spans = args.spans
+  if (spans === undefined && text === args.line.text) {
+    const doc = documentStyle(args.line, args.fontFamily)
+    const changed: SpanAxis[] = []
+    if (doc.weight !== args.style.weight) changed.push('weight')
+    if (doc.italic !== args.style.italic) changed.push('italic')
+    if (!sameColor(doc.color, args.style.color)) changed.push('color')
+    spans = stripAxes(spansOf(args.line, args.fontFamily, doc), changed)
+  }
+  spans = normalizeSpans(spans)
   return {
+    ...(spans ? { spans } : {}),
     id: nanoid(10),
     pageId: args.pageId,
     kind: 'textPatch',
     lineIndex: args.lineIndex,
     originalHash: hashText(args.line.text),
     originalText: args.line.text,
-    text: args.text ?? args.line.text,
+    text,
     fontFamily: args.fontFamily,
     weight: args.style.weight,
     italic: args.style.italic,

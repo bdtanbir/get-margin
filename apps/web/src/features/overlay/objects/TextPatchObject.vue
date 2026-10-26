@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watchEffect } from 'vue'
 import type { TextPatchObject } from '@margin/pdf-core'
-import { cssFamily, cssWeight, cssStyle, spacedWidth, ASCENT_RATIO } from '@/lib/fonts'
+import { patchRuns, runsAdvance, truncateRuns } from '@margin/pdf-core'
+import { cssFamily, cssWeight, cssStyle, loadFont, measureText, ASCENT_RATIO } from '@/lib/fonts'
 import { rgb } from './svgPaint'
 
 /**
@@ -68,11 +69,16 @@ const laid = computed(() => {
   const o = props.object
   const { w, h } = o.rect
   let size = o.fontSize > 0 ? o.fontSize : h * 0.8
-  let text = o.text
+  const all = patchRuns(o)
+  let runs = all
+  let count = [...o.text].length
   // With the letter spacing counted, as the writer counts it: the fit
   // rules are about the ink the line takes up, and a spaced line takes
-  // up more.
-  const advance = (): number => spacedWidth(text, o.fontFamily, size, o, o.letterSpacing)
+  // up more. Each run in its own face, as the writer measures it, since a
+  // bold word is wider than the same word regular.
+  const advance = (): number =>
+    runsAdvance(runs, size, o.letterSpacing ?? 0, (run, at) =>
+      measureText(run.text, o.fontFamily, at, run))
 
   // A moved patch overflows whatever `fit` says, because both fit rules
   // measure against `w` -- the width of the line being replaced -- and the
@@ -82,9 +88,9 @@ const laid = computed(() => {
   } else if (o.fit === 'shrink') {
     while (size > 4 && advance() > w) size -= 0.5
   } else if (o.fit === 'truncate') {
-    while (text.length > 1 && advance() > w) text = text.slice(0, -1)
+    while (count > 1 && advance() > w) runs = truncateRuns(all, --count)
   }
-  return { size, text }
+  return { size, runs, text: runs.map((r) => r.text).join('') }
 })
 
 /**
@@ -120,6 +126,22 @@ const weight = computed(() => cssWeight(props.object.weight))
 const slope = computed(() => cssStyle(props.object.italic))
 /** Absent when there is none, for the reason TextObject gives. */
 const spacing = computed(() => props.object.letterSpacing || undefined)
+
+/**
+ * Pieces in more than one style. A one-style line renders exactly as it
+ * always has, as plain text on the <text>; only a mixed line needs tspans.
+ */
+const mixed = computed(() => laid.value.runs.length > 1)
+
+/**
+ * Every face the runs use, registered so the browser draws the real bold
+ * rather than synthesising one from the regular -- which would be a
+ * different width from the bold the export embeds.
+ */
+watchEffect(() => {
+  if (!mixed.value || typeof document === 'undefined') return
+  for (const run of laid.value.runs) void loadFont(props.object.fontFamily, run).catch(() => {})
+})
 </script>
 
 <template>
@@ -148,6 +170,19 @@ const spacing = computed(() => props.object.letterSpacing || undefined)
       :font-size="laid.size"
       :letter-spacing="spacing"
       style="white-space: pre"
-    >{{ laid.text }}</text>
+    ><template v-if="!mixed">{{ laid.text }}</template><!--
+      One tspan per run, each with its own face, size, colour and baseline.
+      No x on a tspan: each continues where the previous ended, which is
+      how the writer's consecutive Tj calls advance too.
+    --><template v-else><tspan
+      v-for="(run, i) in laid.runs"
+      :key="i"
+      :y="baseline - run.rise * laid.size"
+      :fill="rgb(run.color)"
+      :font-weight="cssWeight(run.weight)"
+      :font-style="cssStyle(run.italic)"
+      :font-size="laid.size * run.scale"
+      data-patch-run
+    >{{ run.text }}</tspan></template></text>
   </g>
 </template>

@@ -218,7 +218,7 @@ test('the text tool reads each page of a merged document', async ({ page }, test
   await expect(secondPage.first()).toBeVisible()
   await secondPage.first().click()
 
-  const opened = await page.locator('[data-patch-input]').inputValue()
+  const opened = (await page.locator('[data-patch-input]').textContent()) ?? ''
   expect(opened, 'page 2 opened with page 1 text').toContain('Helvetica')
   expect(opened).not.toContain('Hello margin')
 })

@@ -354,6 +354,48 @@ export type TextPatchObject = BaseObject & {
    * `PageEntry.tabOrder`.
    */
   offset?: { dx: number; dy: number }
+  /**
+   * The line split into differently-styled pieces, for a line that is not
+   * one style throughout -- "This letter is to confirm that **Arafat
+   * Hussain Chowdhury** (employee ID...)", a date with a raised "th".
+   *
+   * Without this a patch could only draw its whole line in one face, so
+   * editing any word of a sentence with a bold name in it un-bolded the
+   * name. Each span's fields OVERRIDE the patch's own: absent means "as the
+   * patch". That keeps the inspector simple -- changing Weight sets the
+   * patch's weight and drops every span's weight override -- and it means
+   * a span list that overrides nothing is the same patch as no list.
+   *
+   * When present, the spans' texts joined are exactly `text`. A list that
+   * disagrees is ignored and the patch draws as one style (`patchRuns`),
+   * rather than drawing words that are not in the text.
+   *
+   * Optional, and absent means one style -- what every patch written
+   * before this meant, so nothing stored needs migrating.
+   */
+  spans?: PatchSpan[] | undefined
+}
+
+/** One differently-styled piece of a `TextPatchObject`. See `spans`. */
+export type PatchSpan = {
+  text: string
+  /** CSS weight; absent means the patch's. */
+  weight?: number
+  /** Absent means the patch's. */
+  italic?: boolean
+  /**
+   * Size as a FRACTION of the patch's `fontSize`, absent meaning 1. A
+   * fraction so a superscript stays a superscript when the inspector
+   * changes the size: 8pt on a 12pt line becomes 10pt on a 15pt one.
+   */
+  scale?: number
+  /**
+   * How far the baseline is raised, as a fraction of the patch's
+   * `fontSize`, absent meaning 0. Positive is up: a superscript.
+   */
+  rise?: number
+  /** Absent means the patch's. */
+  color?: Color
 }
 
 /**

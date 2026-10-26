@@ -13,9 +13,12 @@ export type {
   ObjectKind, Color, EditObject, EditDocument, Op,
   TextObject, ImageObject, ShapeObject, WhiteoutObject,
   InkObject, MarkupObject, LinkObject, SignatureObject,
-  FieldObject, FieldType, FieldValue, StampObject, RedactionObject, TextPatchObject,
+  FieldObject, FieldType, FieldValue, StampObject, RedactionObject, TextPatchObject, PatchSpan,
   ImagePatchObject, RegionPatchObject,
 } from './write/types.js'
+export {
+  patchRuns, spansMatch, truncateRuns, runsAdvance, type PatchRun,
+} from './write/patchRuns.js'
 export { EDIT_DOCUMENT_VERSION, emptyEditDocument, OBJECT_KINDS } from './write/types.js'
 export { listFields, fieldKey, hasAcroForm } from './write/fields.js'
 export { resolveTokens, batesNumber } from './write/objects/stamp.js'
@@ -52,7 +55,7 @@ export {
 
 // Task 36. Per-page text geometry for selection, in MuPDF page space.
 export { buildQuadIndex } from './text/index.js'
-export type { Quad, CharQuad, LineRun, PageQuadIndex } from './text/index.js'
+export type { Quad, CharQuad, LineRun, LineSpan, PageQuadIndex } from './text/index.js'
 export { isBoldWeight, weightFromName, usWeightClass } from './text/fontWeights.js'
 export { pageImages, placementHash, buildImageIndex, cropImage, cropRegion } from './images/index.js'
 export { cropEditedRegion } from './write/editedRegion.js'

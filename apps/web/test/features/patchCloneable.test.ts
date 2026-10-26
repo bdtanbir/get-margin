@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { ref } from 'vue'
 import PatchEditor from '@/features/patch/PatchEditor.vue'
@@ -11,6 +11,18 @@ import { useViewportStore } from '@/stores/viewport'
 import { useSelectionStore } from '@/stores/selection'
 import type { Color, PageImageIndex, PageQuadIndex, Quad } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
+
+
+/**
+ * Replace the field's text, as selecting everything and typing would. The
+ * field is an editable element, not an <input>, so `setValue` does not
+ * apply: the text goes in and the browser's `input` event follows.
+ */
+async function typeInto(w: VueWrapper, text: string): Promise<void> {
+  const field = w.get('[data-patch-input]')
+  field.element.textContent = text
+  await field.trigger('input')
+}
 
 const missingGlyphs = vi.fn<() => Promise<string[]>>()
 const regionCrop = vi.fn<(...a: unknown[]) => Promise<{ data: Uint8Array } | undefined>>()
@@ -99,7 +111,7 @@ describe('an edit document is always structure-cloneable', () => {
     const edits = useEditsStore()
     const w = mount(PatchEditor, { props: { page, zoom: 1, index: reactiveIndex() } })
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('Issue Date nice')
+    await typeInto(w, 'Issue Date nice')
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
     expectCloneable(edits.doc)
@@ -141,12 +153,12 @@ describe('an edit document is always structure-cloneable', () => {
     const w = mount(PatchEditor, { props: { page, zoom: 1, index } })
 
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('First edit')
+    await typeInto(w, 'First edit')
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
 
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').setValue('Second edit')
+    await typeInto(w, 'Second edit')
     await w.get('[data-patch-input]').trigger('blur')
     await flushPromises()
 

@@ -173,13 +173,9 @@ describe('SelectionToolbar markup actions', () => {
 })
 
 /**
- * Bold and Italic over a text selection.
- *
- * WHOLE LINES, which is the honest limit of the control rather than a
- * shortcut taken: a patch is addressed by line index and guarded by a hash
- * of the line's text, so styling three words of a line is not something the
- * format can express. The buttons are labelled "Bold line" for that reason,
- * and these tests pin the label as much as the behaviour.
+ * Bold and Italic over a text selection: they style the SELECTED
+ * characters. The patch still redraws the whole line, carrying the rest of
+ * it in its own style as spans.
  */
 describe('SelectionToolbar style actions', () => {
   let edits: ReturnType<typeof useEditsStore>
@@ -237,11 +233,11 @@ describe('SelectionToolbar style actions', () => {
     expect(w.find('[data-style-italic]').exists()).toBe(true)
   })
 
-  it('says the action is on the line, because it is', () => {
+  it('labels the buttons Bold and Italic', () => {
     select(twoLines)
     const w = mountFor()
-    expect(w.get('[data-style-bold]').attributes('aria-label')).toBe('Bold line')
-    expect(w.get('[data-style-italic]').attributes('aria-label')).toBe('Italic line')
+    expect(w.get('[data-style-bold]').attributes('aria-label')).toBe('Bold')
+    expect(w.get('[data-style-italic]').attributes('aria-label')).toBe('Italic')
   })
 
   it('patches the selected line in bold', async () => {
@@ -264,13 +260,48 @@ describe('SelectionToolbar style actions', () => {
     expect(patch.originalText).toBe('ab')
   })
 
-  it('bolds the whole line even when only part of it is selected', async () => {
-    // Stated as a test rather than left implicit: it is the behaviour the
-    // label promises and the one the format forces.
-    select(twoLines, { line: 0, char: 0 }, { line: 0, char: 0 })
-    selection.extend({ line: 0, char: 1 })
+  /**
+   * Reported: selecting "November 2026." and pressing Bold bolded the whole
+   * sentence. Only the selection should change.
+   */
+  it('bolds only the selected characters of a line', async () => {
+    select({ lines: [lineAt(0, 'abcd')] }, { line: 0, char: 2 }, { line: 0, char: 3 })
     await mountFor().get('[data-style-bold]').trigger('click')
-    expect(patches()[0]!.text).toBe('ab')
+    const patch = patches()[0]!
+    expect(patch.text).toBe('abcd')
+    expect(patch.weight).toBe(400)
+    expect(patch.spans).toEqual([{ text: 'ab' }, { text: 'cd', weight: 700 }])
+  })
+
+  it('italicises only the selected characters of a line', async () => {
+    select({ lines: [lineAt(0, 'abcd')] }, { line: 0, char: 0 }, { line: 0, char: 1 })
+    await mountFor().get('[data-style-italic]').trigger('click')
+    const patch = patches()[0]!
+    // The first piece is the patch's own style; the rest are overrides.
+    expect(patch.italic).toBe(true)
+    expect(patch.spans).toEqual([{ text: 'ab' }, { text: 'cd', italic: false }])
+  })
+
+  it('shows pressed over a bold selection, and un-bolds just that part', async () => {
+    select({ lines: [lineAt(0, 'abcd')] }, { line: 0, char: 2 }, { line: 0, char: 3 })
+    const w = mountFor()
+    await w.get('[data-style-bold]').trigger('click')
+    expect(w.get('[data-style-bold]').attributes('aria-pressed')).toBe('true')
+    await w.get('[data-style-bold]').trigger('click')
+    // Back to what the document draws, so the patch is gone.
+    expect(patches()).toHaveLength(0)
+  })
+
+  it('bolds a selection that is only partly bold already', async () => {
+    select({ lines: [lineAt(0, 'abcd')] }, { line: 0, char: 0 }, { line: 0, char: 1 })
+    await mountFor().get('[data-style-bold]').trigger('click')
+    // "b" is bold and "c" is not: the selection goes bold, as a word
+    // processor does, rather than un-bolding the half that was.
+    select({ lines: [lineAt(0, 'abcd')] }, { line: 0, char: 1 }, { line: 0, char: 2 })
+    await mountFor().get('[data-style-bold]').trigger('click')
+    expect(patches()).toHaveLength(1)
+    expect(patches()[0]!.weight).toBe(700)
+    expect(patches()[0]!.spans).toEqual([{ text: 'abc' }, { text: 'd', weight: 400 }])
   })
 
   it('patches every line a multi-line selection touches', async () => {

@@ -64,6 +64,35 @@ export type LineRun = {
    */
   baseline: number
   chars: CharQuad[]
+  /**
+   * The line as consecutive pieces of one style each, in order; their texts
+   * joined are `text`. The fields above describe the FIRST piece.
+   *
+   * A MuPDF line is not one style: "This letter is to confirm that
+   * **Arafat Hussain Chowdhury** (employee ID...)" is one line with a bold
+   * name in the middle, and "14th" is one line with a smaller raised "th".
+   * Reading the style off the first character alone is what made editing
+   * such a line drop the bold. Pieces split where the weight, slope, size,
+   * colour or baseline changes -- NOT where only the embedded subset
+   * changes, because one face embedded as three subsets is still one face.
+   */
+  spans?: LineSpan[]
+}
+
+/** One single-style piece of a `LineRun`. */
+export type LineSpan = {
+  text: string
+  font: string
+  weight: number
+  italic: boolean
+  size: number
+  color: Color
+  /**
+   * How far this piece's baseline sits ABOVE the line's, in points,
+   * measured across the line's own direction. Positive for a superscript,
+   * negative for a subscript, 0 for ordinary text.
+   */
+  rise: number
 }
 
 export type PageQuadIndex = { lines: LineRun[] }
@@ -149,9 +178,21 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
     let baseline = 0
     /** Whether any glyph on the line had a broken font's height capped. */
     let capped = false
+    let spans: LineSpan[] = []
+    /** The line's "up", in page space (y grows down the page). */
+    let up = { x: 0, y: -1 }
+    let pen0: { x: number; y: number } | undefined
+    /** Weight and slope per font: detectWeight reads the font's name and flags. */
+    const faceOf = new Map<string, { weight: number; italic: boolean }>()
 
     text.walk({
-      beginLine(lineBox) {
+      beginLine(lineBox, _wmode, direction) {
+        const dx = direction?.[0] ?? 1
+        const dy = direction?.[1] ?? 0
+        const len = Math.hypot(dx, dy) || 1
+        up = { x: dy / len, y: -dx / len }
+        pen0 = undefined
+        spans = []
         bbox = [lineBox[0], lineBox[1], lineBox[2], lineBox[3]]
         chars = []
         font = ''
@@ -182,6 +223,32 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         const sane = saneQuad(quad, origin, charSize)
         if (sane.some((v, i) => v !== quad[i])) capped = true
         chars.push({ char: c, quad: sane as Quad })
+
+        const name = charFont.getName()
+        let style = faceOf.get(name)
+        if (!style) {
+          style = { weight: detectWeight(charFont, declaredWeights), italic: isItalicFace(charFont) }
+          faceOf.set(name, style)
+        }
+        const at = { x: origin[0] ?? 0, y: origin[1] ?? 0 }
+        pen0 ??= at
+        // Rounded so the sub-point jitter of a justified line does not
+        // split every word into its own piece.
+        const rise = Math.round(((at.x - pen0.x) * up.x + (at.y - pen0.y) * up.y) * 10) / 10
+        const fill = toRgb(charColor)
+        const last = spans[spans.length - 1]
+        if (
+          last && last.weight === style.weight && last.italic === style.italic &&
+          Math.abs(last.size - charSize) < 0.05 && last.rise === rise &&
+          last.color.every((v, i) => Math.abs(v - fill[i]!) < 0.004)
+        ) {
+          last.text += c
+        } else {
+          spans.push({
+            text: c, font: name, weight: style.weight, italic: style.italic,
+            size: charSize, color: fill, rise,
+          })
+        }
       },
       endLine() {
         // A line with no characters (an image-only block's stray line) is
@@ -200,6 +267,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
             size,
             baseline,
             chars,
+            spans,
           })
         }
         bbox = undefined

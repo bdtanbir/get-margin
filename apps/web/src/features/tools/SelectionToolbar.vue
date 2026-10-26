@@ -16,13 +16,15 @@ import { familyForLine } from '@/lib/fontMatch'
 import { askForUri, normalizeUri } from '@/lib/linkUrl'
 import { sampleBackground } from '@/features/patch/sampleBackground'
 import {
-  buildLinePatch, documentStyle, isPristine, lineBox, patchOnLine, styleOf,
+  buildLinePatch, documentStyle, isPristine, lineBox, patchOnLine, stripAxes,
 } from '@/features/patch/linePatch'
 import { deleteOpFor } from '@/features/patch/patchDelete'
 import type {
   LineRun, LinkObject, MarkupObject, RedactionObject, EditObject,
 } from '@margin/pdf-core'
-import { isBoldWeight } from '@margin/pdf-core'
+import { isBoldWeight, patchRuns } from '@margin/pdf-core'
+import { restyleRange, runsIn, textOf, toPatchFields } from '@/features/patch/richLine'
+import { fitStyle, hasItalic } from '@/lib/fonts'
 
 const props = defineProps<{ page: PageState; zoom: number }>()
 const doc = useDocumentStore()
@@ -281,31 +283,55 @@ function addLink(): void {
 }
 
 /**
- * The lines the selection touches, with their indices.
+ * The lines the selection touches, with their indices -- and, on each, the
+ * characters selected, as [start, end) offsets into the line's text.
  *
- * WHOLE LINES, and that is the honest limit of this control rather than a
- * shortcut. A patch covers and redraws an entire line -- it is addressed by
- * line index and guarded by a hash of the line's text -- so there is no way
- * to set three words of a line in bold without rebuilding the patch format
- * around character ranges. Selecting part of a line and pressing Bold
- * therefore bolds the line, which is why the buttons say so.
+ * Bold and Italic apply to THOSE characters: selecting "November 2026."
+ * and pressing Bold bolds those words, not the sentence they sit in. A
+ * patch still covers and redraws its whole line, but it now carries styled
+ * pieces (`TextPatchObject.spans`), so the rest of the line is redrawn as
+ * it was.
  */
-const touchedLines = computed<Array<{ index: number; line: LineRun }>>(() => {
+const touchedLines = computed<Array<{ index: number; line: LineRun; start: number; end: number }>>(() => {
   const r = selection.range
   const idx = selection.index
   if (!r || !idx || !textSelected.value) return []
-  const out: Array<{ index: number; line: LineRun }> = []
+  const out: Array<{ index: number; line: LineRun; start: number; end: number }> = []
   for (let i = r.from.line; i <= r.to.line; i++) {
     const line = idx.lines[i]
-    if (line && line.chars.length > 0) out.push({ index: i, line })
+    if (!line || line.chars.length === 0) continue
+    const start = i === r.from.line ? r.from.char : 0
+    // The range's `to` is the last selected character, inclusive.
+    const end = i === r.to.line ? r.to.char + 1 : line.chars.length
+    out.push({ index: i, line, start, end: Math.min(end, line.chars.length) })
   }
   return out
 })
 
-/** What a line is set in NOW: its patch's style if it has one, else the document's. */
-function currentStyle(index: number, line: LineRun) {
+/**
+ * A line as styled runs -- its patch's, or the document's own -- and the
+ * part of it the selection covers.
+ *
+ * `start`/`end` index the document's characters. A patch whose text was
+ * RETYPED no longer has those characters at those offsets, so for it the
+ * range is the whole line: restyling "characters 6 to 11" of a sentence
+ * the user rewrote would land on whatever words are there now.
+ */
+function selectedRuns(index: number, line: LineRun, start: number, end: number) {
   const patch = patchOnLine(Object.values(edits.doc.objects), props.page.id, index)
-  return patch ? styleOf(patch) : documentStyle(line)
+  const family = patch?.fontFamily ?? familyForLine(line.font)
+  const runs = patchRuns(patch ?? buildLinePatch({
+    pageId: props.page.id, lineIndex: index, line, fontFamily: family,
+    style: documentStyle(line, family), background: undefined, z: 0,
+  }))
+  const length = [...textOf(runs)].length
+  const ranged = !patch || patch.text === line.text
+  return {
+    patch, family, runs,
+    start: ranged ? start : 0,
+    end: ranged ? end : length,
+    whole: !ranged || (start === 0 && end >= length),
+  }
 }
 
 /**
@@ -318,9 +344,17 @@ function currentStyle(index: number, line: LineRun) {
  */
 function allHave(axis: 'bold' | 'italic'): boolean {
   const lines = touchedLines.value
-  return lines.length > 0 && lines.every(({ index, line }) => {
-    const style = currentStyle(index, line)
-    return axis === 'bold' ? isBoldWeight(style.weight) : style.italic
+  return lines.length > 0 && lines.every(({ index, line, start, end }) => {
+    // Every SELECTED piece, not the line's first: "This letter is to
+    // confirm that **Arafat**..." is not bold because its name is, and
+    // selecting the name in it is. Pieces that are only spaces are left out
+    // -- nobody can see whether a space is bold, and a document often sets
+    // them in the neighbour's face.
+    const sel = selectedRuns(index, line, start, end)
+    const pieces = runsIn(sel.runs, sel.start, sel.end)
+    const visible = pieces.filter((p) => p.text.trim() !== '')
+    return (visible.length > 0 ? visible : pieces).every((p) =>
+      axis === 'bold' ? isBoldWeight(p.weight) : p.italic)
   })
 }
 
@@ -355,11 +389,22 @@ function toggleStyle(axis: 'bold' | 'italic'): void {
   const label = `${next ? '' : 'Remove '}${axis === 'bold' ? 'Bold' : 'Italic'}`
 
   edits.withTransaction(label, () => {
-    for (const { index, line } of lines) {
-      const existing = patchOnLine(Object.values(edits.doc.objects), props.page.id, index)
+    for (const { index, line, start, end } of lines) {
+      const sel = selectedRuns(index, line, start, end)
+      if (!sel.whole) {
+        restyleSelection(index, line, sel, axis, next, label)
+        continue
+      }
+      const existing = sel.patch
 
       if (existing) {
-        const patch = change(axis, next)
+        // A whole-line change: the pieces' own overrides for this axis go.
+        const patch = {
+          ...change(axis, next),
+          ...(existing.spans
+            ? { spans: stripAxes(existing.spans, [axis === 'bold' ? 'weight' : 'italic']) }
+            : {}),
+        }
         const updated = { ...existing, ...patch }
         if (isPristine(updated, line)) {
           edits.applyOp({ type: 'deleteObject', id: existing.id }, label)
@@ -385,6 +430,53 @@ function toggleStyle(axis: 'bold' | 'italic'): void {
       edits.applyOp({ type: 'addObject', object: object as EditObject }, label)
     }
   })
+}
+
+/**
+ * Bold or Italic over PART of a line: the selected characters change and
+ * the rest of the line is redrawn exactly as it was.
+ */
+function restyleSelection(
+  index: number,
+  line: LineRun,
+  sel: ReturnType<typeof selectedRuns>,
+  axis: 'bold' | 'italic',
+  next: boolean,
+  label: string,
+): void {
+  const runs = restyleRange(sel.runs, sel.start, sel.end, (r) => {
+    if (axis === 'italic') return { italic: next && hasItalic(sel.family) }
+    const target = next ? 700 : 400
+    return { weight: fitStyle(sel.family, { weight: target, italic: r.italic }).weight ?? target }
+  })
+  const base = documentStyle(line, sel.family)
+  const fields = toPatchFields(runs, base)
+  const existing = sel.patch
+  if (existing) {
+    const patch = {
+      weight: fields.weight, italic: fields.italic, color: fields.color, spans: fields.spans,
+    }
+    const updated = { ...existing, ...patch }
+    if (isPristine(updated, line)) {
+      edits.applyOp({ type: 'deleteObject', id: existing.id }, label)
+    } else {
+      edits.applyOp({ type: 'updateObject', id: existing.id, patch }, label)
+    }
+    return
+  }
+  const bitmap = vp.bitmapFor(props.page.id)
+  const object = buildLinePatch({
+    pageId: props.page.id,
+    lineIndex: index,
+    line,
+    fontFamily: sel.family,
+    style: { ...base, weight: fields.weight, italic: fields.italic, color: fields.color },
+    background: sampleBackground(bitmap, lineBox(line), bitmap ? bitmap.scale : 1),
+    z: edits.nextZ(),
+    spans: fields.spans ?? [],
+  })
+  if (isPristine(object, line)) return
+  edits.applyOp({ type: 'addObject', object: object as EditObject }, label)
 }
 
 /**
@@ -472,15 +564,11 @@ function toggleLock(): void {
     @pointerdown.stop
   >
     <!--
-      Bold and Italic act on WHOLE LINES, and the labels say so because the
-      alternative is a control that quietly does more than it was asked. A
-      patch is addressed by line index and guarded by a hash of the line's
-      text, so styling three words of a line is not something the format can
-      express -- see touchedLines.
+      Bold and Italic act on the SELECTED characters -- see touchedLines.
     -->
     <IconButton
       size="sm"
-      label="Bold line"
+      label="Bold"
       data-style-bold
       :active="allBold"
       @click="toggleStyle('bold')"
@@ -489,7 +577,7 @@ function toggleLock(): void {
     </IconButton>
     <IconButton
       size="sm"
-      label="Italic line"
+      label="Italic"
       data-style-italic
       :active="allItalic"
       @click="toggleStyle('italic')"
