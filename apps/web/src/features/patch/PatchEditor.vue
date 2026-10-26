@@ -13,8 +13,9 @@ import { getPdfClient } from '@/workers/pdfClient'
 import {
   fontsForExport, measureText, cssFamily, cssWeight, cssStyle, faceKey, loadFont,
   DEFAULT_FAMILY,
-  familyForFont,
 } from '@/lib/fonts'
+import { familyForLine, needsReplacementChoice, rememberReplacement } from '@/lib/fontMatch'
+import FontReplacementDialog from './FontReplacementDialog.vue'
 import { rgb } from '@/features/overlay/objects/svgPaint'
 import { noZoomTextSize } from '@/lib/textFieldZoom'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
@@ -131,6 +132,21 @@ const fit = ref<'shrink' | 'overflow' | 'truncate'>('overflow')
  */
 const spacing = ref(0)
 const missing = ref<string[]>([])
+/**
+ * The line waiting on the font-replacement dialog, if one is.
+ *
+ * Set when the user clicks a line whose font we do not carry and has not
+ * edited before: nothing is created until they choose, so Cancel leaves
+ * the page exactly as it was.
+ */
+const asking = ref<number | undefined>(undefined)
+const askingLine = computed(() =>
+  asking.value === undefined ? undefined : props.index?.lines[asking.value],
+)
+const askingBox = computed(() => {
+  const l = askingLine.value
+  return l && l.chars.length > 0 ? lineBox(l) : undefined
+})
 const input = ref<HTMLInputElement | null>(null)
 
 const line = computed(() => (editing.value === undefined ? undefined : props.index?.lines[editing.value]))
@@ -350,17 +366,18 @@ const targets = computed(() =>
  * same change every edit already makes, now made by the click that asks
  * for it -- and one Undo, or the layer's own delete, takes it back.
  */
-function ensurePatch(lineIndex: number): TextPatchObject | undefined {
+function ensurePatch(lineIndex: number, chosen?: string): TextPatchObject | undefined {
   const existing = patchOn(lineIndex)
   if (existing) return existing
   const l = props.index?.lines[lineIndex]
   if (!l || l.chars.length === 0) return undefined
+  const fontFamily = chosen ?? familyForLine(l.font)
   const object = buildLinePatch({
     pageId: props.page.id,
     lineIndex,
     line: l,
-    fontFamily: familyForFont(l.font),
-    style: documentStyle(l),
+    fontFamily,
+    style: documentStyle(l, fontFamily),
     background: background.value,
     z: edits.nextZ(),
     fit: 'overflow',
@@ -369,7 +386,17 @@ function ensurePatch(lineIndex: number): TextPatchObject | undefined {
   return object
 }
 
-async function begin(lineIndex: number): Promise<void> {
+async function begin(lineIndex: number, chosen?: string): Promise<void> {
+  // A line in a font we do not carry, never edited before: ask which of
+  // ours to draw it in, rather than quietly turning it into Inter.
+  const target = props.index?.lines[lineIndex]
+  if (
+    chosen === undefined && target && !patchOn(lineIndex) &&
+    needsReplacementChoice(target.font)
+  ) {
+    asking.value = lineIndex
+    return
+  }
   editing.value = lineIndex
   // The line's layer, made now if the line had none, and selected so the
   // inspector offers its style while the field is open. The draft is what
@@ -377,9 +404,9 @@ async function begin(lineIndex: number): Promise<void> {
   // the line as the document has it. Loading the original over an existing
   // edit made every re-edit start from scratch, which read as the edit
   // having been lost.
-  const existing = ensurePatch(lineIndex)
+  const existing = ensurePatch(lineIndex, chosen)
   editingId.value = existing?.id
-  seededFamily.value = familyForFont(props.index?.lines[lineIndex]?.font ?? '')
+  seededFamily.value = chosen ?? familyForLine(props.index?.lines[lineIndex]?.font ?? '')
   if (existing) edits.select([existing.id])
   draft.value = existing ? existing.text : originalText.value
   const line = props.index?.lines[lineIndex]
@@ -419,6 +446,16 @@ async function begin(lineIndex: number): Promise<void> {
  * switch, so it moves between the two weights the words mean; the other
  * six are one select away in the inspector.
  */
+/** The dialog's answer: remember it if asked to, then open the line in it. */
+function onReplacementChosen(family: string, always: boolean): void {
+  const at = asking.value
+  const l = askingLine.value
+  asking.value = undefined
+  if (at === undefined || !l) return
+  if (always) rememberReplacement(l.font, family)
+  void begin(at, family)
+}
+
 function toggleBold(): void {
   weight.value = isBoldWeight(weight.value) ? 400 : 700
 }
@@ -533,7 +570,7 @@ function commit(): void {
     pageId: props.page.id,
     lineIndex: at,
     line: l,
-    fontFamily: familyForFont(l.font),
+    fontFamily: family.value,
     style: {
       weight: weight.value, italic: italic.value, fontSize: size.value, color: color.value,
     },
@@ -581,6 +618,24 @@ defineExpose({ begin })
 
 <template>
   <div class="pointer-events-none absolute inset-0" data-patch-layer>
+    <!--
+      Teleported: the page overlay is transformed for zoom, and a fixed
+      element inside a transformed one is fixed to IT, not to the window.
+    -->
+    <Teleport to="body">
+      <FontReplacementDialog
+        v-if="askingLine"
+        :font-name="askingLine.font"
+        :text="askingLine.text"
+        :weight="askingLine.weight"
+        :italic="askingLine.italic"
+        :bitmap="vp.bitmapFor(props.page.id)"
+        :box="askingBox"
+        @choose="onReplacementChosen"
+        @cancel="asking = undefined"
+      />
+    </Teleport>
+
     <!--
       One target per line, shown only while the tool is active. Marked by
       confidence BEFORE the user commits: a line over a photograph can be

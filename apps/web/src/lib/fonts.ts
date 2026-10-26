@@ -117,6 +117,15 @@ const STYLE_TAIL =
  * knew anything about the line.
  */
 export function familyForFont(name: string): FontFamily {
+  return matchFamily(name) ?? DEFAULT_FAMILY
+}
+
+/**
+ * `familyForFont` without the Inter fallback: undefined when the document's
+ * font is not one we carry. The replacement dialog needs to know that
+ * rather than be told "Inter". See fontMatch.ts.
+ */
+export function matchFamily(name: string): FontFamily | undefined {
   const bare = squash(name.replace(/^[A-Z]{6}\+/, ''))
   let best: { family: string; length: number } | undefined
   for (const f of FONTS) {
@@ -125,7 +134,7 @@ export function familyForFont(name: string): FontFamily {
       if (STYLE_TAIL.test(bare.slice(key.length))) best = { family: f.family, length: key.length }
     }
   }
-  return best?.family ?? DEFAULT_FAMILY
+  return best?.family
 }
 
 /**

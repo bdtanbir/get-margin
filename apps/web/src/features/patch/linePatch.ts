@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid'
 import { hashText, weightOf } from '@margin/pdf-core'
-import { familyForFont, fitStyle } from '@/lib/fonts'
+import { fitStyle } from '@/lib/fonts'
+import { familyForLine } from '@/lib/fontMatch'
 import type { Color, EditObject, LineRun, TextPatchObject } from '@margin/pdf-core'
 import type { BackgroundSample } from './sampleBackground'
 
@@ -73,11 +74,15 @@ export type PatchStyle = {
   color: Color
 }
 
-/** The style the DOCUMENT itself sets a line in. */
-export function documentStyle(line: LineRun): PatchStyle {
-  // Snapped to what the line's family has: a Medium heading in a face we
-  // carry only at 400 and 700 is drawn at the nearest, not refused.
-  const face = fitStyle(familyForFont(line.font), { weight: line.weight, italic: line.italic })
+/**
+ * The style the DOCUMENT itself sets a line in, snapped to the faces of
+ * `family` -- the family the patch will be drawn in, which defaults to the
+ * one the line resolves to.
+ */
+export function documentStyle(line: LineRun, family: string = familyForLine(line.font)): PatchStyle {
+  // Snapped to what the family has: a Medium heading in a face we carry
+  // only at 400 and 700 is drawn at the nearest, not refused.
+  const face = fitStyle(family, { weight: line.weight, italic: line.italic })
   return {
     weight: face.weight ?? line.weight,
     italic: face.italic ?? line.italic,

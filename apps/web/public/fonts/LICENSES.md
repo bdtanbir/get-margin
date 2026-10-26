@@ -31,6 +31,8 @@ picker shows both names.
 | Amatic SC | `AmaticSC-<weight>.ttf` | 400, 700 | no | Copyright 2015 The Amatic SC Project Authors (https://github.com/googlefonts/AmaticSC) |
 | Anton (stands in for Impact) | `Anton-<weight>.ttf` | 400 | no | Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/AntonFont.git) |
 | Arimo (stands in for Arial) | `Arimo-<weight>.ttf`, `Arimo-<weight>Italic.ttf` | 400, 500, 600, 700 | yes | Copyright 2020 The Arimo Project Authors (https://github.com/googlefonts/arimo) |
+| Caladea (stands in for Cambria) | `Caladea-<weight>.ttf`, `Caladea-<weight>Italic.ttf` | 400, 700 | yes | Copyright 2012 Huerta Tipográfica (https://github.com/huertatipografica/Caladea) |
+| Carlito (stands in for Calibri) | `Carlito-<weight>.ttf`, `Carlito-<weight>Italic.ttf` | 400, 700 | yes | Copyright 2010-2013 Łukasz Dziedzic (https://github.com/googlefonts/carlito) |
 | Caveat | `Caveat-<weight>.ttf` | 400, 500, 600, 700 | no | Copyright 2014 The Caveat Project Authors (https://github.com/googlefonts/caveat) |
 | Comfortaa | `Comfortaa-<weight>.ttf` | 300, 400, 500, 600, 700 | no | Copyright 2011 The Comfortaa Project Authors (https://github.com/alexeiva/comfortaa), with Reserved Font Name "Comfortaa". |
 | Comic Neue (stands in for Comic Sans MS) | `ComicNeue-<weight>.ttf`, `ComicNeue-<weight>Italic.ttf` | 300, 400, 700 | yes | Copyright 2014 The Comic Neue Project Authors (https://github.com/crozynski/comicneue) |

@@ -37,6 +37,28 @@
       "alias": "Arial"
     },
     {
+      "family": "Caladea",
+      "base": "Caladea",
+      "query": "Caladea",
+      "fallback": "serif",
+      "weights": [
+        400,
+        700
+      ],
+      "italic": true
+    },
+    {
+      "family": "Carlito",
+      "base": "Carlito",
+      "query": "Carlito",
+      "fallback": "sans-serif",
+      "weights": [
+        400,
+        700
+      ],
+      "italic": true
+    },
+    {
       "family": "Caveat",
       "base": "Caveat",
       "query": "Caveat",

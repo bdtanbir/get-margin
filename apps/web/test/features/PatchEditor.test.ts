@@ -9,6 +9,7 @@ import {
   hashText, type Color, type PageQuadIndex, type Quad, type TextPatchObject,
 } from '@margin/pdf-core'
 import type { PageState } from '@/stores/document'
+import { forgetReplacements } from '@/lib/fontMatch'
 
 const missingGlyphs = vi.fn<() => Promise<string[]>>()
 vi.mock('@/workers/pdfClient', () => ({
@@ -36,7 +37,7 @@ function indexOf(
     lines: [{
       bbox: [40, 100, 160, 118],
       text,
-      font: 'Test',
+      font: 'Inter-Regular',
       weight: bold ? 700 : 400,
       italic,
       color,
@@ -74,8 +75,11 @@ function flatBitmap(scale = 1) {
  * is exactly how the "not extracted yet" case passed against the wrong
  * fixture.
  */
-function mountEditor(index: PageQuadIndex | undefined) {
-  return mount(PatchEditor, { props: { page, zoom: 1, index } })
+function mountEditor(index: PageQuadIndex | undefined, inlineTeleport = false) {
+  return mount(PatchEditor, {
+    props: { page, zoom: 1, index },
+    global: inlineTeleport ? { stubs: { teleport: true } } : {},
+  })
 }
 
 const patches = (edits: ReturnType<typeof useEditsStore>): TextPatchObject[] =>
@@ -267,17 +271,99 @@ describe('PatchEditor', () => {
     expect(patch.background).toEqual([1, 1, 1])
   })
 
-  it('takes the family the line is set in when we carry it, and Inter when we do not', async () => {
-    for (const [font, family] of [['ABCDEF+Outfit-Regular', 'Outfit'], ['Calibri', 'Inter']] as const) {
-      const edits = seed()
-      vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
-      const index = indexOf('Original line')
-      index.lines[0]!.font = font
-      const w = mountEditor(index)
-      await w.get('[data-patch-target="0"]').trigger('click')
-      expect(patches(edits)[0]!.fontFamily).toBe(family)
-      w.unmount()
+  it('takes the family the line is set in when we carry it, without asking', async () => {
+    const edits = seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+    const index = indexOf('Original line')
+    index.lines[0]!.font = 'ABCDEF+Outfit-Regular'
+    const w = mountEditor(index, true)
+    await w.get('[data-patch-target="0"]').trigger('click')
+    expect(w.find('[data-font-replacement]').exists()).toBe(false)
+    expect(patches(edits)[0]!.fontFamily).toBe('Outfit')
+  })
+
+  /**
+   * Reported: clicking "Date: 07-Oct-2026" in a Cambria letter redrew it
+   * in Inter. A font we do not carry now asks, with the closest faces we
+   * do, and nothing is created until the user chooses.
+   */
+  describe('a line in a font we do not carry', () => {
+    beforeEach(() => forgetReplacements())
+
+    function cambria() {
+      const index = indexOf('Date: 07-Oct-2026', true)
+      index.lines[0]!.font = 'BCDFEE+Cambria-Bold'
+      return index
     }
+
+    it('asks which font to use instead of quietly using Inter', async () => {
+      const edits = seed()
+      const w = mountEditor(cambria(), true)
+      await w.get('[data-patch-target="0"]').trigger('click')
+      expect(w.find('[data-font-replacement]').exists()).toBe(true)
+      expect(patches(edits)).toHaveLength(0)
+      const options = w.findAll('[data-font-option]').map((o) => o.attributes('data-font-option'))
+      expect(options).toHaveLength(5)
+      expect(options[0]).toBe('Caladea')
+      expect(options).not.toContain('Inter')
+      expect(w.find('[data-font-option="Caladea"] [data-very-similar]').exists()).toBe(true)
+    })
+
+    it('draws the line in the chosen font, at the line\'s own weight', async () => {
+      const edits = seed()
+      const w = mountEditor(cambria(), true)
+      await w.get('[data-patch-target="0"]').trigger('click')
+      await w.get('[data-font-option="Gelasio"] input').setValue(true)
+      await w.get('[data-font-replace]').trigger('click')
+      await flushPromises()
+      expect(w.find('[data-font-replacement]').exists()).toBe(false)
+      expect(patches(edits)).toHaveLength(1)
+      expect(patches(edits)[0]!.fontFamily).toBe('Gelasio')
+      expect(patches(edits)[0]!.weight).toBe(700)
+      expect(w.find('[data-patch-input]').exists()).toBe(true)
+    })
+
+    it('leaves the page alone on Cancel', async () => {
+      const edits = seed()
+      const w = mountEditor(cambria(), true)
+      await w.get('[data-patch-target="0"]').trigger('click')
+      await w.get('[data-font-cancel]').trigger('click')
+      expect(w.find('[data-font-replacement]').exists()).toBe(false)
+      expect(w.find('[data-patch-input]').exists()).toBe(false)
+      expect(patches(edits)).toHaveLength(0)
+    })
+
+    it('stops asking for that font once "always use" is ticked', async () => {
+      seed()
+      const w = mountEditor(cambria(), true)
+      await w.get('[data-patch-target="0"]').trigger('click')
+      await w.get('[data-font-always]').setValue(true)
+      await w.get('[data-font-replace]').trigger('click')
+      await flushPromises()
+      w.unmount()
+
+      const edits2 = seed()
+      const index = cambria()
+      index.lines[0]!.font = 'ABCDEF+Cambria'
+      const again = mountEditor(index, true)
+      await again.get('[data-patch-target="0"]').trigger('click')
+      expect(again.find('[data-font-replacement]').exists()).toBe(false)
+      expect(patches(edits2)[0]!.fontFamily).toBe('Caladea')
+    })
+
+    it('does not ask again for a line that already has an edit', async () => {
+      const edits = seed()
+      const w = mountEditor(cambria(), true)
+      await w.get('[data-patch-target="0"]').trigger('click')
+      await w.get('[data-font-replace]').trigger('click')
+      await flushPromises()
+      ;(w.get('[data-patch-input]').element as HTMLInputElement).blur()
+      await w.get('[data-patch-input]').trigger('keydown', { key: 'Escape' })
+      await flushPromises()
+      await w.get('[data-patch-target="0"]').trigger('click')
+      expect(w.find('[data-font-replacement]').exists()).toBe(false)
+      expect(patches(edits)).toHaveLength(1)
+    })
   })
 
   it('selects that layer, so the inspector offers its font, weight, size and colour', async () => {
