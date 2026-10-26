@@ -2,7 +2,8 @@
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { svgViewBox, svgRootTransform } from '@margin/transform'
 import type { PageState } from '@/stores/document'
-import type { EditObject } from '@margin/pdf-core'
+import type { EditObject, TextPatchObject as TextPatch } from '@margin/pdf-core'
+import { isMoved } from '@/features/patch/linePatch'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import ObjectLayer from './ObjectLayer.vue'
@@ -273,6 +274,46 @@ async function onDoubleClick(e: MouseEvent): Promise<void> {
   }
 }
 
+/**
+ * An edited line that still reads as TEXT: its own words, where the
+ * document put them -- a line that was only restyled, such as one with a
+ * bolded phrase.
+ *
+ * Reported: after bolding "Please feel free" under the select tool, the
+ * line could not be selected again. Its patch is drawn above the text
+ * surface and took the press as "select this object", so dragging over it
+ * selected nothing and a double-click never reached the surface. Over such
+ * a line the press now starts a text selection, as it did before the edit;
+ * the extraction's character boxes are still where those words are.
+ *
+ * NOT for a patch that was retyped or moved: its characters are no longer
+ * at the document's character positions, so a text selection there would
+ * highlight one thing and style another. Those stay objects, selected by a
+ * click as before. Every patch is also reachable from the Layers panel.
+ */
+function readsAsText(o: EditObject): o is TextPatch {
+  if (o.kind !== 'textPatch' || !selecting.value) return false
+  const p = o as TextPatch
+  return p.text === p.originalText && !isMoved(p)
+}
+
+function onPatchPointerDown(o: EditObject, e: PointerEvent): void {
+  if (readsAsText(o)) {
+    // A text selection and an object selection are mutually exclusive.
+    edits.select([])
+    text.onPointerDown(e)
+    return
+  }
+  edits.select([o.id])
+}
+
+/** A double-click on an edited line opens it for editing, as on any other line. */
+function onPatchDoubleClick(o: EditObject): void {
+  if (o.kind !== 'textPatch' || tools.active !== 'select') return
+  selection.clear()
+  tools.requestPatch(props.page.id, (o as TextPatch).lineIndex)
+}
+
 onBeforeUnmount(() => {
   if (selection.pageId === props.page.id) selection.clear()
 })
@@ -395,7 +436,9 @@ const draft = computed(() => {
           :data-object-id="o.id"
           :opacity="o.opacity"
           class="pointer-events-auto"
-          @pointerdown="edits.select([o.id])"
+          :class="readsAsText(o) ? 'cursor-text' : undefined"
+          @pointerdown="onPatchPointerDown(o, $event)"
+          @dblclick="onPatchDoubleClick(o)"
         >
           <RedactionObject v-if="o.kind === 'redaction'" :object="(o as never)" />
           <TextPatchObject v-else-if="o.kind === 'textPatch'" :object="(o as never)" />

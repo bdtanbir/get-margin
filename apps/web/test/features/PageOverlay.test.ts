@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PageOverlay from '@/features/overlay/PageOverlay.vue'
 import { useEditsStore } from '@/stores/edits'
+import { useToolsStore } from '@/stores/tools'
 import type { PageState } from '@/stores/document'
 import type { EditObject } from '@margin/pdf-core'
 
@@ -214,5 +215,61 @@ describe('PageOverlay layering', () => {
     const w = mount(PageOverlay, { props: { page, zoom: 1 } })
     await w.get('[data-object-id="a"]').trigger('pointerdown')
     expect(s.selection).toEqual(['a'])
+  })
+})
+
+/**
+ * Reported: after bolding "Please feel free" under the select tool, the
+ * line could not be selected again -- the press selected its patch as an
+ * object, and a double-click did nothing.
+ */
+describe('an edited line under the select tool', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useEditsStore().reset({ 'src-0': { hash: 'h', name: 'a.pdf' } }, ['p1'],
+      { p1: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } })
+    useToolsStore().setTool('select')
+  })
+
+  const patchObj = (over: Record<string, unknown> = {}): EditObject => ({
+    id: 'patch', pageId: 'p1', kind: 'textPatch',
+    rect: { x: 10, y: 20, w: 100, h: 12 },
+    rotation: 0, z: 1, locked: false, opacity: 1,
+    lineIndex: 3, originalHash: 'h', originalText: 'Please feel free', text: 'Please feel free',
+    fontFamily: 'Inter', fontSize: 10, baseline: 30, color: [0, 0, 0],
+    background: [1, 1, 1], backgroundConfidence: 1, fit: 'overflow',
+    spans: [{ text: 'Please feel', weight: 700 }, { text: ' free' }],
+    ...over,
+  } as unknown as EditObject)
+
+  const press = async (object: EditObject) => {
+    const edits = useEditsStore()
+    edits.applyOp({ type: 'addObject', object }, 'add')
+    const w = mount(PageOverlay, { props: { page, zoom: 1 } })
+    await w.get('[data-object-id="patch"]').trigger('pointerdown')
+    return { w, edits }
+  }
+
+  it('selects TEXT over a line that was only restyled, not the patch', async () => {
+    const { edits } = await press(patchObj())
+    expect(edits.selection).toEqual([])
+  })
+
+  it('still selects the patch over a line that was retyped', async () => {
+    const { edits } = await press(patchObj({ text: 'Something else' }))
+    expect(edits.selection).toEqual(['patch'])
+  })
+
+  it('still selects the patch over a line that was moved', async () => {
+    const { edits } = await press(patchObj({ offset: { dx: 20, dy: 0 } }))
+    expect(edits.selection).toEqual(['patch'])
+  })
+
+  it('opens the line for editing on a double-click', async () => {
+    const edits = useEditsStore()
+    edits.applyOp({ type: 'addObject', object: patchObj() }, 'add')
+    const w = mount(PageOverlay, { props: { page, zoom: 1 } })
+    await w.get('[data-object-id="patch"]').trigger('dblclick')
+    expect(useToolsStore().pendingPatch).toEqual({ pageId: 'p1', lineIndex: 3 })
   })
 })
