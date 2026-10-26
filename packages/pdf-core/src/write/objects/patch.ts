@@ -1,3 +1,4 @@
+import { saneQuad } from '../../text/saneQuad.js'
 import * as mupdf from 'mupdf'
 import type { ObjectWriter } from '../index.js'
 import type { TextPatchObject } from '../types.js'
@@ -129,6 +130,9 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
         line.origin = { x: origin[0] ?? 0, y: origin[1] ?? 0 }
       }
       line.text += c
+      // Capped exactly as buildQuadIndex caps it, so the cover exported is
+      // the cover the user saw. See saneQuad.ts.
+      quad = saneQuad(quad, origin, size)
       for (let i = 0; i < 8; i += 2) {
         line.bbox[0] = Math.min(line.bbox[0], quad[i]!)
         line.bbox[2] = Math.max(line.bbox[2], quad[i]!)

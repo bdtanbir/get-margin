@@ -1,3 +1,4 @@
+import { saneQuad } from './saneQuad.js'
 import type { PdfDocument } from '../engine.js'
 import type { Color } from '../write/types.js'
 import { detectWeight, pageFontWeights } from './fontWeights.js'
@@ -115,6 +116,18 @@ function toRgb(color: readonly number[] | undefined): Color {
   return [color[0]!, color[1]!, color[2]!]
 }
 
+/** The page-space box around every corner of every glyph. */
+function unionOf(chars: CharQuad[]): [number, number, number, number] {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (const c of chars) {
+    for (let i = 0; i < 8; i += 2) {
+      x0 = Math.min(x0, c.quad[i]!); x1 = Math.max(x1, c.quad[i]!)
+      y0 = Math.min(y0, c.quad[i + 1]!); y1 = Math.max(y1, c.quad[i + 1]!)
+    }
+  }
+  return [x0, y0, x1, y1]
+}
+
 export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadIndex {
   // Validates the index and range before a page is ever loaded, matching
   // renderPage's discipline.
@@ -134,6 +147,8 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
     let color: Color = [0, 0, 0]
     let size = 0
     let baseline = 0
+    /** Whether any glyph on the line had a broken font's height capped. */
+    let capped = false
 
     text.walk({
       beginLine(lineBox) {
@@ -145,6 +160,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         color = [0, 0, 0]
         size = 0
         baseline = 0
+        capped = false
       },
       onChar(c, origin, charFont, charSize, quad, charColor) {
         // The run's font and size come from its first character. A line is
@@ -161,12 +177,19 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
           // character for the same reason as the font and size.
           baseline = origin[1] ?? 0
         }
-        chars.push({ char: c, quad: [...quad] as Quad })
+        // Capped against the glyph's OWN size: a superscript on the line is
+        // smaller than the line's first glyph, and its box should be too.
+        const sane = saneQuad(quad, origin, charSize)
+        if (sane.some((v, i) => v !== quad[i])) capped = true
+        chars.push({ char: c, quad: sane as Quad })
       },
       endLine() {
         // A line with no characters (an image-only block's stray line) is
         // not selectable text and would only add an empty hit target.
         if (bbox && chars.length > 0) {
+          // MuPDF's own line box was built from the broken heights too, so
+          // once a glyph was capped the box is rebuilt from the glyphs.
+          if (capped) bbox = unionOf(chars)
           lines.push({
             bbox,
             text: chars.map((c) => c.char).join(''),
