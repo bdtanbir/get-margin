@@ -21,7 +21,7 @@ import { shouldAskForTelemetry } from '@/lib/telemetry/analytics'
 import { useDialogsStore } from '@/stores/dialogs'
 import RestorePrompt from '@/features/document/RestorePrompt.vue'
 import CommandPalette from '@/features/command/CommandPalette.vue'
-import UpdatePrompt from '@/features/pwa/UpdatePrompt.vue'
+import AutoUpdate from '@/features/pwa/AutoUpdate.vue'
 
 useTheme()
 const { isDesktop } = useShell()
@@ -130,5 +130,5 @@ function record(err: Error): void {
     fallback -- which is precisely when a component mounted inside it
     would be unreachable.
   -->
-  <UpdatePrompt />
+  <AutoUpdate />
 </template>

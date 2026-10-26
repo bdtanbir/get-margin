@@ -24,13 +24,10 @@ export type PwaUpdates = {
 }
 
 /**
- * OFFERED, never automatic -- the same rule RestorePrompt follows, for a
- * sharper reason.
- *
- * A silent `skipWaiting()` swaps the code under a page that is holding an
- * open document, unsaved edits, and a MuPDF instance in a worker. Reloading
- * without asking would discard all three. So the new worker installs, waits,
- * and the user picks the moment.
+ * Never a silent `skipWaiting()`: that swaps the code under a page holding
+ * an open document, unsaved edits and a MuPDF instance in a worker. The new
+ * worker installs and waits, and `AutoUpdate` takes it -- by itself, but
+ * only when no document is open.
  */
 export function createPwaUpdates(register: RegisterSW): PwaUpdates {
   const needsRefresh = ref(false)

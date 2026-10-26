@@ -1,42 +1,36 @@
 <script setup lang="ts">
-import { RefreshCw } from 'lucide-vue-next'
-import Button from '@/ui/Button.vue'
+import { watchEffect } from 'vue'
 import { usePwaUpdates } from '@/lib/pwa/updates'
+import { useDocumentStore } from '@/stores/document'
 
+/**
+ * Takes a new version of the app by itself -- no "Reload" button.
+ *
+ * It used to ask. The user's request was that a new version should simply
+ * arrive. What it must not do is reload under an OPEN document: the file
+ * itself is not kept across a reload (only the edits are, and only offered
+ * back once the file is opened again), so reloading mid-edit would close
+ * the user's work in front of them.
+ *
+ * So it reloads the moment it is safe: straight away when no document is
+ * open, and otherwise as soon as the open one is closed. Nothing is shown
+ * either way.
+ */
 const updates = usePwaUpdates()
+const doc = useDocumentStore()
+
+/**
+ * Nothing the user would lose: no file, or one that failed to open. Not
+ * while a file is opening or waiting for its password -- reloading then
+ * would drop the file they just picked.
+ */
+const idle = (): boolean => doc.status === 'empty' || doc.status === 'error'
+
+watchEffect(() => {
+  if (updates.needsRefresh.value && idle()) updates.apply()
+})
 </script>
 
 <template>
-  <!--
-    Bottom of the screen, not the top: RestorePrompt already owns `top-16`,
-    and the two can be on screen at the same moment -- a user returns to a
-    file they were editing on a day a new build shipped. Stacking them
-    would hide one behind the other.
-
-    `role="status"` rather than `alert`: a newer version being available is
-    not an interruption, and an assertive announcement would cut across
-    whatever the screen reader was saying about the document.
-  -->
-  <div
-    v-if="updates.needsRefresh.value"
-    data-pwa-update
-    role="status"
-    class="fixed inset-x-0 bottom-4 z-50 mx-auto flex w-full max-w-md items-start gap-3
-           rounded-panel border border-border bg-surface-raised p-3 shadow-high"
-  >
-    <RefreshCw :size="18" :stroke-width="1.5" class="mt-0.5 shrink-0 text-accent" />
-    <div class="flex min-w-0 flex-1 flex-col gap-2">
-      <p class="text-[13px] text-text">A new version of get-margin is ready.</p>
-      <p class="text-[12px] text-text-subtle">
-        Reloading closes the document you have open. Any edits you have not exported
-        are kept on this device and offered back when you reopen the file.
-      </p>
-      <div class="flex gap-2">
-        <Button size="sm" data-pwa-update-accept @click="updates.apply()">Reload</Button>
-        <Button size="sm" variant="ghost" data-pwa-update-dismiss @click="updates.dismiss()">
-          Not now
-        </Button>
-      </div>
-    </div>
-  </div>
+  <!-- Nothing to show: see the comment above. -->
 </template>

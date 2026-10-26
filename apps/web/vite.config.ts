@@ -22,9 +22,10 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       /**
-       * `prompt`, not `autoUpdate`. An automatic reload would swap the code
-       * under a page holding an open document, unsaved edits and a MuPDF
-       * instance in a worker. See `src/lib/pwa/updates.ts`.
+       * `prompt`, not `autoUpdate`: `autoUpdate` reloads the moment a new
+       * worker is ready, under whatever document is open. The app takes
+       * the update itself instead, when no document is open -- see
+       * `src/features/pwa/AutoUpdate.vue`.
        */
       registerType: 'prompt',
       /**
