@@ -18,6 +18,7 @@ import type { ToolId } from '@/stores/tools'
  */
 export const TOOLS: Array<{ id: ToolId; label: string; icon: Component }> = [
   { id: 'select', label: 'Select', icon: MousePointer2 },
+  { id: 'patch', label: 'Edit text', icon: TextSelect },
   { id: 'text', label: 'Text', icon: Type },
   { id: 'image', label: 'Image', icon: Image },
   { id: 'rect', label: 'Rectangle', icon: Square },
@@ -44,7 +45,6 @@ export const TOOLS: Array<{ id: ToolId; label: string; icon: Component }> = [
   // "Edit text" rather than "text": the Text tool ADDS text, this one
   // replaces what the document already says, and the two are easy to
   // confuse from an icon alone.
-  { id: 'patch', label: 'Edit text', icon: TextSelect },
   // Next to "Edit text" because it is the same idea applied to the other
   // half of what a document already contains, and named the same way for
   // the same reason: the Image tool ADDS a picture, this one moves or
