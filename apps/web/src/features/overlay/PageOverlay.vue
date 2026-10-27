@@ -55,6 +55,19 @@ const rootTransform = computed(() => svgRootTransform(props.page.geometry))
 // the two can be checked against the format's own list of kinds.
 const isMarkup = isMarkupKind
 
+/**
+ * The lines of this page's own text that are being replaced. The export
+ * takes all of them off the page, so each patch's preview is drawn from a
+ * page without any of them -- otherwise two neighbouring patches would each
+ * show the other's old text in their margins.
+ */
+const patchedLines = computed(() =>
+  Object.values(edits.doc.objects)
+    .filter((o): o is TextPatch => o.pageId === props.page.id && o.kind === 'textPatch')
+    .map((o) => o.lineIndex)
+    .sort((a, b) => a - b),
+)
+
 const onPage = computed(() =>
   Object.values(edits.doc.objects)
     .filter((o) => o.pageId === props.page.id)
@@ -441,7 +454,13 @@ const draft = computed(() => {
           @dblclick="onPatchDoubleClick(o)"
         >
           <RedactionObject v-if="o.kind === 'redaction'" :object="(o as never)" />
-          <TextPatchObject v-else-if="o.kind === 'textPatch'" :object="(o as never)" />
+          <TextPatchObject
+            v-else-if="o.kind === 'textPatch'"
+            :object="(o as never)"
+            :source-id="page.sourceId"
+            :source-index="page.sourceIndex"
+            :lines="patchedLines"
+          />
           <PatchedAreaObject
             v-else-if="o.kind === 'imagePatch' || o.kind === 'regionPatch'"
             :object="(o as never)"

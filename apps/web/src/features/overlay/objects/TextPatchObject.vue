@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue'
+import { getPdfClient } from '@/workers/pdfClient'
 import type { TextPatchObject } from '@margin/pdf-core'
 import { patchRuns, runsAdvance, truncateRuns } from '@margin/pdf-core'
 import { cssFamily, cssWeight, cssStyle, loadFont, measureText, ASCENT_RATIO } from '@/lib/fonts'
@@ -20,16 +21,26 @@ import { rgb } from './svgPaint'
  * and `measureText` come from `lib/fonts.ts`, which the writer's own
  * comment names as the other half of that pair.
  *
- * COVER AND REDRAW, not removal -- the same as the writer. The original
- * glyphs are still in the page bitmap underneath; this paints over them.
- * That distinction matters and the privacy page depends on it: hiding text
- * is not redaction, and redaction is a separate tool that removes.
+ * REMOVE AND REDRAW, as the writer does. The page bitmap still has the
+ * original glyphs, so the patch's area is shown as the page looks WITHOUT
+ * them -- rendered by the worker from a copy with this page's patched lines
+ * taken off -- rather than as an opaque box, which hid whatever the line
+ * sat close to (a Turnitin heading on the bottom edge of the logo lost half
+ * the logo). Until that picture arrives, and wherever the writer would fall
+ * back to covering the line, the box is drawn instead, exactly as before.
  *
  * Geometry is MuPDF PAGE space (top-down), taken from the line's own
  * character quads, so this renders OUTSIDE the overlay's y-flipped root
  * <g> -- the same treatment markup and redaction get.
  */
-const props = defineProps<{ object: TextPatchObject }>()
+const props = defineProps<{
+  object: TextPatchObject
+  /** The file and page the patched line is on, to render it without the line. */
+  sourceId?: string | undefined
+  sourceIndex?: number | undefined
+  /** Every patched line on this page: all are gone in the export, so all are gone here. */
+  lines?: readonly number[] | undefined
+}>()
 
 /**
  * How far the replacement has been dragged from the line it replaces.
@@ -55,6 +66,63 @@ const cover = computed(() => {
   const b = bleed.value
   return { x: x - b, y: y - b, width: w + b * 2, height: h + b * 2 }
 })
+
+/** Pixels per point of the picture behind the patch: sharp up to about 300%. */
+const PREVIEW_SCALE = 3
+
+/** The patch's area as the page looks with its patched lines removed. */
+const without = ref<{ href: string; x: number; y: number; width: number; height: number } | undefined>()
+let request = 0
+
+function forget(): void {
+  if (without.value) URL.revokeObjectURL(without.value.href)
+  without.value = undefined
+}
+
+watch(
+  () => JSON.stringify([props.sourceId, props.sourceIndex, props.lines, cover.value]),
+  async () => {
+    const at = ++request
+    const lines = props.lines ?? []
+    const client = getPdfClient()
+    if (props.sourceIndex === undefined || lines.length === 0 || typeof document === 'undefined' ||
+        typeof client.renderWithoutLines !== 'function') {
+      forget()
+      return
+    }
+    const c = cover.value
+    const area = { x: c.x, y: c.y, w: c.width, h: c.height }
+    const result = await client
+      .renderWithoutLines(props.sourceId, props.sourceIndex, [...lines], area, PREVIEW_SCALE)
+      .catch(() => null)
+    if (at !== request) return
+    // Not removed: the export covers this line, so the preview does too.
+    if (!result || !result.removed.includes(props.object.lineIndex)) {
+      forget()
+      return
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = result.width
+    canvas.height = result.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) { forget(); return }
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(result.rgba), result.width, result.height), 0, 0)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve))
+    if (at !== request || !blob) return
+    forget()
+    without.value = {
+      href: URL.createObjectURL(blob),
+      // The picture starts on whole pixels, so its corner is where the
+      // worker's rounding put it, not quite where the area began.
+      x: Math.floor(area.x * PREVIEW_SCALE) / PREVIEW_SCALE,
+      y: Math.floor(area.y * PREVIEW_SCALE) / PREVIEW_SCALE,
+      width: result.width / PREVIEW_SCALE,
+      height: result.height / PREVIEW_SCALE,
+    }
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => { request++; forget() })
 
 /**
  * Size and text after the fit rule, resolved the way the writer resolves
@@ -146,7 +214,18 @@ watchEffect(() => {
 
 <template>
   <g>
+    <image
+      v-if="without"
+      :href="without.href"
+      :x="without.x"
+      :y="without.y"
+      :width="without.width"
+      :height="without.height"
+      preserveAspectRatio="none"
+      data-patch-without
+    />
     <rect
+      v-else
       :x="cover.x"
       :y="cover.y"
       :width="cover.width"

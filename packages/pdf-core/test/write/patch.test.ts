@@ -120,18 +120,16 @@ describe('text patching', () => {
   })
 
   /**
-   * Cover-and-redraw, not removal -- the original glyphs are still in the
-   * content stream, hidden under an opaque rectangle. That is a real
-   * limitation and belongs in a test rather than a footnote: someone who
-   * needs the old text GONE wants redaction, not patching.
+   * Remove-and-redraw: the original line's glyphs are taken off the page,
+   * not hidden under a box. A box hid whatever it overlapped -- on a
+   * Turnitin heading, half the page's logo. Asserted through extraction
+   * rather than a byte search, because content streams are compressed and a
+   * raw search would report "absent" for text that is plainly there.
    */
-  it('covers rather than removes, which is why redaction exists separately', () => {
+  it('removes the original line rather than covering it', () => {
     const out = write([patch({ text: 'Replacement text' })])
-    // The original is STILL EXTRACTABLE: it is hidden under an opaque
-    // rectangle, not deleted. Asserted through extraction rather than a
-    // byte search, because content streams are compressed and a raw search
-    // would report "absent" for text that is plainly there.
-    expect(linesOf(out).join(' ')).toContain('Hello margin')
+    expect(linesOf(out).join(' ')).not.toContain('Hello margin')
+    expect(linesOf(out).join(' ')).toContain('Replacement text')
   })
 
   it('leaves other lines alone', () => {
@@ -478,8 +476,8 @@ describe('a style-only patch', () => {
       text: original(), weight: 700, italic: true, fit: 'overflow',
     }) as EditObject])
     const drawn = drawnStyles(out, 'Hello margin')
-    // The covered original, upright and regular, and the redraw over it.
-    expect(drawn).toContainEqual({ text: original(), weight: 400, italic: false })
+    // Only the redraw: the original, upright and regular, is gone.
+    expect(drawn).not.toContainEqual({ text: original(), weight: 400, italic: false })
     expect(drawn).toContainEqual({ text: original(), weight: 700, italic: true })
   })
 
@@ -491,20 +489,15 @@ describe('a style-only patch', () => {
   })
 
   /**
-   * COVERS the original. Does not remove it.
+   * REMOVES the original, then redraws it.
    *
-   * The upright glyphs are still in the content stream under the cover, so
-   * a style-only patch makes the line extractable TWICE -- once as the
-   * document set it, once as the patch redrew it. That is the same property
-   * `whiteout.test.ts` asserts, and it is the reason redaction is a
-   * separate tool: styling text is not a way to hide it.
-   *
-   * Written expecting one line and corrected to two, which is how the
-   * distinction earned a test of its own here rather than a comment.
+   * It used to cover it, which left the line extractable TWICE -- once as
+   * the document set it, once as the patch redrew it. Removing the original
+   * glyphs leaves only the redraw.
    */
-  it('leaves the original extractable, because covering is not removing', () => {
+  it('leaves the line extractable once, as the redraw -- the original is gone', () => {
     const out = write([patch({ text: original(), weight: 700, fit: 'overflow' }) as EditObject])
-    expect(linesOf(out).filter((l) => l.includes('Hello margin'))).toHaveLength(2)
+    expect(linesOf(out).filter((l) => l.includes('Hello margin'))).toHaveLength(1)
   })
 })
 

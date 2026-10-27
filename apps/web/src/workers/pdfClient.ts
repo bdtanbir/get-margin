@@ -118,6 +118,14 @@ export type PdfClient = {
   ): Promise<{ matches: Array<{ page: number } & Match>; capped: boolean }>
   /** Characters the font cannot draw. See PdfService.missingGlyphs. */
   missingGlyphs(fontBytes: Uint8Array, family: string, text: string): Promise<string[]>
+  /** An area of a page with some lines taken off. See PdfService.renderWithoutLines. */
+  renderWithoutLines(
+    sourceId: SourceId | undefined,
+    page: number,
+    lines: number[],
+    area: { x: number; y: number; w: number; h: number },
+    scale: number,
+  ): Promise<{ width: number; height: number; rgba: Uint8Array; removed: number[] } | null>
   /**
    * One page as a JPEG or PNG. See PdfService.rasterise.
    *
@@ -303,6 +311,11 @@ export function createPdfClient(): PdfClient {
     async missingGlyphs(fontBytes, family, text) {
       await ready
       return remote.missingGlyphs(fontBytes, family, text)
+    },
+
+    async renderWithoutLines(sourceId, page, lines, area, scale) {
+      await ready
+      return remote.renderWithoutLines(sourceId, page, lines, area, scale)
     },
 
     async rasterise(page, dpi, format, quality) {

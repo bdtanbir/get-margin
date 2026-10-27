@@ -2,8 +2,12 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as mupdf from 'mupdf'
 import { replay } from '../../src/write/index.js'
-import { hashText } from '../../src/write/objects/patch.js'
+import { hashText, writeTextPatch } from '../../src/write/objects/patch.js'
+import { FontRegistry, createMeasurer } from '../../src/write/fonts.js'
+import { createXObjectCache } from '../../src/write/xobject.js'
+import { geometryFromPageObject } from '../../src/geometry.js'
 import {
   emptyEditDocument,
   type EditDocument, type EditObject, type RegionPatchObject, type TextPatchObject,
@@ -114,6 +118,30 @@ function docWith(sourceIndex: number, objects: EditObject[]): EditDocument {
 const write = (src: Uint8Array, sourceIndex: number, objects: EditObject[]): Uint8Array =>
   replay(new Map([['src-0', src]]), docWith(sourceIndex, objects), { fonts: FONTS })
 
+/**
+ * The patch writer ON ITS OWN, without the export's removal pass -- so the
+ * line is covered by the opaque box. That box is still what an edit falls
+ * back to when its glyphs cannot be removed safely, and its geometry on a
+ * turned page is what this file was written to pin.
+ */
+function writeCovered(src: Uint8Array, sourceIndex: number, patch: TextPatchObject): Uint8Array {
+  const single = write(src, sourceIndex, [])
+  const raw = mupdf.Document.openDocument(single, 'application/pdf') as mupdf.PDFDocument
+  try {
+    const page = raw.loadPage(0) as mupdf.PDFPage
+    writeTextPatch({
+      raw, page,
+      geometry: geometryFromPageObject(page.getObject() as never),
+      fonts: new FontRegistry(raw, FONTS),
+      measure: createMeasurer(FONTS),
+      xobject: createXObjectCache(),
+    }, patch as EditObject)
+    return raw.saveToBuffer('compress').asUint8Array().slice()
+  } finally {
+    raw.destroy()
+  }
+}
+
 function textPatch(line: Line, over: Partial<TextPatchObject> = {}): TextPatchObject {
   return {
     id: 'tp1', pageId: 'p0', kind: 'textPatch',
@@ -157,13 +185,21 @@ describe('text patch on a turned page', () => {
       return l
     }
 
-    it(`covers the line it replaces on ${label}`, () => {
+    it(`removes the line it replaces, and only that line, on ${label}`, () => {
+      const original = before()
+      const others = linesOf(bytes(fixture), page).slice(1).map((l) => l.text)
+      const out = write(bytes(fixture), page, [textPatch(original, { text: '' }) as EditObject])
+      const after = linesOf(out, 0).map((l) => l.text)
+      expect(after).not.toContain(original.text)
+      for (const text of others) expect(after).toContain(text)
+    })
+
+    it(`covers the line it replaces on ${label}, when it falls back to covering`, () => {
       const original = before()
       // Magenta, and nothing drawn over it: the cover alone is under test,
       // and no fixture contains magenta, so finding it is unambiguous.
-      const out = write(bytes(fixture), page, [
-        textPatch(original, { text: '', background: [1, 0, 1] }) as EditObject,
-      ])
+      const out = writeCovered(bytes(fixture), page,
+        textPatch(original, { text: '', background: [1, 0, 1] }))
 
       const cx = (original.bbox.x0 + original.bbox.x1) / 2
       const cy = (original.bbox.y0 + original.bbox.y1) / 2
@@ -206,8 +242,7 @@ describe('text patch on a turned page', () => {
       const original = before()
       const out = write(bytes(fixture), page, [textPatch(original) as EditObject])
 
-      // The original text is COVERED, not removed, so it still extracts --
-      // the replacement is found by what it says.
+      // Found by what it says.
       const replacement = linesOf(out, 0).find((l) => l.text.trim() === 'Xy')
       expect(replacement, 'the replacement was not drawn').toBeDefined()
 

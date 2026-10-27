@@ -1,4 +1,4 @@
-import { saneQuad } from '../../text/saneQuad.js'
+import { readLines, removeLines, type PageLine } from '../../text/removeLines.js'
 import * as mupdf from 'mupdf'
 import type { ObjectWriter } from '../index.js'
 import type { TextPatchObject } from '../types.js'
@@ -72,10 +72,12 @@ export function missingGlyphsFor(
 /**
  * Replace a line of the document's own text.
  *
- * COVER AND REDRAW, not removal. An opaque rectangle in the sampled
- * background colour, then the new text over it. Removal is redaction's job
- * and has its own primitive; using `applyRedactions` for an ordinary edit
- * would be slower and would destroy more than was asked for.
+ * REMOVE AND REDRAW. The line's own glyphs are taken off the page -- text
+ * only, nothing around or under it (see removeLines) -- and the new text is
+ * drawn in their place. Where that is not safe the line is covered by an
+ * opaque box in the sampled background colour instead, which is how every
+ * patch worked before: a box hides whatever it overlaps, and on a Turnitin
+ * heading that sat on the logo it cut the logo in half.
  *
  * THE HASH GUARD IS THE POINT. A patch is addressed by where a line was
  * when the user edited it -- page, line index -- and extraction is not
@@ -86,80 +88,30 @@ export function missingGlyphsFor(
  * mispatch. Quietly patching the wrong line is the worst outcome available
  * -- it damages a document while reporting success.
  */
-export const writeTextPatch: ObjectWriter = (ctx, object) => {
-  const o = object as TextPatchObject
+/** A text patch's line, found and checked before anything is drawn. */
+export type PreparedPatch = {
+  line: PageLine
+  /** Whether the line's own glyphs were taken off the page (removeLines). */
+  removed: boolean
+}
 
-  // Re-extract the line as it is NOW, in the assembled export.
-  const structured = ctx.page.toStructuredText('')
-  const lines: Array<{
-    text: string
-    bbox: [number, number, number, number]
-    /** The size the line was actually set in, from its first glyph. */
-    size: number
-    /**
-     * Where the pen sat at the start of the line, in MuPDF PAGE space
-     * (Convention C). The WHOLE point, not just its y: on a turned page the
-     * pen does not run along page-space x, so an x reconstructed from the
-     * bbox would be the wrong corner of it.
-     */
-    origin: { x: number; y: number } | null
-    /**
-     * Which way the line runs, in page space: [1,0] reads left-to-right on
-     * screen. MuPDF hands this to `beginLine`; `pageDirToContent` turns it
-     * into the direction the run was actually drawn in.
-     */
-    dir: { x: number; y: number }
-    /** Each character and its pen position, to tell which ones draw nothing. */
-    glyphs: Array<{ char: string; origin: number[] }>
-  }> = []
-  structured.walk({
-    beginLine: (_bbox: unknown, _wmode: number, direction: number[]) => {
-      lines.push({
-        text: '',
-        bbox: [Infinity, Infinity, -Infinity, -Infinity],
-        size: 0,
-        origin: null,
-        glyphs: [],
-        // A walker that predates the argument, or a degenerate run, reads
-        // as ordinary left-to-right rather than as a zero-length direction.
-        dir: { x: direction?.[0] ?? 1, y: direction?.[1] ?? 0 },
-      })
-    },
-    onChar: (c: string, origin: number[], _font: unknown, size: number, quad: number[]) => {
-      const line = lines[lines.length - 1]
-      if (!line) return
-      // First glyph decides: a line is a homogeneous style run in MuPDF's
-      // model, and the pen position at its start is the line's baseline.
-      if (line.text === '') {
-        line.size = size
-        line.origin = { x: origin[0] ?? 0, y: origin[1] ?? 0 }
-      }
-      line.text += c
-      line.glyphs.push({ char: c, origin: [origin[0] ?? 0, origin[1] ?? 0] })
-      // Capped exactly as buildQuadIndex caps it, so the cover exported is
-      // the cover the user saw. See saneQuad.ts.
-      quad = saneQuad(quad, origin, size)
-      for (let i = 0; i < 8; i += 2) {
-        line.bbox[0] = Math.min(line.bbox[0], quad[i]!)
-        line.bbox[2] = Math.max(line.bbox[2], quad[i]!)
-        line.bbox[1] = Math.min(line.bbox[1], quad[i + 1]!)
-        line.bbox[3] = Math.max(line.bbox[3], quad[i + 1]!)
-      }
-    },
-  } as never)
-
+/**
+ * The line a patch was made against, or a refusal.
+ *
+ * The line as the editor showed it is compared: without the U+FFFD
+ * characters that draw nothing, by the same rule buildQuadIndex applies
+ * (invisible.ts). The raw text is accepted too, for an edit saved before
+ * that rule existed -- it hashed the line with them in.
+ */
+export function resolvePatchLine(page: mupdf.Page, lines: PageLine[], o: TextPatchObject): PageLine {
   const line = lines[o.lineIndex]
   if (!line) {
     throw new PatchRefused(
       `the line this edit refers to is no longer on the page (line ${o.lineIndex + 1})`,
     )
   }
-  // The line as the editor showed it: without the U+FFFD characters that
-  // draw nothing, by the same rule buildQuadIndex applies (invisible.ts).
-  // The raw text is accepted too, for an edit saved before that rule
-  // existed -- it hashed the line with them in.
   const hidden = line.text.includes('\ufffd')
-    ? hiddenIndices(line.glyphs, invisibleCharTest(ctx.page))
+    ? hiddenIndices(line.glyphs, invisibleCharTest(page))
     : new Set<number>()
   const shown = line.glyphs.filter((_, i) => !hidden.has(i)).map((g) => g.char).join('')
   if (hashText(shown) !== o.originalHash && hashText(line.text) !== o.originalHash) {
@@ -168,6 +120,50 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
       `was not applied. It said "${o.originalText}" and now reads "${shown}".`,
     )
   }
+  return line
+}
+
+/**
+ * Every text patch on a page: found and checked FIRST, then their lines'
+ * glyphs taken off the page together.
+ *
+ * Together, and before any writer draws, because removing a line renumbers
+ * the ones after it -- the second patch on a page would otherwise look for
+ * its line one place too far down and be refused. Lines that cannot be
+ * removed safely stay, and their patches cover them the old way.
+ *
+ * Throws `PatchRefused` naming the patch whose line no longer matches;
+ * nothing on the page has been changed when it does.
+ */
+export function prepareTextPatches(
+  page: mupdf.PDFPage,
+  patches: TextPatchObject[],
+): Map<string, PreparedPatch> {
+  const lines = readLines(page)
+  const found = new Map<string, PageLine>()
+  for (const o of patches) {
+    try {
+      found.set(o.id, resolvePatchLine(page, lines, o))
+    } catch (cause) {
+      if (cause instanceof PatchRefused) (cause as PatchRefused & { objectId?: string }).objectId = o.id
+      throw cause
+    }
+  }
+  const removed = removeLines(page, lines, patches.map((o) => o.lineIndex))
+  const prepared = new Map<string, PreparedPatch>()
+  for (const o of patches) prepared.set(o.id, { line: found.get(o.id)!, removed: removed.has(o.lineIndex) })
+  return prepared
+}
+
+export const writeTextPatch: ObjectWriter = (ctx, object) => {
+  const o = object as TextPatchObject
+
+  // Found, checked and (where it was safe) removed by prepareTextPatches
+  // before any writer ran. A patch written on its own -- without that pass --
+  // reads the line here and covers it.
+  const prepared = ctx.patchLines?.get(o.id)
+  const line = prepared?.line ?? resolvePatchLine(ctx.page, readLines(ctx.page), o)
+  const removed = prepared?.removed === true
 
   /**
    * The line's box is MuPDF page space (Convention C); content-stream
@@ -236,7 +232,10 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
   // a faint outline of the old text.
   const bleed = Math.max(1, across * 0.12)
 
-  const ops: string[] = [
+  // The old glyphs are gone when they could be removed, and nothing is
+  // painted over the line. Otherwise an opaque box in the sampled
+  // background hides them, as every patch did before removal existed.
+  const ops: string[] = removed ? [] : [
     fillColor(o.background),
     `${num(x - bleed)} ${num(y - bleed)} ${num(w + bleed * 2)} ${num(h + bleed * 2)} re`,
     'f',

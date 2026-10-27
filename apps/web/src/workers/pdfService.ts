@@ -3,7 +3,7 @@ import {
   cropImage, cropEditedRegion,
   listFields,
   readMetadata, recompressImages, repairMissingGlyphs,
-  findInPage, missingGlyphsFor,
+  findInPage, missingGlyphsFor, renderWithoutLines,
   type EditDocument, type PageQuadIndex, type PageImageIndex, type SourceId,
   type StrippedContent,
   type SourceField, type Protection, type DocumentMetadata,
@@ -512,6 +512,42 @@ export class PdfService {
    */
   missingGlyphs(fontBytes: Uint8Array, family: string, text: string): string[] {
     return missingGlyphsFor(fontBytes, family, text)
+  }
+
+  /**
+   * An area of a page with some of its lines taken off, for the preview of
+   * a text patch -- what the export will leave there. See pdf-core's
+   * renderWithoutLines.
+   *
+   * On a SCRATCH copy opened from the source's bytes, never the open
+   * document: the lines really are removed, and the open one's line numbers
+   * are what every patch on the page is addressed by. Null when the source
+   * is gone or cannot be read; the preview then covers the line, as it
+   * always did.
+   */
+  renderWithoutLines(
+    sourceId: SourceId | undefined,
+    page: number,
+    lines: number[],
+    area: { x: number; y: number; w: number; h: number },
+    scale: number,
+  ): { width: number; height: number; rgba: Uint8Array; removed: number[] } | null {
+    const id = sourceId ?? this.#primarySource
+    const bytes = id ? this.#sources.get(id) : undefined
+    if (!id || !bytes) return null
+    let doc: PdfDocument | undefined
+    try {
+      doc = PdfDocument.open(bytes)
+      const password = this.#passwords.get(id)
+      if (doc.needsPassword() && !(password && doc.authenticate(password))) return null
+      // As the viewer draws it, so the patch's area matches the page around it.
+      doc.blankMissingGlyphs()
+      return renderWithoutLines(doc._raw(), page, lines, area, scale)
+    } catch {
+      return null
+    } finally {
+      doc?.close()
+    }
   }
 
   close(): void {

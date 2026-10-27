@@ -3,7 +3,7 @@ import { withPage, SAVE_OPTIONS } from './session.js'
 import { assemble, isUntouched, type SourceBytes, type SourcePasswords } from './assemble.js'
 import { applyPageBoxes, applyTabOrder } from './objects/page.js'
 import { geometryFromPageObject } from '../geometry.js'
-import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectKind } from './types.js'
+import { EDIT_DOCUMENT_VERSION, type EditDocument, type EditObject, type ObjectKind, type TextPatchObject } from './types.js'
 import type { PageGeometry } from '@margin/transform'
 import { writeShape } from './objects/shape.js'
 import { writeWhiteout } from './objects/whiteout.js'
@@ -17,7 +17,7 @@ import { writeLink } from './objects/link.js'
 import { writeMarkup } from './objects/markup.js'
 import { writeField } from './objects/field.js'
 import { writeStamp } from './objects/stamp.js'
-import { writeTextPatch } from './objects/patch.js'
+import { writeTextPatch, prepareTextPatches, type PreparedPatch } from './objects/patch.js'
 import { writeImagePatch } from './objects/imagePatch.js'
 import { writeRegionPatch } from './objects/regionPatch.js'
 export { onAppearance, offAppearance, twoStateAppearance } from './fieldAppearance.js'
@@ -61,6 +61,11 @@ export type WriteContext = {
    * XObjects, keyed by payload -- see xobject.ts.
    */
   xobject: XObjectCache
+  /**
+   * Text patches on this page, already found, checked and -- where safe --
+   * removed. See prepareTextPatches.
+   */
+  patchLines?: Map<string, PreparedPatch>
 }
 
 export type ObjectWriter = (ctx: WriteContext, object: EditObject) => void
@@ -319,6 +324,19 @@ export function replay(
       const geometry = geometryOf(index)
 
       withPage(raw, index, (page) => {
+        // Every text patch's line is found and checked, and the lines taken
+        // off the page, BEFORE anything is drawn: removal renumbers lines,
+        // and nothing else on the page should be read as original text.
+        const patches = objects.filter((o): o is TextPatchObject => o.kind === 'textPatch')
+        let patchLines: Map<string, PreparedPatch> | undefined
+        if (patches.length > 0) {
+          try {
+            patchLines = prepareTextPatches(page, patches)
+          } catch (cause) {
+            const reason = cause instanceof Error ? cause.message : String(cause)
+            throw new Error(`Could not export the textPatch on page ${index + 1}: ${reason}`, { cause })
+          }
+        }
         for (const object of objects) {
           const writer = WRITERS[object.kind]
           if (!writer) {
@@ -330,7 +348,7 @@ export function replay(
             )
           }
           try {
-            writer({ raw, page, geometry, fonts, measure, xobject }, object)
+            writer({ raw, page, geometry, fonts, measure, xobject, ...(patchLines ? { patchLines } : {}) }, object)
           } catch (cause) {
             // Name the object and the page. "Could not export this PDF" tells
             // the user nothing they can act on; "the signature on page 3"
