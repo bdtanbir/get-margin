@@ -302,11 +302,23 @@ describe('PatchEditor', () => {
   describe('a line in a font we do not carry', () => {
     beforeEach(() => forgetReplacements())
 
+    /** A face with no metric twin among ours, so it still asks. */
     function cambria() {
       const index = indexOf('Date: 07-Oct-2026', true)
-      index.lines[0]!.font = 'BCDFEE+Cambria-Bold'
+      index.lines[0]!.font = 'BCDFEE+Constantia-Bold'
       return index
     }
+
+    it('uses a metric-compatible twin without asking', async () => {
+      const edits = seed()
+      const index = indexOf('Date: 07-Oct-2026', true)
+      index.lines[0]!.font = 'BCDFEE+Cambria-Bold'
+      const w = mountEditor(index, true)
+      await w.get('[data-patch-target="0"]').trigger('click')
+      await flushPromises()
+      expect(w.find('[data-font-replacement]').exists()).toBe(false)
+      expect(patches(edits)[0]!.fontFamily).toBe('Caladea')
+    })
 
     it('asks which font to use instead of quietly using Inter', async () => {
       const edits = seed()
@@ -316,21 +328,20 @@ describe('PatchEditor', () => {
       expect(patches(edits)).toHaveLength(0)
       const options = w.findAll('[data-font-option]').map((o) => o.attributes('data-font-option'))
       expect(options).toHaveLength(5)
-      expect(options[0]).toBe('Caladea')
+      expect(options[0]).toBe('Gelasio')
       expect(options).not.toContain('Inter')
-      expect(w.find('[data-font-option="Caladea"] [data-very-similar]').exists()).toBe(true)
     })
 
     it('draws the line in the chosen font, at the line\'s own weight', async () => {
       const edits = seed()
       const w = mountEditor(cambria(), true)
       await w.get('[data-patch-target="0"]').trigger('click')
-      await w.get('[data-font-option="Gelasio"] input').setValue(true)
+      await w.get('[data-font-option="Lora"] input').setValue(true)
       await w.get('[data-font-replace]').trigger('click')
       await flushPromises()
       expect(w.find('[data-font-replacement]').exists()).toBe(false)
       expect(patches(edits)).toHaveLength(1)
-      expect(patches(edits)[0]!.fontFamily).toBe('Gelasio')
+      expect(patches(edits)[0]!.fontFamily).toBe('Lora')
       expect(patches(edits)[0]!.weight).toBe(700)
       expect(w.find('[data-patch-input]').exists()).toBe(true)
     })
@@ -356,11 +367,11 @@ describe('PatchEditor', () => {
 
       const edits2 = seed()
       const index = cambria()
-      index.lines[0]!.font = 'ABCDEF+Cambria'
+      index.lines[0]!.font = 'ABCDEF+Constantia'
       const again = mountEditor(index, true)
       await again.get('[data-patch-target="0"]').trigger('click')
       expect(again.find('[data-font-replacement]').exists()).toBe(false)
-      expect(patches(edits2)[0]!.fontFamily).toBe('Caladea')
+      expect(patches(edits2)[0]!.fontFamily).toBe('Gelasio')
     })
 
     it('does not ask again for a line that already has an edit', async () => {

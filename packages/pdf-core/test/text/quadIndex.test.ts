@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest'
+import type * as mupdf from 'mupdf'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -116,6 +117,59 @@ describe('buildQuadIndex', () => {
         const line = buildQuadIndex(doc, 0).lines.find((l) => l.text.includes('Weighted heading'))
         expect(line?.weight).toBe(weight)
       } finally { doc.close() }
+    })
+  })
+
+  /**
+   * Reported: Turnitin reports embed every font as `CIDFont+F<n>`, so a
+   * Times New Roman Bold heading matched nothing we carry and every click
+   * asked for a replacement. The embedded program still knows its own name.
+   */
+  describe('font name', () => {
+    it('reads the embedded program\'s own name past a placeholder /BaseFont', () => {
+      const fonts = new Map([['Tinos 700', fontFile('Tinos-700.ttf')]])
+      const out = replay(new Map([['src-0', bytes('simple-text')]]), {
+        ...emptyEditDocument(),
+        sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+        pageOrder: ['p0'],
+        pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
+        objects: {
+          h: {
+            id: 'h', pageId: 'p0', kind: 'text', text: 'Table of Contents',
+            rect: { x: 60, y: 500, w: 400, h: 30 },
+            rotation: 0, z: 1, locked: false, opacity: 1,
+            fontFamily: 'Tinos', weight: 700, fontSize: 18,
+            color: [0, 0, 0], align: 'left',
+          },
+        },
+      }, { fonts })
+
+      // Rename the embedded font the way Turnitin does.
+      const doc = PdfDocument.open(out)
+      try {
+        const raw = doc._raw() as unknown as mupdf.PDFDocument
+        let renamed = 0
+        raw.findPage(0).get('Resources').get('Font').forEach((font) => {
+          const f = font.resolve()
+          const base = f.get('BaseFont')
+          if (!base.isName() || !/Tinos/i.test(base.asName())) return
+          f.put('BaseFont', raw.newName('CIDFont+F4'))
+          const descendants = f.get('DescendantFonts')
+          if (descendants.isArray()) descendants.get(0).resolve().put('BaseFont', raw.newName('CIDFont+F4'))
+          renamed++
+        })
+        expect(renamed).toBeGreaterThan(0)
+        const line = buildQuadIndex(doc, 0).lines.find((l) => l.text.includes('Table of Contents'))
+        expect(line?.font).toBe('Tinos-Bold')
+        expect(line?.spans?.[0]?.font).toBe('Tinos-Bold')
+      } finally { doc.close() }
+    })
+
+    it('keeps the PDF\'s own name when there is no program to read', () => {
+      withDoc('mixed-fonts', (doc) => {
+        const line = buildQuadIndex(doc, 0).lines.find((l) => l.text.includes('Helvetica-Bold'))
+        expect(line?.font).toBe('Helvetica-Bold')
+      })
     })
   })
 

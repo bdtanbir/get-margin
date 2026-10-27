@@ -53,10 +53,27 @@ describe('remembered replacements', () => {
   it('asks only for a font we do not carry and have no choice for', () => {
     expect(needsReplacementChoice('ABCDEF+Outfit-Regular')).toBe(false)
     expect(needsReplacementChoice('Inter-Bold')).toBe(false)
-    expect(needsReplacementChoice('BCDFEE+Cambria-Bold')).toBe(true)
-    rememberReplacement('BCDFEE+Cambria-Bold', 'Gelasio')
-    expect(needsReplacementChoice('ABCDEF+Cambria')).toBe(false)
-    expect(familyForLine('ABCDEF+Cambria')).toBe('Gelasio')
+    expect(needsReplacementChoice('BCDFEE+Constantia-Bold')).toBe(true)
+    rememberReplacement('BCDFEE+Constantia-Bold', 'Lora')
+    expect(needsReplacementChoice('ABCDEF+Constantia')).toBe(false)
+    expect(familyForLine('ABCDEF+Constantia')).toBe('Lora')
+  })
+
+  it('does not ask when we carry a metric-compatible twin', () => {
+    for (const [name, twin] of [
+      ['BCDFEE+Cambria-Bold', 'Caladea'],
+      ['Calibri-Bold', 'Carlito'],
+      ['Times-Roman', 'Tinos'],
+      ['TimesNewRomanPS-BoldMT', 'Tinos'],
+      ['Helvetica', 'Arimo'],
+    ] as const) {
+      expect(needsReplacementChoice(name), name).toBe(false)
+      expect(familyForLine(name), name).toBe(twin)
+    }
+  })
+
+  it('still asks for a placeholder name with nothing to go on', () => {
+    expect(needsReplacementChoice('CIDFont+F4')).toBe(true)
   })
 
   it('falls back to the closest face, not Inter, when it cannot ask', () => {

@@ -175,8 +175,17 @@ export function familyForLine(name: string): FontFamily {
   return matchFamily(name) ?? rememberedReplacement(name) ?? similarFonts(name)[0]!.family
 }
 
-/** Whether editing a line in this font should ask the user which face to use. */
+/**
+ * Whether editing a line in this font should ask the user which face to use.
+ *
+ * Only when we have nothing close. A font we carry, a choice the user
+ * already made, or a metric-compatible twin (Calibri -> Carlito, Cambria ->
+ * Caladea, Times -> Tinos...) is used straight away: the twin has the same
+ * advance widths and near-identical shapes, so asking about it was a
+ * dialog in front of nearly every Word document for no real decision.
+ */
 export function needsReplacementChoice(name: string): boolean {
   if (name === '') return false
-  return matchFamily(name) === undefined && rememberedReplacement(name) === undefined
+  if (matchFamily(name) !== undefined || rememberedReplacement(name) !== undefined) return false
+  return !similarFonts(name)[0]?.verySimilar
 }

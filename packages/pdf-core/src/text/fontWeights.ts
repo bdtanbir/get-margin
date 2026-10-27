@@ -115,8 +115,68 @@ function descriptorOf(font: mupdf.PDFObject): mupdf.PDFObject | undefined {
   return undefined
 }
 
-/** The weight a descriptor declares: its embedded program's, else its own /FontWeight. */
-function descriptorWeight(descriptor: mupdf.PDFObject): number | undefined {
+/**
+ * The font program's own name for itself, from an sfnt's `name` table: the
+ * PostScript name (ID 6) if it has one, else the family (ID 1).
+ *
+ * Wanted because a PDF's /BaseFont is whatever its producer chose to call
+ * the font, and some producers call every font a placeholder: Turnitin's
+ * reports embed Times New Roman Bold as `CIDFont+F4`. Matched against our
+ * catalogue that name says nothing, so every line asked the user to pick a
+ * replacement by hand -- for a font we carry a metric twin of. The program
+ * itself still says `TimesNewRomanPS-BoldMT`.
+ *
+ * Windows and Unicode records are UTF-16BE, Macintosh ones single-byte.
+ * Only a printable, space-free ASCII result is returned; anything else is a
+ * name a subsetter mangled, and the /BaseFont is the better guess.
+ */
+export function sfntFontName(bytes: Uint8Array): string | undefined {
+  if (bytes.byteLength < 12) return undefined
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const magic = view.getUint32(0)
+  if (magic !== 0x00010000 && magic !== 0x4f54544f && magic !== 0x74727565) return undefined
+  const numTables = view.getUint16(4)
+  let table: number | undefined
+  for (let i = 0; i < numTables; i++) {
+    const record = 12 + i * 16
+    if (record + 16 > bytes.byteLength) return undefined
+    if (String.fromCharCode(...bytes.subarray(record, record + 4)) === 'name') {
+      table = view.getUint32(record + 8)
+      break
+    }
+  }
+  if (table === undefined || table + 6 > bytes.byteLength) return undefined
+  const count = view.getUint16(table + 2)
+  const strings = table + view.getUint16(table + 4)
+  const found = new Map<number, string>()
+  for (let i = 0; i < count; i++) {
+    const record = table + 6 + i * 12
+    if (record + 12 > bytes.byteLength) break
+    const platform = view.getUint16(record)
+    const id = view.getUint16(record + 6)
+    if ((id !== 6 && id !== 1) || found.has(id)) continue
+    const length = view.getUint16(record + 8)
+    const at = strings + view.getUint16(record + 10)
+    if (at + length > bytes.byteLength) continue
+    let text = ''
+    if (platform === 1) {
+      for (let j = 0; j < length; j++) text += String.fromCharCode(bytes[at + j]!)
+    } else {
+      for (let j = 0; j + 1 < length; j += 2) text += String.fromCharCode(view.getUint16(at + j))
+    }
+    // The family may have spaces ("Times New Roman"); a PostScript name may not.
+    const clean = id === 1 ? text.replace(/ /g, '') : text
+    if (/^[\x21-\x7e]{2,63}$/.test(clean)) found.set(id, clean)
+  }
+  return found.get(6) ?? found.get(1)
+}
+
+/** What a font resource's embedded program says about itself. */
+type ProgramFacts = { weight?: number | undefined; name?: string | undefined }
+
+/** Weight and name from a descriptor's embedded program, else its own /FontWeight. */
+function descriptorFacts(descriptor: mupdf.PDFObject): ProgramFacts {
+  const facts: ProgramFacts = {}
   for (const key of ['FontFile2', 'FontFile3']) {
     const file = descriptor.get(key)
     if (!file.isStream()) continue
@@ -125,8 +185,9 @@ function descriptorWeight(descriptor: mupdf.PDFObject): number | undefined {
       // program in WASM memory, and a page has a handful of them.
       const buffer = file.readStream()
       try {
-        const weight = usWeightClass(buffer.asUint8Array())
-        if (weight !== undefined) return weight
+        const bytes = buffer.asUint8Array()
+        facts.weight ??= usWeightClass(bytes)
+        facts.name ??= sfntFontName(bytes)
       } finally {
         buffer.destroy()
       }
@@ -134,43 +195,52 @@ function descriptorWeight(descriptor: mupdf.PDFObject): number | undefined {
       // A stream MuPDF cannot decode is not a reason to lose the line; the
       // name and the flag are still there to read.
     }
+    if (facts.weight !== undefined) break
   }
-  const declared = descriptor.get('FontWeight')
-  if (declared.isNumber()) {
-    const weight = declared.asNumber()
-    if (weight > 0) return weight
+  if (facts.weight === undefined) {
+    const declared = descriptor.get('FontWeight')
+    if (declared.isNumber() && declared.asNumber() > 0) facts.weight = declared.asNumber()
   }
-  return undefined
+  return facts
 }
 
 /**
- * The declared weight of every font in a page's resources, by the name
- * MuPDF reports glyphs drawn in it under.
+ * What every font in a page's resources declares about itself -- weight
+ * and the program's own name -- by the name MuPDF reports glyphs drawn in
+ * it under.
  *
  * Walked ONCE per page rather than per glyph: reading a font program out of
  * its stream is a decompression, and a page has thousands of glyphs and a
  * handful of fonts. Fonts inside form XObjects are not walked; a run drawn
  * in one falls through to the name and the flag.
  */
-export function pageFontWeights(page: mupdf.PDFPage): Map<string, number> {
+export function pageFontFacts(page: mupdf.PDFPage): { weights: Map<string, number>; names: Map<string, string> } {
   const weights = new Map<string, number>()
+  const names = new Map<string, string>()
   try {
     const fonts = page.getObject().get('Resources').get('Font')
-    if (!fonts.isDictionary()) return weights
+    if (!fonts.isDictionary()) return { weights, names }
     fonts.forEach((font) => {
       const resolved = font.resolve()
       if (!resolved.isDictionary()) return
       const name = baseName(resolved)
-      if (!name || weights.has(name)) return
+      if (!name || weights.has(name) || names.has(name)) return
       const descriptor = descriptorOf(resolved)
-      const weight = descriptor ? descriptorWeight(descriptor) : undefined
-      if (weight !== undefined) weights.set(name, weight)
+      if (!descriptor) return
+      const facts = descriptorFacts(descriptor)
+      if (facts.weight !== undefined) weights.set(name, facts.weight)
+      if (facts.name !== undefined) names.set(name, facts.name)
     })
   } catch {
     // A page whose resources will not resolve is a page whose lines still
     // have names and flags to read.
   }
-  return weights
+  return { weights, names }
+}
+
+/** The declared weight of every font in a page's resources. See `pageFontFacts`. */
+export function pageFontWeights(page: mupdf.PDFPage): Map<string, number> {
+  return pageFontFacts(page).weights
 }
 
 /** `weight` rounded to the nearest hundred and held within what can be drawn. */

@@ -1,7 +1,7 @@
 import { saneQuad } from './saneQuad.js'
 import type { PdfDocument } from '../engine.js'
 import type { Color } from '../write/types.js'
-import { detectWeight, pageFontWeights } from './fontWeights.js'
+import { detectWeight, pageFontFacts } from './fontWeights.js'
 
 /** 8 numbers: the four corners of one character's box, in MuPDF page space. */
 export type Quad = [number, number, number, number, number, number, number, number]
@@ -12,6 +12,10 @@ export type LineRun = {
   /** [x0, y0, x1, y1] in MuPDF page space. */
   bbox: [number, number, number, number]
   text: string
+  /**
+   * The font's PostScript name: what the embedded font program calls
+   * itself when it says, otherwise the PDF's /BaseFont (subset tag and all).
+   */
   font: string
   /**
    * The CSS weight the run is set in: 100 to 800, in hundreds.
@@ -166,7 +170,16 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
   try {
     const text = page.toStructuredText('')
     // Once per page, not per glyph: it decompresses every font program.
-    const declaredWeights = pageFontWeights(page)
+    const { weights: declaredWeights, names: programNames } = pageFontFacts(page)
+    /**
+     * The name a run's font goes by: what the embedded program calls
+     * itself, else what the PDF calls it. See `sfntFontName` -- a /BaseFont
+     * of `CIDFont+F4` is Times New Roman Bold underneath.
+     */
+    const nameOf = (font: { getName(): string }): string => {
+      const reported = font.getName()
+      return programNames.get(reported.replace(/^[A-Z]{6}\+/, '')) ?? reported
+    }
     const lines: LineRun[] = []
     let chars: CharQuad[] = []
     let bbox: [number, number, number, number] | undefined
@@ -209,7 +222,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         // characters agree; taking the first avoids an empty string on a
         // line that ends with whitespace carrying no font.
         if (!font) {
-          font = charFont.getName()
+          font = nameOf(charFont)
           weight = detectWeight(charFont, declaredWeights)
           italic = isItalicFace(charFont)
           color = toRgb(charColor)
@@ -224,12 +237,15 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         if (sane.some((v, i) => v !== quad[i])) capped = true
         chars.push({ char: c, quad: sane as Quad })
 
-        const name = charFont.getName()
-        let style = faceOf.get(name)
+        // Keyed by the PDF's own name, not the program's: two subsets can
+        // share a family name and still be different weights.
+        const reported = charFont.getName()
+        let style = faceOf.get(reported)
         if (!style) {
           style = { weight: detectWeight(charFont, declaredWeights), italic: isItalicFace(charFont) }
-          faceOf.set(name, style)
+          faceOf.set(reported, style)
         }
+        const name = nameOf(charFont)
         const at = { x: origin[0] ?? 0, y: origin[1] ?? 0 }
         pen0 ??= at
         // Rounded so the sub-point jitter of a justified line does not
