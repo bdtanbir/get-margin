@@ -24,7 +24,10 @@
  * test/lib/fonts.test.ts, reading each file's own OS/2 weight class and its
  * fsSelection BOLD and ITALIC bits.
  *
- * Usage: node scripts/fetch-fonts.mjs
+ * Usage: node scripts/fetch-fonts.mjs ["Family Name" ...]
+ *
+ * With family names, only those families are fetched -- for adding a face
+ * without re-downloading the other two hundred-odd files.
  */
 import { writeFile, readFile, mkdir } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
@@ -62,7 +65,10 @@ const catalog = JSON.parse(
   await readFile(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'lib', 'fontCatalog.json'), 'utf8'),
 )
 
-const FONTS = [...catalog.families, ...catalog.signature].flatMap(({ query, base, weights, italic }) =>
+const only = process.argv.slice(2)
+const FONTS = [...catalog.families, ...catalog.signature]
+  .filter(({ family }) => only.length === 0 || only.includes(family))
+  .flatMap(({ query, base, weights, italic }) =>
   weights.flatMap((w) => [
     { query, spec: `${w}`, file: `${base}-${w}.ttf` },
     ...(italic ? [{ query, spec: `${w}italic`, file: `${base}-${w}Italic.ttf` }] : []),

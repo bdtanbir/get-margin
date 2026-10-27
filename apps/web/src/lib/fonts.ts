@@ -96,6 +96,15 @@ const entry = (family: string): FontEntry | undefined =>
 
 const squash = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 
+/**
+ * A PostScript name without its subset tag (`ABCDEF+`) or a trailing
+ * serial number (`-4869`): some producers -- Turnitin among them -- number
+ * every embedded copy, so `NotoSans-Regular-6575` is plain Noto Sans.
+ */
+export function untag(name: string): string {
+  return name.replace(/^[A-Z]{6}\+/, '').replace(/[-_]\d+$/, '')
+}
+
 /** Style and foundry suffixes that follow a family in a PostScript name. */
 const STYLE_TAIL =
   /^(ps|mt|regular|book|normal|roman|thin|hairline|extralight|ultralight|light|medium|semibold|demibold|bold|extrabold|ultrabold|black|heavy|italic|oblique|it)*$/
@@ -126,7 +135,7 @@ export function familyForFont(name: string): FontFamily {
  * rather than be told "Inter". See fontMatch.ts.
  */
 export function matchFamily(name: string): FontFamily | undefined {
-  const bare = squash(name.replace(/^[A-Z]{6}\+/, ''))
+  const bare = squash(untag(name))
   let best: { family: string; length: number } | undefined
   for (const f of FONTS) {
     for (const key of [f.family, f.base, f.alias ?? ''].map(squash)) {

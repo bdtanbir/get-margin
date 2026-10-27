@@ -214,6 +214,23 @@
       "italic": false
     },
     {
+      "family": "Lexend Deca",
+      "base": "LexendDeca",
+      "query": "Lexend+Deca",
+      "fallback": "sans-serif",
+      "weights": [
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800
+      ],
+      "italic": false
+    },
+    {
       "family": "Lobster",
       "base": "Lobster",
       "query": "Lobster",
@@ -297,6 +314,23 @@
         400
       ],
       "italic": false
+    },
+    {
+      "family": "Noto Sans",
+      "base": "NotoSans",
+      "query": "Noto+Sans",
+      "fallback": "sans-serif",
+      "weights": [
+        100,
+        200,
+        300,
+        400,
+        500,
+        600,
+        700,
+        800
+      ],
+      "italic": true
     },
     {
       "family": "Nunito",

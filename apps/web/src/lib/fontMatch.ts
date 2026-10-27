@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { FONTS, matchFamily, type FontFamily } from './fonts'
+import { FONTS, matchFamily, untag, type FontFamily } from './fonts'
 
 /**
  * What to draw an existing line in when the document's font is not one we
@@ -27,8 +27,8 @@ export const SUGGESTION_COUNT = 5
 
 const squash = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 
-/** The PostScript name without its six-letter subset tag. */
-const untagged = (name: string): string => name.replace(/^[A-Z]{6}\+/, '')
+/** The PostScript name without its subset tag or serial number. */
+const untagged = untag
 
 /**
  * Proprietary and common faces, by the start of their squashed PostScript

@@ -72,6 +72,14 @@ describe('remembered replacements', () => {
     }
   })
 
+  /** Turnitin's own header and footer text, numbered per embedded copy. */
+  it('reads past a serial number to a font we carry', () => {
+    expect(needsReplacementChoice('NotoSans-Regular-6575')).toBe(false)
+    expect(familyForLine('NotoSans-SemiBold-2163')).toBe('Noto Sans')
+    expect(familyForLine('LexendDeca-Medium-4869')).toBe('Lexend Deca')
+    expect(familyForLine('Lexend-Bold')).toBe('Lexend')
+  })
+
   it('still asks for a placeholder name with nothing to go on', () => {
     expect(needsReplacementChoice('CIDFont+F4')).toBe(true)
   })

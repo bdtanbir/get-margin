@@ -10,7 +10,7 @@ The catalogue is `src/lib/fontCatalog.json`: the fetch script reads it to know
 what to download, the app reads it to know what to offer, and the test in
 `test/lib/fonts.test.ts` checks that every file the catalogue claims exists,
 every file that exists is claimed, and every file declares the style its name
-says. 275 files, 14 MB, fetched on demand -- a document pays only for
+says. 307 files, 14 MB, fetched on demand -- a document pays only for
 the faces it uses.
 
 ## Body faces
@@ -44,6 +44,7 @@ picker shows both names.
 | Inter | `Inter-<weight>.ttf`, `Inter-<weight>Italic.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter) |
 | JetBrains Mono | `JetBrainsMono-<weight>.ttf`, `JetBrainsMono-<weight>Italic.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) |
 | Lexend | `Lexend-<weight>.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | no | Copyright 2019 The Lexend Project Authors (https://github.com/googlefonts/lexend) |
+| Lexend Deca | `LexendDeca-<weight>.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | no | Copyright 2019 The Lexend Project Authors (https://github.com/googlefonts/lexend) |
 | Lobster | `Lobster-<weight>.ttf` | 400 | no | Copyright 2010 The Lobster Project Authors (https://github.com/impallari/The-Lobster-Font), with Reserved Font Name "Lobster". |
 | Lora | `Lora-<weight>.ttf`, `Lora-<weight>Italic.ttf` | 400, 500, 600, 700 | yes | Copyright 2011 The Lora Project Authors (https://github.com/cyrealtype/Lora-Cyrillic), with Reserved Font Name "Lora". |
 | Merriweather | `Merriweather-<weight>.ttf`, `Merriweather-<weight>Italic.ttf` | 300, 400, 500, 600, 700, 800 | yes | Copyright 2024 The Merriweather Project Authors (https://github.com/EbenSorkin/Merriweather4) with Reserved Font Name "Merriweather". |
@@ -51,6 +52,7 @@ picker shows both names.
 | Mr De Haviland | `MrDeHaviland-<weight>.ttf` | 400 | no | Copyright (c) 2006 Alejandro Paul (sudtipos@sudtipos.com),with Reserved Font Name "Mr De Haviland" |
 | Mrs Saint Delafield | `MrsSaintDelafield-<weight>.ttf` | 400 | no | Copyright (c) 2004 Alejandro Paul (sudtipos@sudtipos.com),with Reserved Font Name "Mrs Saint Delafield" |
 | Montserrat | `Montserrat-<weight>.ttf`, `Montserrat-<weight>Italic.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2011 The Montserrat Project Authors (https://github.com/JulietaUla/Montserrat) |
+| Noto Sans | `NotoSans-<weight>.ttf`, `NotoSans-<weight>Italic.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic) |
 | Nunito | `Nunito-<weight>.ttf`, `Nunito-<weight>Italic.ttf` | 200, 300, 400, 500, 600, 700, 800 | yes | Copyright 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito) |
 | Oswald | `Oswald-<weight>.ttf` | 200, 300, 400, 500, 600, 700 | no | Copyright 2016 The Oswald Project Authors (https://github.com/googlefonts/OswaldFont) |
 | Outfit | `Outfit-<weight>.ttf` | 100, 200, 300, 400, 500, 600, 700, 800 | no | Copyright 2021 The Outfit Project Authors (https://github.com/Outfitio/Outfit-Fonts) |
