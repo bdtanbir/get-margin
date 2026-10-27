@@ -56,6 +56,7 @@ export {
 // Task 36. Per-page text geometry for selection, in MuPDF page space.
 export { buildQuadIndex } from './text/index.js'
 export type { Quad, CharQuad, LineRun, LineSpan, PageQuadIndex } from './text/index.js'
+export { repairMissingGlyphs } from './text/notdef.js'
 export { isBoldWeight, weightFromName, usWeightClass } from './text/fontWeights.js'
 export { pageImages, placementHash, buildImageIndex, cropImage, cropRegion } from './images/index.js'
 export { cropEditedRegion } from './write/editedRegion.js'

@@ -99,15 +99,20 @@ export function faceKey(family: string, style?: FaceStyle): string {
  * this -- one file per family per weight per slope, not a variable font
  * carrying the whole axis: see apps/web/public/fonts/LICENSES.md.
  *
- * 'Latin' encoding means non-Latin scripts are out of scope this phase.
- * That is a known, stated limitation, not an oversight.
+ * Embedded as a Type0 font with Identity-H encoding, so text is written as
+ * two-byte GLYPH numbers with a ToUnicode map beside them. It used to be a
+ * one-byte WinAnsi font, which can hold about 220 characters: anything else
+ * -- Cyrillic, Greek, most of Latin Extended -- could not be written at all,
+ * and the content stream's UTF-8 turned every accent, curly quote and dash
+ * into two wrong letters ("Ì" became "ÃŒ"). Now every character the font
+ * itself has is written exactly, and copies back out as itself.
  *
  * Keyed by FACE, so a document with a bold heading over regular body copy
  * registers two font programs and two resource names. It has to: every
  * weight and every slope is a separate file, not a flag on this one.
  */
 export class FontRegistry {
-  #cache = new Map<string, { name: string; obj: mupdf.PDFObject }>()
+  #cache = new Map<string, { name: string; obj: mupdf.PDFObject; font: mupdf.Font }>()
   #raw: mupdf.PDFDocument
   #provider: FontProvider
 
@@ -117,7 +122,7 @@ export class FontRegistry {
   }
 
   /** `face` is a `faceKey`, not a bare family. */
-  resolve(face: string): { name: string; obj: mupdf.PDFObject } {
+  resolve(face: string): { name: string; obj: mupdf.PDFObject; font: mupdf.Font } {
     const hit = this.#cache.get(face)
     if (hit) return hit
     const bytes = this.#provider.get(face)
@@ -132,8 +137,8 @@ export class FontRegistry {
       )
     }
     const font = new mupdf.Font(face, bytes)
-    const obj = this.#raw.addSimpleFont(font, 'Latin')
-    const entry = { name: `F${this.#cache.size + 1}`, obj }
+    const obj = this.#raw.addFont(font)
+    const entry = { name: `F${this.#cache.size + 1}`, obj, font }
     this.#cache.set(face, entry)
     return entry
   }
@@ -174,7 +179,12 @@ export function createMeasurer(
     // Iterating the string (not indexing it) walks CODE POINTS, so a
     // character outside the BMP is measured once rather than as two halves
     // of a surrogate pair.
-    for (const ch of text) total += font.advanceGlyph(font.encodeCharacter(ch.codePointAt(0)!))
+    // A character the font has no glyph for is not drawn (see `pdfText`),
+    // so it takes no room either.
+    for (const ch of text) {
+      const gid = font.encodeCharacter(ch.codePointAt(0)!)
+      if (gid !== 0) total += font.advanceGlyph(gid)
+    }
     return total * size
   }
 }
@@ -205,10 +215,74 @@ export function spacedAdvance(
 }
 
 /**
- * Escape a PDF literal string: backslash and both parentheses. An unescaped
- * `)` in user text would terminate the string early and corrupt every
- * operator after it in the content stream.
+ * The 32 WinAnsi codes in 0x80..0x9F that are not Latin-1, by character.
+ * Everything else WinAnsi holds is printable ASCII or 0xA0..0xFF, which are
+ * the same numbers as their Unicode code points.
+ */
+const WIN_ANSI_HIGH: ReadonlyMap<number, number> = new Map([
+  [0x20ac, 0x80], [0x201a, 0x82], [0x0192, 0x83], [0x201e, 0x84], [0x2026, 0x85],
+  [0x2020, 0x86], [0x2021, 0x87], [0x02c6, 0x88], [0x2030, 0x89], [0x0160, 0x8a],
+  [0x2039, 0x8b], [0x0152, 0x8c], [0x017d, 0x8e], [0x2018, 0x91], [0x2019, 0x92],
+  [0x201c, 0x93], [0x201d, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97],
+  [0x02dc, 0x98], [0x2122, 0x99], [0x0161, 0x9a], [0x203a, 0x9b], [0x0153, 0x9c],
+  [0x017e, 0x9e], [0x0178, 0x9f],
+])
+
+/**
+ * A character's byte in WinAnsiEncoding -- the encoding every font the
+ * export embeds is given (`addSimpleFont(font, 'Latin')`) -- or nothing
+ * when WinAnsi has no code for it.
+ */
+export function winAnsiByte(ch: string): number | undefined {
+  const cp = ch.codePointAt(0)!
+  if ((cp >= 0x20 && cp <= 0x7e) || (cp >= 0xa0 && cp <= 0xff)) return cp
+  return WIN_ANSI_HIGH.get(cp)
+}
+
+/**
+ * A PDF literal string holding `s` as WinAnsi bytes, written in plain ASCII.
+ *
+ * The content stream is handed to MuPDF as a JavaScript string, which it
+ * stores as UTF-8 -- so writing "Ì" or "’" into it as-is put TWO bytes in
+ * the stream, and the WinAnsi font drew each one: an edited "Ì" came out as
+ * "ÃŒ", "children’s" as "childrenâ€™s". Each byte outside printable ASCII is
+ * written as an octal escape instead, so the stream carries exactly the
+ * byte the font is meant to read.
+ *
+ * Backslash and both parentheses are escaped too: an unescaped `)` in user
+ * text would end the string early and corrupt every operator after it.
+ *
+ * A character WinAnsi cannot hold is left out -- it would otherwise be drawn
+ * as some other character. The editor warns about it before export (see
+ * `missingGlyphs`), and the measurer skips it, so alignment matches the ink.
  */
 export function pdfString(s: string): string {
-  return `(${s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')})`
+  let out = '('
+  for (const ch of s) {
+    const byte = winAnsiByte(ch)
+    if (byte === undefined) continue
+    if (ch === '\\' || ch === '(' || ch === ')') out += `\\${ch}`
+    else if (byte >= 0x20 && byte <= 0x7e) out += ch
+    else out += `\\${byte.toString(8).padStart(3, '0')}`
+  }
+  return `${out})`
+}
+
+/**
+ * Text as a hex string of glyph numbers, for a font registered by
+ * `FontRegistry` (Type0, Identity-H): two bytes per glyph.
+ *
+ * A character the font has no glyph for is left out rather than drawn as
+ * the font's "missing glyph" box. The editor warns about those before
+ * export (see `missingGlyphs`), and the measurer skips them too, so the
+ * alignment matches the ink.
+ */
+export function pdfText(font: mupdf.Font, s: string): string {
+  let hex = ''
+  for (const ch of s) {
+    const gid = font.encodeCharacter(ch.codePointAt(0)!)
+    if (gid === 0) continue
+    hex += gid.toString(16).padStart(4, '0')
+  }
+  return `<${hex}>`
 }

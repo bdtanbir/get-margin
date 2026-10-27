@@ -2,7 +2,7 @@ import type { ObjectWriter } from '../index.js'
 import type { TextObject } from '../types.js'
 import { appendContent, addResource, fillColor, alphaState } from '../content.js'
 import { contentRectToPage, pagePointToContent, pageBasis, textMatrix, num } from '../coords.js'
-import { pdfString, faceKey, spacedAdvance } from '../fonts.js'
+import { pdfText, faceKey, spacedAdvance } from '../fonts.js'
 
 /**
  * Baseline sits this fraction of the font size below the line's top, and
@@ -38,14 +38,14 @@ export const writeText: ObjectWriter = (ctx, object) => {
   // see FaceStyle.
   const face = faceKey(o.fontFamily, o)
   const font = ctx.fonts.resolve(face)
-  addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
+  const fontName = addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
 
   const lines = o.text.split('\n')
   const spacing = o.letterSpacing ?? 0
   const pitch = o.fontSize * (o.lineHeight ?? LINE_HEIGHT)
   const ops: string[] = []
   if (o.opacity < 1) ops.push(alphaState(ctx.raw, ctx.page, `gs${o.id}`, o.opacity))
-  ops.push(fillColor(o.color), 'BT', `/${font.name} ${num(o.fontSize)} Tf`)
+  ops.push(fillColor(o.color), 'BT', `/${fontName} ${num(o.fontSize)} Tf`)
   /**
    * Character spacing is a text-state parameter in unscaled text space
    * units, and `textMatrix` below is a unit rotation, so the number here
@@ -64,7 +64,7 @@ export const writeText: ObjectWriter = (ctx, object) => {
     const offset =
       o.align === 'center' ? (box.w - advance) / 2 : o.align === 'right' ? box.w - advance : 0
     const pen = pagePointToContent({ x: box.x + offset, y: box.y + fromTop }, g)
-    ops.push(textMatrix(right, pen.x, pen.y), `${pdfString(line)} Tj`)
+    ops.push(textMatrix(right, pen.x, pen.y), `${pdfText(font.font, line)} Tj`)
   })
 
   ops.push('ET')

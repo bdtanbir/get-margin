@@ -119,8 +119,14 @@ export function prependContent(
  * intermediate dictionaries when the page has none. Returns the name the
  * content stream should reference.
  *
- * Names are caller-supplied and must be unique per page; writers derive them
- * from the object id, which nanoid already guarantees is unique.
+ * NEVER OVERWRITES. A name the page already uses for something else gets a
+ * suffix (`F1` -> `F1_1`), and the caller draws with whatever name comes
+ * back. Overwriting was a real, silent corruption: the font cache names its
+ * faces F1, F2... -- which is what Word and most producers call theirs too
+ * -- so editing one line of a Word PDF replaced the page's own /F1, and
+ * every other line drawn in it turned to garbage on download (a Turnitin
+ * heading became `^^/'EDEdÌ`). The same object under the same name is
+ * reused, so one face drawn twice on a page is registered once.
  */
 export function addResource(
   raw: mupdf.PDFDocument,
@@ -132,7 +138,12 @@ export function addResource(
   const pageObj = page.getObject()
   let resources = pageObj.get('Resources')
   if (!resources.isDictionary()) {
+    // A page may inherit its resources from the page tree. A fresh, empty
+    // dictionary here would hide every font and image it draws with, so
+    // the inherited entries are carried onto the page's own copy.
+    const inherited = pageObj.getInheritable('Resources')
     resources = raw.newDictionary()
+    if (inherited.isDictionary()) inherited.forEach((v, k) => resources.put(k, v))
     pageObj.put('Resources', resources)
   }
   let bucket = resources.get(category)
@@ -140,8 +151,19 @@ export function addResource(
     bucket = raw.newDictionary()
     resources.put(category, bucket)
   }
-  bucket.put(name, value)
-  return name
+  let chosen = name
+  for (let n = 1; ; n++) {
+    const existing = bucket.get(chosen)
+    if (existing.isNull() || sameObject(existing, value)) break
+    chosen = `${name}_${n}`
+  }
+  bucket.put(chosen, value)
+  return chosen
+}
+
+/** Whether two values are the same indirect object. */
+function sameObject(a: mupdf.PDFObject, b: mupdf.PDFObject): boolean {
+  return a.isIndirect() && b.isIndirect() && a.asIndirect() === b.asIndirect()
 }
 
 /** `0.2 0.4 1 rg` — non-stroking colour. */
@@ -168,6 +190,6 @@ export function alphaState(
   gs.put('Type', raw.newName('ExtGState'))
   gs.put('ca', opacity)
   gs.put('CA', opacity)
-  addResource(raw, page, 'ExtGState', name, raw.addObject(gs))
-  return `/${name} gs`
+  const used = addResource(raw, page, 'ExtGState', name, raw.addObject(gs))
+  return `/${used} gs`
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import * as mupdf from 'mupdf'
-import { replay } from '../../src/write/index.js'
+import { replay, pdfText } from '../../src/write/index.js'
 import { resolveTokens, batesNumber } from '../../src/write/objects/stamp.js'
 import {
   emptyEditDocument, type EditDocument, type EditObject, type StampObject,
@@ -20,6 +20,9 @@ const ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 const FONTS = new Map([[
   'Inter', new Uint8Array(readFileSync(join(ROOT, 'apps/web/public/fonts/Inter-400.ttf'))),
 ]])
+
+/** How a stamp's text appears in the content stream: glyph numbers, in hex. */
+const encoded = (text: string): string => pdfText(new mupdf.Font('Inter', FONTS.get('Inter')!), text)
 
 function docWith(objects: EditObject[], pages = 1): EditDocument {
   return {
@@ -267,7 +270,7 @@ describe('behind', () => {
       // follows it, so the page paints over the stamp.
       const first = contents.get(0)
       expect(first.isStream()).toBe(true)
-      expect(first.readStream().asString()).toContain('UNDER')
+      expect(first.readStream().asString()).toContain(encoded('UNDER'))
     } finally { p.destroy(); doc.destroy() }
   })
 
@@ -278,7 +281,7 @@ describe('behind', () => {
     try {
       const contents = p.getObject().get('Contents')
       const last = contents.get(contents.length - 1)
-      expect(last.readStream().asString()).toContain('OVER')
+      expect(last.readStream().asString()).toContain(encoded('OVER'))
     } finally { p.destroy(); doc.destroy() }
   })
 

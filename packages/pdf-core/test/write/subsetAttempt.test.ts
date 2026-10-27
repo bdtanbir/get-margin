@@ -82,7 +82,16 @@ describe('font subsetting is deferred, and this is the measurement', () => {
     expect(after.length).toBeLessThan(before.length * 0.5)
   })
 
-  it('and it moves the text, which is why it is not used', () => {
+  /**
+   * It USED to: with one-byte WinAnsi fonts, subsetting rewrote the program
+   * without keeping /Widths in step and right-aligned text missed its edge
+   * by 113 points. The writer now embeds Type0 (Identity-H) fonts, whose /W
+   * array is keyed by glyph number and survives subsetting, so the text
+   * stays put. Subsetting is still not switched on -- that is its own
+   * change, with its own golden images -- but the reason for leaving it
+   * off is gone, and this pins that.
+   */
+  it('no longer moves the text, now that fonts are Type0', () => {
     const before = write('Hello margin', 'right')
     const edgeBefore = rightEdge(before)
 
@@ -93,7 +102,7 @@ describe('font subsetting is deferred, and this is the measurement', () => {
 
     // Same document, same text, same box -- and the glyphs land somewhere
     // else entirely.
-    expect(Math.abs(rightEdge(after) - edgeBefore)).toBeGreaterThan(10)
+    expect(Math.abs(rightEdge(after) - edgeBefore)).toBeLessThan(0.5)
   })
 
   /**

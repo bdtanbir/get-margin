@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as mupdf from 'mupdf'
-import { PdfDocument, renderPage } from '../../src/index.js'
+import { PdfDocument, renderPage, repairMissingGlyphs } from '../../src/index.js'
+import { replay } from '../../src/write/index.js'
+import { emptyEditDocument } from '../../src/write/types.js'
 import { withEmptyNotdef } from '../../src/text/notdef.js'
 
 const ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
@@ -75,5 +77,58 @@ describe('PdfDocument.blankMissingGlyphs', () => {
       plain.close()
       blanked.close()
     }
+  })
+})
+
+/**
+ * Reported: the app showed the page clean, but the DOWNLOAD -- untouched or
+ * edited -- drew "NO GLYPH" boxes in Preview and in Sejda's viewer.
+ */
+describe('downloads with missing-glyph boxes', () => {
+  function boxPdf(): Uint8Array {
+    const doc = new mupdf.PDFDocument()
+    const font = doc.addSimpleFont(new mupdf.Font('Inter', inter), 'Latin')
+    const resources = doc.addObject({ Font: { F1: font } })
+    doc.insertPage(-1, doc.addPage([0, 0, 200, 100], 0, resources, 'BT /F1 48 Tf 10 30 Td <00010203> Tj ET'))
+    const bytes = doc.saveToBuffer('').asUint8Array().slice()
+    doc.destroy()
+    return bytes
+  }
+  const rawInk = (bytes: Uint8Array): number => {
+    const doc = PdfDocument.open(bytes)
+    try {
+      const { rgba } = renderPage(doc, 0, 1)
+      let dark = 0
+      for (let i = 0; i < rgba.length; i += 4) if (rgba[i + 3]! > 0 && rgba[i]! < 128) dark++
+      return dark
+    } finally { doc.close() }
+  }
+
+  it('repairs an untouched download that draws boxes', () => {
+    const bytes = boxPdf()
+    expect(rawInk(bytes)).toBeGreaterThan(0)
+    const repaired = repairMissingGlyphs(bytes)
+    expect(repaired).toBeDefined()
+    expect(rawInk(repaired!)).toBe(0)
+  })
+
+  it('hands every other file back untouched', () => {
+    const doc = new mupdf.PDFDocument()
+    const font = doc.addSimpleFont(new mupdf.Font('Inter', inter), 'Latin')
+    doc.insertPage(-1, doc.addPage([0, 0, 200, 100], 0, doc.addObject({ Font: { F1: font } }), 'BT /F1 24 Tf 10 30 Td (Fine) Tj ET'))
+    const fine = doc.saveToBuffer('').asUint8Array().slice()
+    doc.destroy()
+    expect(repairMissingGlyphs(fine)).toBeUndefined()
+  })
+
+  it('repairs an edited download too', () => {
+    const out = replay(new Map([['src-0', boxPdf()]]), {
+      ...emptyEditDocument(),
+      sources: { 'src-0': { hash: '', name: 'a.pdf' } },
+      pageOrder: ['p0'],
+      pages: { p0: { sourceIndex: 0, sourceId: 'src-0', rotation: 0, cropBox: null } },
+      objects: {},
+    })
+    expect(rawInk(out)).toBe(0)
   })
 })

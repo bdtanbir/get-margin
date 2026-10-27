@@ -2,6 +2,7 @@ import { saneQuad } from './saneQuad.js'
 import type { PdfDocument } from '../engine.js'
 import type { Color } from '../write/types.js'
 import { detectWeight, pageFontFacts } from './fontWeights.js'
+import { hiddenIndices, invisibleCharTest } from './invisible.js'
 
 /** 8 numbers: the four corners of one character's box, in MuPDF page space. */
 export type Quad = [number, number, number, number, number, number, number, number]
@@ -181,7 +182,9 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
       return programNames.get(reported.replace(/^[A-Z]{6}\+/, '')) ?? reported
     }
     const lines: LineRun[] = []
-    let chars: CharQuad[] = []
+    /** Every glyph on the current line, with the style piece it belongs to. */
+    type Glyph = CharQuad & { origin: ArrayLike<number>; piece: Omit<LineSpan, 'text'> }
+    let glyphs: Glyph[] = []
     let bbox: [number, number, number, number] | undefined
     let font = ''
     let weight = 400
@@ -191,12 +194,13 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
     let baseline = 0
     /** Whether any glyph on the line had a broken font's height capped. */
     let capped = false
-    let spans: LineSpan[] = []
     /** The line's "up", in page space (y grows down the page). */
     let up = { x: 0, y: -1 }
     let pen0: { x: number; y: number } | undefined
     /** Weight and slope per font: detectWeight reads the font's name and flags. */
     const faceOf = new Map<string, { weight: number; italic: boolean }>()
+    /** Which U+FFFD characters draw nothing. See invisible.ts. */
+    const invisible = invisibleCharTest(page)
 
     text.walk({
       beginLine(lineBox, _wmode, direction) {
@@ -205,9 +209,8 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         const len = Math.hypot(dx, dy) || 1
         up = { x: dy / len, y: -dx / len }
         pen0 = undefined
-        spans = []
         bbox = [lineBox[0], lineBox[1], lineBox[2], lineBox[3]]
-        chars = []
+        glyphs = []
         font = ''
         weight = 400
         italic = false
@@ -235,7 +238,6 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
         // smaller than the line's first glyph, and its box should be too.
         const sane = saneQuad(quad, origin, charSize)
         if (sane.some((v, i) => v !== quad[i])) capped = true
-        chars.push({ char: c, quad: sane as Quad })
 
         // Keyed by the PDF's own name, not the program's: two subsets can
         // share a family name and still be different weights.
@@ -245,34 +247,50 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
           style = { weight: detectWeight(charFont, declaredWeights), italic: isItalicFace(charFont) }
           faceOf.set(reported, style)
         }
-        const name = nameOf(charFont)
         const at = { x: origin[0] ?? 0, y: origin[1] ?? 0 }
         pen0 ??= at
         // Rounded so the sub-point jitter of a justified line does not
         // split every word into its own piece.
         const rise = Math.round(((at.x - pen0.x) * up.x + (at.y - pen0.y) * up.y) * 10) / 10
-        const fill = toRgb(charColor)
-        const last = spans[spans.length - 1]
-        if (
-          last && last.weight === style.weight && last.italic === style.italic &&
-          Math.abs(last.size - charSize) < 0.05 && last.rise === rise &&
-          last.color.every((v, i) => Math.abs(v - fill[i]!) < 0.004)
-        ) {
-          last.text += c
-        } else {
-          spans.push({
-            text: c, font: name, weight: style.weight, italic: style.italic,
-            size: charSize, color: fill, rise,
-          })
-        }
+        glyphs.push({
+          char: c,
+          quad: sane as Quad,
+          origin: [at.x, at.y],
+          piece: {
+            font: nameOf(charFont), weight: style.weight, italic: style.italic,
+            size: charSize, color: toRgb(charColor), rise,
+          },
+        })
       },
       endLine() {
         // A line with no characters (an image-only block's stray line) is
         // not selectable text and would only add an empty hit target.
-        if (bbox && chars.length > 0) {
+        if (bbox && glyphs.length > 0) {
           // MuPDF's own line box was built from the broken heights too, so
-          // once a glyph was capped the box is rebuilt from the glyphs.
-          if (capped) bbox = unionOf(chars)
+          // once a glyph was capped the box is rebuilt from the glyphs --
+          // ALL of them, hidden ones included, so the box (and the cover an
+          // edit draws over it) is the same with or without them.
+          if (capped) bbox = unionOf(glyphs)
+          // Glyphs that draw nothing and have no character are left out of
+          // the line's TEXT only. See invisible.ts.
+          const hidden = hiddenIndices(glyphs, invisible)
+          const chars: CharQuad[] = []
+          const spans: LineSpan[] = []
+          glyphs.forEach((g, i) => {
+            if (hidden.has(i)) return
+            chars.push({ char: g.char, quad: g.quad })
+            const p = g.piece
+            const last = spans[spans.length - 1]
+            if (
+              last && last.weight === p.weight && last.italic === p.italic &&
+              Math.abs(last.size - p.size) < 0.05 && last.rise === p.rise &&
+              last.color.every((v, k) => Math.abs(v - p.color[k]!) < 0.004)
+            ) {
+              last.text += g.char
+            } else {
+              spans.push({ text: g.char, ...p })
+            }
+          })
           lines.push({
             bbox,
             text: chars.map((c) => c.char).join(''),
@@ -287,7 +305,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
           })
         }
         bbox = undefined
-        chars = []
+        glyphs = []
       },
     })
 

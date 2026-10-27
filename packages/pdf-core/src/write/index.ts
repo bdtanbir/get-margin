@@ -9,6 +9,7 @@ import { writeShape } from './objects/shape.js'
 import { writeWhiteout } from './objects/whiteout.js'
 import { writeText } from './objects/text.js'
 import { FontRegistry, createMeasurer, type FontProvider } from './fonts.js'
+import { blankNotdefGlyphs, drawsMissingGlyphs, repairMissingGlyphs } from '../text/notdef.js'
 import { writeImage } from './objects/image.js'
 import { createXObjectCache, type XObjectCache } from './xobject.js'
 import { writeInk } from './objects/ink.js'
@@ -264,7 +265,9 @@ export function replay(
       && !unprotect && !hasMetadata && !anythingStripped(stripped)
     ) {
       const original = sources.get(Object.keys(editDoc.sources)[0]!)
-      if (original) return original
+      // The user's own bytes -- unless a page draws "missing glyph" boxes,
+      // which the viewer hides and the download must not hand back.
+      if (original) return repairMissingGlyphs(original) ?? original
     }
 
     // Read geometry off the assembled document, so a page that was rotated
@@ -378,6 +381,12 @@ export function replay(
       writeMetadata(raw, editDoc.metadata, opts.modified ?? 'D:20000101000000Z')
     }
 
+    // A page that draws "missing glyph" boxes -- a font asked for a
+    // character it does not have -- has them emptied in the file itself,
+    // as the viewer does on screen (text/notdef.ts). Checked first, so a
+    // file without a box is written exactly as it would have been.
+    if (drawsMissingGlyphs(raw)) blankNotdefGlyphs(raw)
+
     // LAST, and on the assembled export copy only. bake() draws each
     // field's appearance into the page content and removes /AcroForm
     // wholesale -- it is not undoable, and doing it to the document being
@@ -426,7 +435,7 @@ export {
 export { writeShape } from './objects/shape.js'
 export { writeWhiteout } from './objects/whiteout.js'
 export { writeText, ASCENT_RATIO, LINE_HEIGHT } from './objects/text.js'
-export { FontRegistry, createMeasurer, pdfString, type FontProvider } from './fonts.js'
+export { FontRegistry, createMeasurer, pdfString, pdfText, type FontProvider } from './fonts.js'
 export { writeImage } from './objects/image.js'
 export { createXObjectCache, type XObjectCache } from './xobject.js'
 export { writeInk } from './objects/ink.js'

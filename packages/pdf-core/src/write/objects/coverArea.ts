@@ -123,7 +123,7 @@ export function coverAndRedraw(
     // Memoised on the bytes by the same cache every image placement uses,
     // so one lifted logo repeated on ten pages embeds once.
     const { name, obj } = ctx.xobject(data, () => ctx.raw.addImage(new mupdf.Image(data)))
-    addResource(ctx.raw, ctx.page, 'XObject', name, obj)
+    const used = addResource(ctx.raw, ctx.page, 'XObject', name, obj)
 
     // An image XObject's own space is the unit square with its origin at
     // the bottom-left, so the CTM carries both position and size. No q/Q:
@@ -133,7 +133,7 @@ export function coverAndRedraw(
       `${num(drawW * right.x)} ${num(drawW * right.y)} ` +
         `${num(drawH * up.x)} ${num(drawH * up.y)} ` +
         `${num(anchor.x)} ${num(anchor.y)} cm`,
-      `/${name} Do`,
+      `/${used} Do`,
     )
   }
 

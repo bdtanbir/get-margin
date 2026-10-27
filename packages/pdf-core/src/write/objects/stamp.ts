@@ -2,7 +2,7 @@ import type { ObjectWriter } from '../index.js'
 import type { StampObject } from '../types.js'
 import { appendContent, prependContent, addResource, fillColor, alphaState } from '../content.js'
 import { contentRectToPage, pagePointToContent, pageDirToContent, textMatrix, num } from '../coords.js'
-import { pdfString } from '../fonts.js'
+import { pdfText } from '../fonts.js'
 import { ASCENT_RATIO } from './text.js'
 
 /**
@@ -88,11 +88,11 @@ export const writeStamp: ObjectWriter = (ctx, object) => {
   const g = ctx.geometry
   const box = contentRectToPage(o.rect, g)
   const font = ctx.fonts.resolve(o.fontFamily)
-  addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
+  const fontName = addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
 
   const ops: string[] = []
   if (o.opacity < 1) ops.push(alphaState(ctx.raw, ctx.page, `gs${o.id}`, o.opacity))
-  ops.push(fillColor(o.color), 'BT', `/${font.name} ${num(o.fontSize)} Tf`)
+  ops.push(fillColor(o.color), 'BT', `/${fontName} ${num(o.fontSize)} Tf`)
 
   const advance = ctx.measure(text, o.fontFamily, o.fontSize)
   const fromTop = o.fontSize * ASCENT_RATIO
@@ -131,7 +131,7 @@ export const writeStamp: ObjectWriter = (ctx, object) => {
   // make the offset mean something different.
   ops.push(textMatrix(u, pen.x, pen.y))
 
-  ops.push(`${pdfString(text)} Tj`, 'ET')
+  ops.push(`${pdfText(font.font, text)} Tj`, 'ET')
 
   const content = ops.join('\n')
   // Under the page's existing content, or over it. Both are wanted and

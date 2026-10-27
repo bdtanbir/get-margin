@@ -16,7 +16,7 @@ export const writeImage: ObjectWriter = (ctx, object) => {
   // repeated stamps or a signature applied on every page would otherwise
   // carry a full copy of the payload per placement.
   const { name, obj } = ctx.xobject(o.data, () => ctx.raw.addImage(new mupdf.Image(o.data)))
-  addResource(ctx.raw, ctx.page, 'XObject', name, obj)
+  const used = addResource(ctx.raw, ctx.page, 'XObject', name, obj)
 
   const ops: string[] = []
   if (o.opacity < 1) ops.push(alphaState(ctx.raw, ctx.page, `gs${o.id}`, o.opacity))
@@ -35,7 +35,7 @@ export const writeImage: ObjectWriter = (ctx, object) => {
     `${num(box.w * right.x)} ${num(box.w * right.y)} ` +
       `${num(box.h * up.x)} ${num(box.h * up.y)} ` +
       `${num(anchor.x)} ${num(anchor.y)} cm`,
-    `/${name} Do`,
+    `/${used} Do`,
   )
   appendContent(ctx.raw, ctx.page, ops.join('\n'))
 }

@@ -2,7 +2,7 @@ import {
   PdfDocument, renderPage, rasterisePage, rasterSize, replay, buildQuadIndex, buildImageIndex,
   cropImage, cropEditedRegion,
   listFields,
-  readMetadata, recompressImages,
+  readMetadata, recompressImages, repairMissingGlyphs,
   findInPage, missingGlyphsFor,
   type EditDocument, type PageQuadIndex, type PageImageIndex, type SourceId,
   type StrippedContent,
@@ -265,7 +265,10 @@ export class PdfService {
     // Protection alone is a reason to go through the write path: someone
     // who opened a file and asked only for a password must get an
     // encrypted file, not their original.
-    if (!editDoc && !protection && !removeProtection) return src
+    // Still the original bytes -- unless a page draws "missing glyph"
+    // boxes, which the viewer hides and the download would otherwise hand
+    // straight back. See repairMissingGlyphs.
+    if (!editDoc && !protection && !removeProtection) return repairMissingGlyphs(src) ?? src
     if (!editDoc) {
       throw new Error('Cannot protect a document with no edit state.')
     }

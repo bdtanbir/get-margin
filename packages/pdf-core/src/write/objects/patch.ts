@@ -6,9 +6,10 @@ import { appendContent, addResource, fillColor } from '../content.js'
 import {
   num, pageBoxToContent, pagePointToContent, pageDeltaToContent, pageDirToContent, textMatrix,
 } from '../coords.js'
-import { pdfString, faceKey } from '../fonts.js'
+import { pdfText, faceKey } from '../fonts.js'
 import { patchRuns, runsAdvance, truncateRuns, type PatchRun } from '../patchRuns.js'
 import { ASCENT_RATIO } from './text.js'
+import { hiddenIndices, invisibleCharTest } from '../../text/invisible.js'
 
 /**
  * A stable hash of a line's original text.
@@ -108,6 +109,8 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
      * into the direction the run was actually drawn in.
      */
     dir: { x: number; y: number }
+    /** Each character and its pen position, to tell which ones draw nothing. */
+    glyphs: Array<{ char: string; origin: number[] }>
   }> = []
   structured.walk({
     beginLine: (_bbox: unknown, _wmode: number, direction: number[]) => {
@@ -116,6 +119,7 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
         bbox: [Infinity, Infinity, -Infinity, -Infinity],
         size: 0,
         origin: null,
+        glyphs: [],
         // A walker that predates the argument, or a degenerate run, reads
         // as ordinary left-to-right rather than as a zero-length direction.
         dir: { x: direction?.[0] ?? 1, y: direction?.[1] ?? 0 },
@@ -131,6 +135,7 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
         line.origin = { x: origin[0] ?? 0, y: origin[1] ?? 0 }
       }
       line.text += c
+      line.glyphs.push({ char: c, origin: [origin[0] ?? 0, origin[1] ?? 0] })
       // Capped exactly as buildQuadIndex caps it, so the cover exported is
       // the cover the user saw. See saneQuad.ts.
       quad = saneQuad(quad, origin, size)
@@ -149,10 +154,18 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
       `the line this edit refers to is no longer on the page (line ${o.lineIndex + 1})`,
     )
   }
-  if (hashText(line.text) !== o.originalHash) {
+  // The line as the editor showed it: without the U+FFFD characters that
+  // draw nothing, by the same rule buildQuadIndex applies (invisible.ts).
+  // The raw text is accepted too, for an edit saved before that rule
+  // existed -- it hashed the line with them in.
+  const hidden = line.text.includes('\ufffd')
+    ? hiddenIndices(line.glyphs, invisibleCharTest(ctx.page))
+    : new Set<number>()
+  const shown = line.glyphs.filter((_, i) => !hidden.has(i)).map((g) => g.char).join('')
+  if (hashText(shown) !== o.originalHash && hashText(line.text) !== o.originalHash) {
     throw new PatchRefused(
       `the text at line ${o.lineIndex + 1} has changed since it was edited, so the edit ` +
-      `was not applied. It said "${o.originalText}" and now reads "${line.text}".`,
+      `was not applied. It said "${o.originalText}" and now reads "${shown}".`,
     )
   }
 
@@ -210,13 +223,12 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
   const runFace = (run: PatchRun): string =>
     faceKey(o.fontFamily, { weight: run.weight, italic: run.italic })
   const allRuns = patchRuns(o)
-  const fontFor = new Map<string, { name: string }>()
+  const fontFor = new Map<string, { name: string; font: mupdf.Font }>()
   for (const run of allRuns) {
     const face = runFace(run)
     if (fontFor.has(face)) continue
     const font = ctx.fonts.resolve(face)
-    addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj)
-    fontFor.set(face, font)
+    fontFor.set(face, { name: addResource(ctx.raw, ctx.page, 'Font', font.name, font.obj), font: font.font })
   }
 
   // A little bleed, because glyph quads sit tight against the ink and
@@ -330,7 +342,7 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
         rise = run.rise
         ops.push(`${num(size * rise)} Ts`)
       }
-      ops.push(`${pdfString(run.text)} Tj`)
+      ops.push(`${pdfText(font.font, run.text)} Tj`)
     }
     ops.push('ET')
   }
