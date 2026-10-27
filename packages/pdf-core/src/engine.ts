@@ -1,6 +1,7 @@
 import * as mupdf from 'mupdf'
 import type { PageGeometry } from '@margin/transform'
 import { geometryFromPageObject, type RawObj } from './geometry.js'
+import { blankNotdefGlyphs } from './text/notdef.js'
 
 export class PdfOpenError extends Error {
   constructor(cause: unknown) {
@@ -91,6 +92,23 @@ export class PdfDocument {
     } finally {
       page.destroy()
     }
+  }
+
+  #notdefBlanked = false
+
+  /**
+   * Stop drawing the "missing glyph" box in this document's embedded fonts,
+   * as other viewers do. For the document the app DRAWS, never one it saves:
+   * it rewrites font programs in memory. See text/notdef.ts.
+   *
+   * Runs once; a locked document waits until it has been unlocked, since
+   * its font streams cannot be read before then. Call it before any page is
+   * drawn or indexed -- MuPDF caches a font the first time a page uses it.
+   */
+  blankMissingGlyphs(): void {
+    if (this.#notdefBlanked || this.needsPassword()) return
+    this.#notdefBlanked = true
+    blankNotdefGlyphs(this.#live())
   }
 
   /** Internal: hands the raw document to sibling modules in this package. */

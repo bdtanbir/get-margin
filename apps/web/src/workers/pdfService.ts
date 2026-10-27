@@ -104,6 +104,7 @@ export class PdfService {
     const sourceId = this.#register(bytes)
     this.#primarySource = sourceId
     this.#doc = PdfDocument.open(bytes)
+    this.#doc.blankMissingGlyphs()
     return this.#info()
   }
 
@@ -185,6 +186,7 @@ export class PdfService {
     // Kept so the EXPORT can decrypt this source. Without it every edited
     // export of this document comes out with pages and no content.
     if (this.#primarySource) this.#passwords.set(this.#primarySource, password)
+    doc.blankMissingGlyphs()
     return this.#info()
   }
 
@@ -224,6 +226,7 @@ export class PdfService {
 
     this.#secondary?.close()
     this.#secondary = PdfDocument.open(bytes)
+    this.#secondary.blankMissingGlyphs()
     this.#secondaryId = sourceId
     return this.#secondary
   }
