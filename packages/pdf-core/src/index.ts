@@ -13,11 +13,11 @@ export type {
   ObjectKind, Color, EditObject, EditDocument, Op,
   TextObject, ImageObject, ShapeObject, WhiteoutObject,
   InkObject, MarkupObject, LinkObject, SignatureObject,
-  FieldObject, FieldType, FieldValue, StampObject, RedactionObject, TextPatchObject, PatchSpan,
+  FieldObject, FieldType, FieldValue, StampObject, RedactionObject, TextPatchObject, PatchSpan, PatchParagraph,
   ImagePatchObject, RegionPatchObject,
 } from './write/types.js'
 export {
-  patchRuns, spansMatch, truncateRuns, runsAdvance, type PatchRun,
+  patchRuns, spansMatch, truncateRuns, runsAdvance, layoutRuns, blockLayout, type PatchRun,
 } from './write/patchRuns.js'
 export { EDIT_DOCUMENT_VERSION, emptyEditDocument, OBJECT_KINDS } from './write/types.js'
 export { listFields, fieldKey, hasAcroForm } from './write/fields.js'

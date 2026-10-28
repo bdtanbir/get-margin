@@ -3,7 +3,7 @@ import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { svgViewBox, svgRootTransform } from '@margin/transform'
 import type { PageState } from '@/stores/document'
 import type { EditObject, TextPatchObject as TextPatch } from '@margin/pdf-core'
-import { isMoved } from '@/features/patch/linePatch'
+import { isMoved, patchLineIndexes } from '@/features/patch/linePatch'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import ObjectLayer from './ObjectLayer.vue'
@@ -64,9 +64,12 @@ const isMarkup = isMarkupKind
 const patchedLines = computed(() =>
   Object.values(edits.doc.objects)
     .filter((o): o is TextPatch => o.pageId === props.page.id && o.kind === 'textPatch')
-    .map((o) => o.lineIndex)
+    .flatMap((o) => patchLineIndexes(o))
     .sort((a, b) => a - b),
 )
+
+/** Where text patches put their picture of the page without its edited lines. */
+const underlay = ref<SVGGElement | null>(null)
 
 const onPage = computed(() =>
   Object.values(edits.doc.objects)
@@ -307,7 +310,7 @@ async function onDoubleClick(e: MouseEvent): Promise<void> {
 function readsAsText(o: EditObject): o is TextPatch {
   if (o.kind !== 'textPatch' || !selecting.value) return false
   const p = o as TextPatch
-  return p.text === p.originalText && !isMoved(p)
+  return !p.paragraph && p.text === p.originalText && !isMoved(p)
 }
 
 function onPatchPointerDown(o: EditObject, e: PointerEvent): void {
@@ -418,6 +421,15 @@ const draft = computed(() => {
         other made painting order a property of the coordinate system
         instead of a property of z.
       -->
+      <!--
+        The page as it looks with its edited lines taken off, for every
+        text patch -- BELOW every object, because that is where the export
+        puts it: removing a line changes the page itself, under everything
+        drawn on it. Painted per patch in z order instead, a later patch's
+        picture of the page covered an earlier paragraph's extra lines,
+        which the download shows perfectly well. See TextPatchObject.
+      -->
+      <g ref="underlay" data-patch-underlay />
       <template v-for="(band, i) in bands" :key="i">
         <!--
           Raw PDF space, so it goes inside the page transform.
@@ -460,6 +472,7 @@ const draft = computed(() => {
             :source-id="page.sourceId"
             :source-index="page.sourceIndex"
             :lines="patchedLines"
+            :underlay="underlay"
           />
           <PatchedAreaObject
             v-else-if="o.kind === 'imagePatch' || o.kind === 'regionPatch'"

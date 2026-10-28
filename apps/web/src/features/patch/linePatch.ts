@@ -2,7 +2,9 @@ import { nanoid } from 'nanoid'
 import { hashText, weightOf } from '@margin/pdf-core'
 import { fitStyle } from '@/lib/fonts'
 import { familyForLine } from '@/lib/fontMatch'
-import type { Color, EditObject, LineRun, PatchSpan, TextPatchObject } from '@margin/pdf-core'
+import type {
+  Color, EditObject, LineRun, PatchRun, PatchSpan, TextPatchObject,
+} from '@margin/pdf-core'
 import type { BackgroundSample } from './sampleBackground'
 
 /**
@@ -148,9 +150,18 @@ export function patchOnLine(
   lineIndex: number,
 ): TextPatchObject | undefined {
   for (const o of objects) {
-    if (o.kind === 'textPatch' && o.pageId === pageId && o.lineIndex === lineIndex) return o
+    if (o.kind !== 'textPatch' || o.pageId !== pageId) continue
+    // A paragraph patch owns every one of its lines, not only the first:
+    // a click on its third line re-opens it rather than patching that
+    // line a second time.
+    if (o.lineIndex === lineIndex || o.paragraph?.lines.some((l) => l.lineIndex === lineIndex)) return o
   }
   return undefined
+}
+
+/** Every line a patch replaces: its own, and a paragraph's others. */
+export function patchLineIndexes(patch: TextPatchObject): number[] {
+  return [patch.lineIndex, ...(patch.paragraph?.lines ?? []).map((l) => l.lineIndex)]
 }
 
 /** Whether a patch has been dragged away from the line it replaces. */
@@ -344,5 +355,110 @@ export function buildLinePatch(args: NewLinePatch): TextPatchObject {
     z: args.z,
     locked: false,
     opacity: 1,
+  }
+}
+
+/** What a paragraph patch needs beyond what a line patch does. */
+export type NewParagraphPatch = Omit<NewLinePatch, 'lineIndex' | 'line' | 'text' | 'spans' | 'style'> & {
+  /** The paragraph's lines, first first, and their indexes on the page. */
+  lines: LineRun[]
+  indexes: number[]
+  /** Geometry from `paragraphAt`. */
+  box: { x: number; y: number; w: number; h: number }
+  width: number
+  leading: number
+  indent: number
+}
+
+/** A line's own pieces as runs, every axis resolved against `base`. */
+function lineRuns(line: LineRun, family: string, base: PatchStyle): PatchRun[] {
+  const pieces = line.spans && line.spans.length > 0 && line.spans.map((p) => p.text).join('') === line.text
+    ? line.spans
+    : [{ ...line, text: line.text, rise: 0 }]
+  return pieces.map((p) => {
+    const face = fitStyle(family, { weight: p.weight, italic: p.italic })
+    return {
+      text: p.text,
+      weight: face.weight ?? p.weight,
+      italic: face.italic ?? p.italic,
+      scale: base.fontSize > 0 ? ratio(p.size / base.fontSize) : 1,
+      rise: base.fontSize > 0 ? ratio(p.rise / base.fontSize) : 0,
+      color: plainColor(p.color),
+    }
+  })
+}
+
+/**
+ * Runs for several lines read as ONE paragraph: joined by a space, or
+ * straight on after a hyphen -- the same rule as `joinLineTexts`.
+ */
+export function paragraphRuns(lines: readonly LineRun[], family: string, base: PatchStyle): PatchRun[] {
+  const out: PatchRun[] = []
+  for (const line of lines) {
+    const runs = lineRuns(line, family, base)
+    if (out.length > 0) {
+      // Trailing space off what came before, leading space off what follows.
+      while (out.length > 0 && /^\s*$/.test(out[out.length - 1]!.text)) out.pop()
+      const last = out[out.length - 1]
+      if (last) last.text = last.text.replace(/\s+$/, '')
+      while (runs.length > 0 && /^\s*$/.test(runs[0]!.text)) runs.shift()
+      if (runs[0]) runs[0] = { ...runs[0], text: runs[0].text.replace(/^\s+/, '') }
+      if (last && !last.text.endsWith('-')) out.push({ ...last, text: ' ', scale: 1, rise: 0 })
+    }
+    out.push(...runs)
+  }
+  return out.filter((r) => r.text !== '')
+}
+
+/** Runs as span overrides of `base`, in canonical form. */
+export function spansFromRuns(runs: readonly PatchRun[], base: PatchStyle): PatchSpan[] | undefined {
+  return normalizeSpans(runs.map((r) => {
+    const span: PatchSpan = { text: r.text }
+    if (r.weight !== base.weight) span.weight = r.weight
+    if (r.italic !== base.italic) span.italic = r.italic
+    if (r.scale !== 1) span.scale = r.scale
+    if (r.rise !== 0) span.rise = r.rise
+    if (!sameColor(r.color, base.color)) span.color = plainColor(r.color)
+    return span
+  }))
+}
+
+/**
+ * A patch that replaces a whole paragraph and wraps at its width. The
+ * first line is the patch's own line, guarded as any line patch is; the
+ * others go in `paragraph.lines`, each with its own hash.
+ */
+export function buildParagraphPatch(args: NewParagraphPatch): TextPatchObject {
+  const [first, ...rest] = args.lines
+  if (!first) throw new Error('a paragraph needs at least one line')
+  const style = documentStyle(first, args.fontFamily)
+  // A lone line with no column to wrap to is just a line: no paragraph,
+  // drawn and fitted exactly as a line patch always was.
+  if (rest.length === 0 && args.width <= 0) {
+    return buildLinePatch({ ...args, lineIndex: args.indexes[0]!, line: first, style, fit: 'overflow' })
+  }
+  const runs = paragraphRuns(args.lines, args.fontFamily, style)
+  const base = buildLinePatch({
+    ...args,
+    lineIndex: args.indexes[0]!,
+    line: first,
+    style,
+    text: runs.map((r) => r.text).join(''),
+    spans: spansFromRuns(runs, style) ?? [],
+    fit: 'overflow',
+  })
+  return {
+    ...base,
+    rect: plainRect(args.box),
+    paragraph: {
+      lines: rest.map((line, i) => ({
+        lineIndex: args.indexes[i + 1]!,
+        originalHash: hashText(line.text),
+        originalText: line.text,
+      })),
+      width: Math.round(args.width * 100) / 100,
+      leading: Math.round(args.leading * 1000) / 1000,
+      indent: Math.round(args.indent * 100) / 100,
+    },
   }
 }

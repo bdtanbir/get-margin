@@ -7,7 +7,9 @@ import {
   num, pageBoxToContent, pagePointToContent, pageDeltaToContent, pageDirToContent, textMatrix,
 } from '../coords.js'
 import { pdfText, faceKey } from '../fonts.js'
-import { patchRuns, runsAdvance, truncateRuns, type PatchRun } from '../patchRuns.js'
+import {
+  blockLayout, layoutRuns, patchRuns, runsAdvance, truncateRuns, type PatchRun,
+} from '../patchRuns.js'
 import { ASCENT_RATIO } from './text.js'
 import { hiddenIndices, invisibleCharTest } from '../../text/invisible.js'
 
@@ -48,7 +50,7 @@ export function missingGlyphs(font: mupdf.Font, text: string): string[] {
   const missing: string[] = []
   for (const ch of text) {
     // Whitespace has no glyph in many fonts and needs none.
-    if (ch === ' ' || ch === '\t') continue
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') continue
     if (font.encodeCharacter(ch) === 0 && !missing.includes(ch)) missing.push(ch)
   }
   return missing
@@ -93,6 +95,8 @@ export type PreparedPatch = {
   line: PageLine
   /** Whether the line's own glyphs were taken off the page (removeLines). */
   removed: boolean
+  /** A paragraph patch's other lines, in order, each with the same flag. */
+  others?: Array<{ line: PageLine; removed: boolean }>
 }
 
 /**
@@ -104,6 +108,19 @@ export type PreparedPatch = {
  * that rule existed -- it hashed the line with them in.
  */
 export function resolvePatchLine(page: mupdf.Page, lines: PageLine[], o: TextPatchObject): PageLine {
+  return resolveLine(page, lines, o)
+}
+
+/** Every line of a paragraph patch after the first, each checked against its own hash. */
+export function resolveParagraphLines(page: mupdf.Page, lines: PageLine[], o: TextPatchObject): PageLine[] {
+  return (o.paragraph?.lines ?? []).map((l) => resolveLine(page, lines, l))
+}
+
+function resolveLine(
+  page: mupdf.Page,
+  lines: PageLine[],
+  o: { lineIndex: number; originalHash: string; originalText: string },
+): PageLine {
   const line = lines[o.lineIndex]
   if (!line) {
     throw new PatchRefused(
@@ -140,18 +157,37 @@ export function prepareTextPatches(
   patches: TextPatchObject[],
 ): Map<string, PreparedPatch> {
   const lines = readLines(page)
-  const found = new Map<string, PageLine>()
+  const found = new Map<string, { line: PageLine; others: PageLine[] }>()
   for (const o of patches) {
     try {
-      found.set(o.id, resolvePatchLine(page, lines, o))
+      found.set(o.id, {
+        line: resolvePatchLine(page, lines, o),
+        others: resolveParagraphLines(page, lines, o),
+      })
     } catch (cause) {
       if (cause instanceof PatchRefused) (cause as PatchRefused & { objectId?: string }).objectId = o.id
       throw cause
     }
   }
-  const removed = removeLines(page, lines, patches.map((o) => o.lineIndex))
+  const removed = removeLines(
+    page, lines,
+    patches.flatMap((o) => [o.lineIndex, ...(o.paragraph?.lines ?? []).map((l) => l.lineIndex)]),
+  )
   const prepared = new Map<string, PreparedPatch>()
-  for (const o of patches) prepared.set(o.id, { line: found.get(o.id)!, removed: removed.has(o.lineIndex) })
+  for (const o of patches) {
+    const { line, others } = found.get(o.id)!
+    prepared.set(o.id, {
+      line,
+      removed: removed.has(o.lineIndex),
+      ...(o.paragraph
+        ? {
+            others: others.map((l, i) => ({
+              line: l, removed: removed.has(o.paragraph!.lines[i]!.lineIndex),
+            })),
+          }
+        : {}),
+    })
+  }
   return prepared
 }
 
@@ -162,8 +198,12 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
   // before any writer ran. A patch written on its own -- without that pass --
   // reads the line here and covers it.
   const prepared = ctx.patchLines?.get(o.id)
-  const line = prepared?.line ?? resolvePatchLine(ctx.page, readLines(ctx.page), o)
+  const fresh = prepared ? undefined : readLines(ctx.page)
+  const line = prepared?.line ?? resolvePatchLine(ctx.page, fresh!, o)
   const removed = prepared?.removed === true
+  /** A paragraph's other lines, and whether each was removed or must be covered. */
+  const others = prepared?.others ??
+    (fresh ? resolveParagraphLines(ctx.page, fresh, o).map((l) => ({ line: l, removed: false })) : [])
 
   /**
    * The line's box is MuPDF page space (Convention C); content-stream
@@ -240,6 +280,18 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
     `${num(x - bleed)} ${num(y - bleed)} ${num(w + bleed * 2)} ${num(h + bleed * 2)} re`,
     'f',
   ]
+  // A paragraph's other lines, each covered on its own when it could not
+  // be removed -- one box over the whole paragraph would hide whatever sits
+  // in the gaps beside its shorter lines.
+  for (const other of others) {
+    if (other.removed) continue
+    const r = pageBoxToContent(other.line.bbox, geometry)
+    ops.push(
+      fillColor(o.background),
+      `${num(r.x - bleed)} ${num(r.y - bleed)} ${num(r.w + bleed * 2)} ${num(r.h + bleed * 2)} re`,
+      'f',
+    )
+  }
 
   if (o.text !== '') {
     /**
@@ -271,8 +323,10 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
      * existing, and the user sees characters disappear for no reason
      * visible on the page.
      */
-    if (moved) {
-      // Nothing: 'overflow' semantics.
+    const block = blockLayout(o)
+    if (moved || block) {
+      // Nothing: 'overflow' semantics. A paragraph flows DOWN instead of
+      // being shrunk or cut to its first line's width.
     } else if (o.fit === 'shrink') {
       // Only ever shrink: growing text to fill a box is not what was asked
       // for and would look like a different edit.
@@ -327,22 +381,49 @@ export const writeTextPatch: ObjectWriter = (ctx, object) => {
      * colour, face and size, and `Ts` for a raised or lowered piece. The
      * `q`/`Q` around this stream resets `Ts` and `Tc` afterwards.
      */
+    /**
+     * The lines to draw. One, as always, for a one-line patch; a paragraph
+     * is broken by `layoutRuns`, the same function the preview uses.
+     *
+     * Line k starts `k` leadings DOWN from the first line's pen, and every
+     * line after the first starts `indent` further back along the text --
+     * the first line of a paragraph is often indented and the rest are not.
+     * "Down" is the text's own up turned over, so a paragraph on a turned
+     * page stacks the way its lines did.
+     */
+    const laid = block
+      ? layoutRuns(runs, {
+          width: block.width, indent: block.indent, size, spacing,
+          measure: (run, at) => ctx.measure(run.text, runFace(run), at),
+        })
+      : [runs]
+    const down = { x: u.y, y: -u.x }
+    const step = block ? block.leading * size : 0
+    const back = block ? block.indent : 0
+
     ops.push(
       'BT',
       // See the text writer: points per gap, and only when there are any.
       ...(spacing !== 0 ? [`${num(spacing)} Tc`] : []),
-      textMatrix(u, pen.x + shift.x, pen.y + shift.y),
     )
     let rise = 0
-    for (const run of runs) {
-      const font = fontFor.get(runFace(run))!
-      ops.push(fillColor(run.color), `/${font.name} ${num(size * run.scale)} Tf`)
-      if (run.rise !== rise) {
-        rise = run.rise
-        ops.push(`${num(size * rise)} Ts`)
+    laid.forEach((lineRuns, k) => {
+      const along = k === 0 ? 0 : -back
+      ops.push(textMatrix(
+        u,
+        pen.x + shift.x + u.x * along + down.x * step * k,
+        pen.y + shift.y + u.y * along + down.y * step * k,
+      ))
+      for (const run of lineRuns) {
+        const font = fontFor.get(runFace(run))!
+        ops.push(fillColor(run.color), `/${font.name} ${num(size * run.scale)} Tf`)
+        if (run.rise !== rise) {
+          rise = run.rise
+          ops.push(`${num(size * rise)} Ts`)
+        }
+        ops.push(`${pdfText(font.font, run.text)} Tj`)
       }
-      ops.push(`${pdfText(font.font, run.text)} Tj`)
-    }
+    })
     ops.push('ET')
   }
 

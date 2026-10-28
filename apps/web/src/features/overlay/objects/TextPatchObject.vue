@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch, watchEffect } from 'vue'
 import { getPdfClient } from '@/workers/pdfClient'
 import type { TextPatchObject } from '@margin/pdf-core'
-import { patchRuns, runsAdvance, truncateRuns } from '@margin/pdf-core'
+import { blockLayout, layoutRuns, patchRuns, runsAdvance, truncateRuns } from '@margin/pdf-core'
 import { cssFamily, cssWeight, cssStyle, loadFont, measureText, ASCENT_RATIO } from '@/lib/fonts'
 import { rgb } from './svgPaint'
 
@@ -40,6 +40,14 @@ const props = defineProps<{
   sourceIndex?: number | undefined
   /** Every patched line on this page: all are gone in the export, so all are gone here. */
   lines?: readonly number[] | undefined
+  /**
+   * The page overlay's bottom layer, where the picture of the page without
+   * the edited lines goes. Drawn there because removing a line changes the
+   * PAGE, beneath every object -- drawn here, beside this patch's text, it
+   * hid any other patch's text that ran into this patch's area. Absent (in
+   * isolation, in tests) the picture is drawn in place.
+   */
+  underlay?: SVGGElement | null | undefined
 }>()
 
 /**
@@ -97,7 +105,8 @@ watch(
       .catch(() => null)
     if (at !== request) return
     // Not removed: the export covers this line, so the preview does too.
-    if (!result || !result.removed.includes(props.object.lineIndex)) {
+    const own = [props.object.lineIndex, ...(props.object.paragraph?.lines ?? []).map((l) => l.lineIndex)]
+    if (!result || !own.every((i) => result.removed.includes(i))) {
       forget()
       return
     }
@@ -123,6 +132,9 @@ watch(
   { immediate: true },
 )
 onBeforeUnmount(() => { request++; forget() })
+
+/** How the text breaks into lines, or undefined for a one-line patch. See patchRuns.ts. */
+const block = computed(() => blockLayout(props.object))
 
 /**
  * Size and text after the fit rule, resolved the way the writer resolves
@@ -151,8 +163,8 @@ const laid = computed(() => {
   // A moved patch overflows whatever `fit` says, because both fit rules
   // measure against `w` -- the width of the line being replaced -- and the
   // text is no longer in that box. The writer does the same.
-  if (moved.value) {
-    // Nothing: 'overflow' semantics.
+  if (moved.value || block.value) {
+    // Nothing: 'overflow' semantics. A paragraph flows down instead.
   } else if (o.fit === 'shrink') {
     while (size > 4 && advance() > w) size -= 0.5
   } else if (o.fit === 'truncate') {
@@ -186,6 +198,29 @@ const baseline = computed(() =>
   (props.object.baseline ?? props.object.rect.y + laid.value.size * ASCENT_RATIO) + dy.value,
 )
 
+/**
+ * A paragraph patch's lines, each with where it starts -- broken by
+ * `layoutRuns`, the function the writer breaks them with, so the screen and
+ * the file wrap at the same words.
+ */
+const blockLines = computed(() => {
+  const b = block.value
+  if (!b) return []
+  const o = props.object
+  const size = laid.value.size
+  const lines = layoutRuns(laid.value.runs, {
+    width: b.width, indent: b.indent, size, spacing: o.letterSpacing ?? 0,
+    measure: (run, at) => measureText(run.text, o.fontFamily, at, run),
+  })
+  // `rect` is the whole paragraph's box; its first line may be indented.
+  const left = o.rect.x + dx.value
+  return lines.map((runs, k) => ({
+    runs,
+    x: k === 0 ? left + b.indent : left,
+    y: baseline.value + k * b.leading * size,
+  }))
+})
+
 const background = computed(() => rgb(props.object.background))
 const fill = computed(() => rgb(props.object.color))
 const family = computed(() => cssFamily(props.object.fontFamily))
@@ -199,7 +234,7 @@ const spacing = computed(() => props.object.letterSpacing || undefined)
  * Pieces in more than one style. A one-style line renders exactly as it
  * always has, as plain text on the <text>; only a mixed line needs tspans.
  */
-const mixed = computed(() => laid.value.runs.length > 1)
+const mixed = computed(() => laid.value.runs.length > 1 || !!block.value)
 
 /**
  * Every face the runs use, registered so the browser draws the real bold
@@ -214,16 +249,17 @@ watchEffect(() => {
 
 <template>
   <g>
-    <image
-      v-if="without"
-      :href="without.href"
-      :x="without.x"
-      :y="without.y"
-      :width="without.width"
-      :height="without.height"
-      preserveAspectRatio="none"
-      data-patch-without
-    />
+    <Teleport v-if="without" :to="props.underlay" :disabled="!props.underlay">
+      <image
+        :href="without.href"
+        :x="without.x"
+        :y="without.y"
+        :width="without.width"
+        :height="without.height"
+        preserveAspectRatio="none"
+        data-patch-without
+      />
+    </Teleport>
     <rect
       v-else
       :x="cover.x"
@@ -238,8 +274,33 @@ watchEffect(() => {
       it, in a space that is already top-down, so the glyphs are the right
       way up as written.
     -->
+    <template v-if="block">
+      <text
+        v-for="(l, k) in blockLines"
+        :key="k"
+        :x="l.x"
+        :y="l.y"
+        :fill="fill"
+        :font-family="family"
+        :font-weight="weight"
+        :font-style="slope"
+        :font-size="laid.size"
+        :letter-spacing="spacing"
+        style="white-space: pre"
+        data-patch-line
+      ><tspan
+        v-for="(run, i) in l.runs"
+        :key="i"
+        :y="l.y - run.rise * laid.size"
+        :fill="rgb(run.color)"
+        :font-weight="cssWeight(run.weight)"
+        :font-style="cssStyle(run.italic)"
+        :font-size="laid.size * run.scale"
+        data-patch-run
+      >{{ run.text }}</tspan></text>
+    </template>
     <text
-      v-if="laid.text !== ''"
+      v-else-if="laid.text !== ''"
       :x="props.object.rect.x + dx"
       :y="baseline"
       :fill="fill"

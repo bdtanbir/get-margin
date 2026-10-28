@@ -227,7 +227,7 @@ describe('PatchEditor', () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
     await typeInto(w, 'Replacement')
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
 
     const made = patches(edits)
     expect(made).toHaveLength(1)
@@ -246,7 +246,7 @@ describe('PatchEditor', () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
     await typeInto(w, 'Replacement')
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
 
     expect(patches(edits)[0]!.originalHash).toBe(hashText('Original line'))
     expect(patches(edits)[0]!.originalText).toBe('Original line')
@@ -258,7 +258,7 @@ describe('PatchEditor', () => {
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
     await typeInto(w, 'Replacement')
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
 
     expect(patches(edits)[0]!.background).toEqual([1, 1, 1])
     expect(patches(edits)[0]!.backgroundConfidence).toBe(1)
@@ -402,7 +402,7 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
     expect(patches(edits)).toHaveLength(1)
     expect(patches(edits)[0]!.text).toBe('Original line')
   })
@@ -412,7 +412,7 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
     await w.get('[data-patch-target="0"]').trigger('click')
     expect(patches(edits)).toHaveLength(1)
   })
@@ -422,7 +422,7 @@ describe('PatchEditor', () => {
     vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
     const w = mountEditor(INDEX)
     await w.get('[data-patch-target="0"]').trigger('click')
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
     edits.undo()
     expect(patches(edits)).toHaveLength(0)
   })
@@ -457,7 +457,7 @@ describe('PatchEditor', () => {
     expect(w.find('[data-patch-fit]').exists()).toBe(false)
 
     await typeInto(w, 'A much longer replacement')
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
     expect(patches(edits)[0]!.fit).toBe('overflow')
   })
 
@@ -500,12 +500,12 @@ describe('PatchEditor', () => {
 
       await w.get('[data-patch-target="0"]').trigger('click')
       await typeInto(w, first)
-      await w.get('[data-patch-input]').trigger('keydown.enter')
+      await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
 
       await w.get('[data-patch-target="0"]').trigger('click')
       const reopened = (w.get('[data-patch-input]').element as HTMLElement).textContent
       await typeInto(w, second)
-      await w.get('[data-patch-input]').trigger('keydown.enter')
+      await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
 
       return { edits, reopened }
     }
@@ -617,7 +617,7 @@ describe('PatchEditor', () => {
     it('does not discard the move when the field is closed unchanged', async () => {
       const { edits, w } = withMoved()
       await w.get('[data-patch-target="0"]').trigger('click')
-      await w.get('[data-patch-input]').trigger('keydown.enter')
+      await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
       expect(patches(edits)).toHaveLength(1)
       expect(patches(edits)[0]!.offset).toEqual(OFFSET)
     })
@@ -633,7 +633,7 @@ describe('PatchEditor', () => {
       const { edits, w } = withMoved()
       await w.get('[data-patch-target="0"]').trigger('click')
       await typeInto(w, 'Retyped')
-      await w.get('[data-patch-input]').trigger('keydown.enter')
+      await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
       expect(patches(edits)[0]!.text).toBe('Retyped')
       expect(patches(edits)[0]!.offset).toEqual(OFFSET)
     })
@@ -664,7 +664,7 @@ describe('PatchEditor', () => {
       const { edits, w } = withMoved({ offset: { dx: 0, dy: 0 }, text: 'Changed' })
       await w.get('[data-patch-target="0"]').trigger('click')
       await typeInto(w, 'Original line')
-      await w.get('[data-patch-input]').trigger('keydown.enter')
+      await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
       expect(patches(edits)).toHaveLength(1)
       expect(patches(edits)[0]!.text).toBe('Original line')
     })
@@ -1187,7 +1187,7 @@ describe('a line in more than one style', () => {
     await w.get('[data-patch-target="0"]').trigger('click')
     w.get('[data-patch-input] [data-run="0"]').element.textContent = 'Hello '
     await w.get('[data-patch-input]').trigger('input')
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
     const patch = patches(edits)[0]!
     expect(patch.text).toBe('Hello Arafat ok')
     expect(patch.weight).toBe(400)
@@ -1209,7 +1209,7 @@ describe('a line in more than one style', () => {
     document.getSelection()!.removeAllRanges()
     document.getSelection()!.addRange(range)
     await w.get('[data-patch-input]').trigger('keydown', { key: 'b', ctrlKey: true })
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
     expect(patches(edits)[0]!.spans).toEqual([
       { text: 'Hi ' }, { text: 'Arafat', weight: 700 }, { text: ' ' }, { text: 'ok', weight: 700 },
     ])
@@ -1243,7 +1243,7 @@ describe('a line in more than one style', () => {
     expect(w.get('[data-patch-bold]').attributes('aria-pressed')).toBe('true')
     // Still editing: the button did not take focus and commit.
     expect(w.find('[data-patch-input]').exists()).toBe(true)
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
     const patch = patches(edits)[0]!
     expect(patch.weight).toBe(700)
     expect(patch.spans).toEqual([
@@ -1271,7 +1271,7 @@ describe('a line in more than one style', () => {
     await w.get('[data-patch-target="0"]').trigger('click')
     await flushPromises()
     await w.get('[data-patch-input]').trigger('keydown', { key: 'b', ctrlKey: true })
-    await w.get('[data-patch-input]').trigger('keydown.enter')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
     const patch = patches(edits)[0]!
     expect(patch.weight).toBe(700)
     expect(patch.spans).toBeUndefined()
@@ -1341,5 +1341,102 @@ describe('opening on request', () => {
     await flushPromises()
     expect((w.get('[data-patch-input]').element as HTMLElement).textContent)
       .toBe('Original line')
+  })
+})
+
+describe('editing a paragraph', () => {
+  /** Three 12pt lines 16pt apart in one block, characters 6pt wide. */
+  function paragraphIndex(texts: string[]): PageQuadIndex {
+    return {
+      lines: texts.map((text, k) => {
+        const top = 100 + k * 16
+        return {
+          bbox: [40, top, 40 + text.length * 6, top + 14],
+          text, font: 'Inter-Regular', weight: 400, italic: false, color: [0, 0, 0] as Color,
+          size: 12, baseline: top + 11, block: 0,
+          chars: [...text].map((char, i) => ({
+            char,
+            quad: [40 + i * 6, top, 46 + i * 6, top, 40 + i * 6, top + 14, 46 + i * 6, top + 14] as Quad,
+          })),
+        }
+      }),
+    }
+  }
+  const TEXTS = ['Careers in health may follow many', 'paths depending on the role and', 'experience.']
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    missingGlyphs.mockResolvedValue([])
+    seed()
+    vi.spyOn(useViewportStore(), 'bitmapFor').mockReturnValue(flatBitmap())
+  })
+
+  it('opens the whole paragraph from its last line, as one patch', async () => {
+    const edits = seed()
+    const w = mountEditor(paragraphIndex(TEXTS))
+    await w.get('[data-patch-target="2"]').trigger('click')
+
+    const field = w.get('[data-patch-input]')
+    expect(field.element.textContent).toBe(TEXTS.join(' '))
+    expect(field.attributes('aria-multiline')).toBe('true')
+    expect((field.element as HTMLElement).style.whiteSpace).toBe('pre-wrap')
+
+    const made = patches(edits)
+    expect(made).toHaveLength(1)
+    expect(made[0]!.lineIndex).toBe(0)
+    expect(made[0]!.paragraph!.lines.map((l) => l.lineIndex)).toEqual([1, 2])
+    expect(made[0]!.paragraph!.lines[1]!.originalHash).toBe(hashText('experience.'))
+    expect(made[0]!.paragraph!.leading).toBeCloseTo(16 / 12, 3)
+  })
+
+  it('re-opens the same patch from any of its lines', async () => {
+    const edits = seed()
+    const w = mountEditor(paragraphIndex(TEXTS))
+    await w.get('[data-patch-target="2"]').trigger('click')
+    await typeInto(w, 'Changed paragraph')
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', ctrlKey: true })
+    await w.get('[data-patch-target="1"]').trigger('click')
+
+    expect(patches(edits)).toHaveLength(1)
+    expect(w.get('[data-patch-input]').element.textContent).toBe('Changed paragraph')
+  })
+
+  it('starts a new line on Enter instead of committing', async () => {
+    const edits = seed()
+    const w = mount(PatchEditor, { props: { page, zoom: 1, index: paragraphIndex(TEXTS) }, attachTo: document.body })
+    await w.get('[data-patch-target="0"]').trigger('click')
+    const field = w.get('[data-patch-input]').element as HTMLElement
+    // Caret at the very end.
+    const range = document.createRange()
+    range.selectNodeContents(field)
+    range.collapse(false)
+    document.getSelection()!.removeAllRanges()
+    document.getSelection()!.addRange(range)
+
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter' })
+    expect(w.find('[data-patch-input]').exists()).toBe(true)
+    expect(field.textContent).toBe(`${TEXTS.join(' ')}\n`)
+
+    await w.get('[data-patch-input]').trigger('keydown', { key: 'Enter', metaKey: true })
+    expect(patches(edits)[0]!.text).toBe(`${TEXTS.join(' ')}\n`)
+    w.unmount()
+  })
+
+  it('keeps the line breaks of pasted text', async () => {
+    const edits = seed()
+    const w = mount(PatchEditor, { props: { page, zoom: 1, index: paragraphIndex(TEXTS) }, attachTo: document.body })
+    await w.get('[data-patch-target="0"]').trigger('click')
+    // The field opens with everything selected, so the paste replaces it.
+    const field = w.get('[data-patch-input]')
+    const paste = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(paste, 'clipboardData', {
+      value: { getData: () => 'first line\r\nsecond line' },
+    })
+    field.element.dispatchEvent(paste)
+    await field.trigger('keydown', { key: 'Enter', ctrlKey: true })
+
+    expect(patches(edits)[0]!.text).toBe('first line\nsecond line')
+    w.unmount()
   })
 })

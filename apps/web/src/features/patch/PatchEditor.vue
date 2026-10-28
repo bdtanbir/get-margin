@@ -7,7 +7,7 @@ import type { PageState } from '@/stores/document'
 import type {
   Color, EditObject, PageQuadIndex, TextPatchObject,
 } from '@margin/pdf-core'
-import { isBoldWeight, patchRuns, runsAdvance, weightOf } from '@margin/pdf-core'
+import { blockLayout, isBoldWeight, patchRuns, runsAdvance, weightOf } from '@margin/pdf-core'
 import { useEditsStore } from '@/stores/edits'
 import { useToolsStore } from '@/stores/tools'
 import { useViewportStore } from '@/stores/viewport'
@@ -22,8 +22,9 @@ import { rgb } from '@/features/overlay/objects/svgPaint'
 import { noZoomTextSize } from '@/lib/textFieldZoom'
 import { sampleBackground, CONFIDENT_ENOUGH } from './sampleBackground'
 import {
-  buildLinePatch, documentStyle, lineBox, patchOnLine, plainColor,
+  buildLinePatch, buildParagraphPatch, lineBox, patchOnLine, plainColor,
 } from './linePatch'
+import { paragraphAt } from './paragraphs'
 import { lineTargetRect } from './editTargets'
 import {
   mergeRuns, readRuns, renderRuns, restyleRange, runsIn, selectOffsets, selectionOffsets,
@@ -228,18 +229,75 @@ function onInput(): void {
   syncFromRuns()
 }
 
-/** Pasted text arrives as plain text on one line, in the style at the caret. */
-function onPaste(e: ClipboardEvent): void {
-  e.preventDefault()
-  const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/[\r\n]+/g, ' ')
-  if (text) document.execCommand('insertText', false, text)
+/**
+ * Put plain text at the caret, in the style of the run the caret is in.
+ *
+ * Text without a line break goes through the browser, so it is one undo
+ * step in the field like anything typed. Text WITH one is inserted as a
+ * text node by hand: asked to insert a newline, a browser splits the
+ * field into <div>s or adds <br>s, and the field's model is styled runs
+ * whose text holds the `\n` itself (see readRuns).
+ */
+function insertPlain(text: string): void {
+  const el = input.value
+  if (!el || text === '') return
+  if (!text.includes('\n')) {
+    document.execCommand('insertText', false, text)
+    return
+  }
+  const sel = el.ownerDocument.getSelection()
+  if (!sel || sel.rangeCount === 0) return
+  const range = sel.getRangeAt(0)
+  if (!el.contains(range.startContainer)) return
+  range.deleteContents()
+  const node = el.ownerDocument.createTextNode(text)
+  range.insertNode(node)
+  range.setStartAfter(node)
+  range.collapse(true)
+  sel.removeAllRanges()
+  sel.addRange(range)
+  keepLastLine(el)
+  onInput()
 }
 
-/** The browser's own formatting and line breaks are not this field's: it is one line, styled by us. */
+/**
+ * A field ending in a line break shows that empty last line only when
+ * something follows the break, so a <br> is kept at the very end. It holds
+ * no text, so `readRuns` never sees it.
+ */
+function keepLastLine(el: HTMLElement): void {
+  const tail = el.lastChild
+  if (tail instanceof HTMLBRElement) return
+  el.appendChild(el.ownerDocument.createElement('br'))
+}
+
+/** Pasted text arrives as plain text, line breaks kept, in the style at the caret. */
+function onPaste(e: ClipboardEvent): void {
+  e.preventDefault()
+  const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/\r\n?/g, '\n')
+  insertPlain(text)
+}
+
+/**
+ * Enter starts a new line, as in any editor. Ctrl/Cmd+Enter commits, like
+ * clicking away; Escape still cancels.
+ */
+function onEnter(e: KeyboardEvent): void {
+  if (e.isComposing) return
+  e.preventDefault()
+  if (e.ctrlKey || e.metaKey) { commit(); return }
+  insertPlain('\n')
+}
+
+/** The browser's own formatting and line breaks are not this field's: it is styled by us. */
 function onBeforeInput(e: InputEvent): void {
-  if (e.inputType.startsWith('format') || e.inputType === 'insertParagraph' ||
-      e.inputType === 'insertLineBreak') {
+  if (e.inputType.startsWith('format')) {
     e.preventDefault()
+    return
+  }
+  if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
+    e.preventDefault()
+    insertPlain('\n')
   }
 }
 
@@ -442,10 +500,67 @@ const drawnBox = computed(() => {
   return { width: inputWidth.value * props.zoom, height: b.h * props.zoom }
 })
 
+/**
+ * How the field wraps, when it is editing a paragraph or text with a line
+ * break in it -- the same `blockLayout` the writer and the preview read, so
+ * the field breaks lines about where the result will. Undefined for a
+ * one-line edit, which keeps the one-line field exactly as it was.
+ */
+const block = computed(() => {
+  const stored = editingId.value ? edits.doc.objects[editingId.value] : undefined
+  const paragraph = stored && stored.kind === 'textPatch' ? stored.paragraph : undefined
+  const layout = blockLayout({ text: draft.value, paragraph })
+  if (!layout) return undefined
+  const lead = drawnAt.value
+  if (!lead) return undefined
+  const { dx, dy } = offset.value
+  // The paragraph's box, or the line's own for a line given a break.
+  const area = stored && paragraph ? stored.rect : box.value!
+  const step = layout.leading * editSize.value
+  // The first line centred on the first line's own box, as the one-line
+  // field centres it, so the rows land on the document's rows.
+  const top = lead.y - (step - lead.h) / 2
+  return {
+    ...layout,
+    step,
+    left: area.x + dx,
+    top,
+    bottom: area.y + area.h + dy,
+  }
+})
+
 const style = computed(() => {
   const b = drawnAt.value
   if (!b) return {}
   const { fontSize, scale } = fieldSize.value
+  const k = block.value
+  if (k) {
+    const z = props.zoom / scale
+    // Border and padding sit inside the width, and the text must have the
+    // whole wrap width to itself or the field would wrap a word early.
+    const chrome = 6
+    const width = k.width > 0 ? k.width : inputWidth.value
+    return {
+      left: `${k.left * props.zoom}px`,
+      top: `${k.top * props.zoom}px`,
+      width: `${width * z + chrome}px`,
+      minHeight: `${Math.max(k.bottom - k.top, k.step) * z}px`,
+      lineHeight: `${k.step * z}px`,
+      textIndent: `${k.indent * z}px`,
+      whiteSpace: 'pre-wrap' as const,
+      overflowWrap: 'anywhere' as const,
+      overflow: 'visible' as const,
+      fontSize: `${fontSize}px`,
+      letterSpacing: `${(spacing.value * props.zoom) / scale}px`,
+      transform: `scale(${scale})`,
+      transformOrigin: 'top left',
+      backgroundColor: fieldBackground.value,
+      fontFamily: cssFamily(family.value),
+      fontWeight: cssWeight(weight.value),
+      fontStyle: cssStyle(italic.value),
+      color: rgb(color.value),
+    }
+  }
   return {
     left: `${b.x * props.zoom}px`,
     top: `${b.y * props.zoom}px`,
@@ -479,6 +594,33 @@ const style = computed(() => {
     // rendered as-is -- so a grey label is typed in grey even in dark mode.
     color: rgb(color.value),
   }
+})
+
+/**
+ * Whether the text now needs more rows than the paragraph had. Nothing on
+ * the page moves out of its way -- a PDF has no flow -- so the extra rows
+ * will be drawn over whatever is below, and the user should know before
+ * committing. Read off the field's own laid-out height, which the browser
+ * wraps with the same font at the same width.
+ */
+const runsPastParagraph = ref(false)
+/** The field's height on screen, once it has grown past the paragraph. */
+const grownHeight = ref(0)
+function measureOverflow(): void {
+  const el = input.value
+  const k = block.value
+  grownHeight.value = el && k ? el.offsetHeight * fieldSize.value.scale : 0
+  if (!el || !k) { runsPastParagraph.value = false; return }
+  const room = Number.parseFloat(el.style.minHeight)
+  const row = Number.parseFloat(el.style.lineHeight)
+  runsPastParagraph.value = Number.isFinite(room) && Number.isFinite(row) && el.offsetHeight > room + row / 2
+}
+watch([draft, block, () => props.zoom], () => { void nextTick(measureOverflow) })
+
+/** How far below the field's top the warnings hang: under the paragraph, not over it. */
+const warningsBelow = computed(() => {
+  const k = block.value
+  return k ? Math.max((k.bottom - k.top) * props.zoom, k.step * props.zoom, grownHeight.value) : drawnBox.value.height
 })
 
 /** Where the original line ended, so the guide can show it while typing. */
@@ -522,18 +664,28 @@ const targets = computed(() =>
 function ensurePatch(lineIndex: number, chosen?: string): TextPatchObject | undefined {
   const existing = patchOn(lineIndex)
   if (existing) return existing
-  const l = props.index?.lines[lineIndex]
-  if (!l || l.chars.length === 0) return undefined
-  const fontFamily = chosen ?? familyForLine(l.font)
-  const object = buildLinePatch({
+  const index = props.index
+  const l = index?.lines[lineIndex]
+  if (!index || !l || l.chars.length === 0) return undefined
+  // The whole PARAGRAPH the line is in, so typed text wraps where the
+  // document's own text wrapped -- never taking a line some other patch
+  // already owns. See paragraphs.ts.
+  const para = paragraphAt(index, lineIndex, (i) => !!patchOn(i))
+  if (!para) return undefined
+  const lead = index.lines[para.lines[0]!]!
+  const fontFamily = chosen ?? familyForLine(lead.font)
+  const bitmap = vp.bitmapFor(props.page.id)
+  const object = buildParagraphPatch({
     pageId: props.page.id,
-    lineIndex,
-    line: l,
+    lines: para.lines.map((i) => index.lines[i]!),
+    indexes: para.lines,
+    box: para.box,
+    width: para.width,
+    leading: para.leading,
+    indent: para.indent,
     fontFamily,
-    style: documentStyle(l, fontFamily),
-    background: background.value,
+    background: sampleBackground(bitmap, para.box, bitmap ? bitmap.scale : 1),
     z: edits.nextZ(),
-    fit: 'overflow',
   })
   edits.applyOp({ type: 'addObject', object: object as EditObject }, 'Edit text')
   return object
@@ -550,19 +702,21 @@ async function begin(lineIndex: number, chosen?: string): Promise<void> {
     asking.value = lineIndex
     return
   }
-  editing.value = lineIndex
-  // The line's layer, made now if the line had none, and selected so the
-  // inspector offers its style while the field is open. The draft is what
-  // the user last typed if they have edited this line before -- otherwise
-  // the line as the document has it. Loading the original over an existing
-  // edit made every re-edit start from scratch, which read as the edit
-  // having been lost.
+  // The line's layer -- its paragraph's, made now if it had none -- and
+  // selected so the inspector offers its style while the field is open.
+  // The draft is what the user last typed if they have edited this line
+  // before -- otherwise the line as the document has it. Loading the
+  // original over an existing edit made every re-edit start from scratch,
+  // which read as the edit having been lost.
   const existing = ensurePatch(lineIndex, chosen)
+  // A paragraph is edited from its FIRST line, whichever line was clicked.
+  const lead = existing?.lineIndex ?? lineIndex
+  editing.value = lead
   editingId.value = existing?.id
-  seededFamily.value = chosen ?? familyForLine(props.index?.lines[lineIndex]?.font ?? '')
+  seededFamily.value = chosen ?? familyForLine(props.index?.lines[lead]?.font ?? '')
   if (existing) edits.select([existing.id])
   draft.value = existing ? existing.text : originalText.value
-  const line = props.index?.lines[lineIndex]
+  const line = props.index?.lines[lead]
   // An existing patch's own weight, otherwise the weight the DOCUMENT set
   // this line in.
   weight.value = existing ? weightOf(existing) : line?.weight ?? 400
@@ -882,7 +1036,7 @@ defineExpose({ begin })
         position the text is not at.
       -->
       <div
-        v-if="originalWidth > 0 && !isMoved"
+        v-if="originalWidth > 0 && !isMoved && !block"
         data-patch-guide
         aria-hidden="true"
         class="pointer-events-none absolute border-r-2 border-dashed border-accent/50"
@@ -915,7 +1069,7 @@ defineExpose({ begin })
         :ref="bindField"
         contenteditable="true"
         role="textbox"
-        aria-multiline="false"
+        :aria-multiline="block ? 'true' : 'false'"
         spellcheck="false"
         data-patch-input
         aria-label="Replacement text"
@@ -926,7 +1080,7 @@ defineExpose({ begin })
         @paste="onPaste"
         @drop.prevent
         @beforeinput="onBeforeInput"
-        @keydown.enter.prevent="commit()"
+        @keydown.enter="onEnter"
         @keydown.esc.prevent="cancel()"
         @keydown.ctrl.b.prevent="toggleAxis('bold')"
         @keydown.meta.b.prevent="toggleAxis('bold')"
@@ -988,10 +1142,10 @@ defineExpose({ begin })
         in the exported file is finding out too late.
       -->
       <div
-        v-if="risky || missing.length"
+        v-if="risky || missing.length || runsPastParagraph"
         class="pointer-events-none absolute z-10 max-w-64 rounded-panel border border-border
                bg-surface-raised p-2 text-[12px] text-warning shadow-high"
-        :style="{ left: style.left, top: `calc(${style.top} + ${drawnBox.height}px)` }"
+        :style="{ left: style.left, top: `calc(${style.top} + ${warningsBelow}px)` }"
         data-patch-warnings
         role="status"
       >
@@ -999,6 +1153,11 @@ defineExpose({ begin })
           The area behind this line is not a flat colour, so the patch will
           leave a visible mark. Covering a photograph or a gradient rarely
           looks right.
+        </p>
+
+        <p v-if="runsPastParagraph" data-patch-overflow>
+          This is longer than the paragraph it replaces. Text below does not
+          move, so the extra lines will overlap it.
         </p>
 
         <p v-if="missing.length" data-patch-missing>

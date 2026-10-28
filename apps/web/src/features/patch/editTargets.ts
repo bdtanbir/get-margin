@@ -50,7 +50,9 @@ export type Measure = (
  * only 'overflow' can make the target wider than the extraction says.
  */
 function drawnWidth(box: Rect, patch: TextPatchObject | undefined, measure: Measure): number {
-  if (!patch || patch.text === '' || patch.fit !== 'overflow') return box.w
+  // A paragraph wraps inside its own width, so each of its lines is hit
+  // where the document had it.
+  if (!patch || patch.text === '' || patch.fit !== 'overflow' || patch.paragraph) return box.w
   const size = patch.fontSize > 0 ? patch.fontSize : box.h * 0.8
   return Math.max(box.w, measure(patch.text, patch.fontFamily, size, patch))
 }

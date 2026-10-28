@@ -24,11 +24,11 @@ describe('richLine', () => {
     expect(readRuns(el, styles, run(''))).toEqual([run('Hi '), run('Arafat Hussain', { weight: 700 })])
   })
 
-  it('gives stray text the style before it, and drops line breaks', () => {
+  it('gives stray text the style before it, and keeps line breaks', () => {
     const el = document.createElement('div')
     const styles = renderRuns(el, [run('Bold', { weight: 700 })])
-    el.append(document.createTextNode('\nmore'))
-    expect(readRuns(el, styles, run(''))).toEqual([run('Bold more', { weight: 700 })])
+    el.append(document.createTextNode('\r\nmore'))
+    expect(readRuns(el, styles, run(''))).toEqual([run('Bold\nmore', { weight: 700 })])
   })
 
   it('restyles exactly the selected characters', () => {

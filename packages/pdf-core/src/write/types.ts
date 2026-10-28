@@ -374,6 +374,31 @@ export type TextPatchObject = BaseObject & {
    * before this meant, so nothing stored needs migrating.
    */
   spans?: PatchSpan[] | undefined
+  /**
+   * The patch replaces a whole PARAGRAPH and its text wraps. See
+   * PARAGRAPH-EDIT-DESIGN.md.
+   *
+   * `lineIndex`, `originalHash` and `originalText` above stay the first
+   * line's; `paragraph.lines` are the others, each guarded by its own hash
+   * at export. `rect` is the union of all of them. Absent means a one-line
+   * patch, drawn exactly as before this field existed.
+   */
+  paragraph?: PatchParagraph | undefined
+}
+
+/** How a paragraph patch is laid out. See `TextPatchObject.paragraph`. */
+export type PatchParagraph = {
+  /** The paragraph's lines after the first, in order. */
+  lines: Array<{ lineIndex: number; originalHash: string; originalText: string }>
+  /** Width the text wraps at, in points. 0 breaks only at `\n`. */
+  width: number
+  /**
+   * Baseline-to-baseline distance as a multiple of `fontSize`, so a size
+   * change in the inspector keeps the spacing in proportion.
+   */
+  leading: number
+  /** How far right of the other lines the first one starts, in points. */
+  indent: number
 }
 
 /** One differently-styled piece of a `TextPatchObject`. See `spans`. */

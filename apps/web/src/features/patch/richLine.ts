@@ -87,8 +87,7 @@ function textNodes(root: Node): Text[] {
  * sits in none -- the browser's own text after the user deleted every span
  * and kept typing -- takes the style of the text before it, or of the
  * line's first run when there is none: select-all and type keeps the
- * line's leading style, which is what an <input> did too. Line breaks are
- * dropped: a patch is one line.
+ * line's leading style, which is what an <input> did too.
  */
 export function readRuns(root: HTMLElement, styles: readonly EditRun[], fallback: EditRun): EditRun[] {
   const runs: EditRun[] = []
@@ -98,7 +97,9 @@ export function readRuns(root: HTMLElement, styles: readonly EditRun[], fallback
     const index = owner && root.contains(owner) ? Number(owner.dataset.run) : NaN
     const style = styles[index] ?? previous
     previous = style
-    const text = (node.textContent ?? '').replace(/[\r\n]+/g, ' ')
+    // Line breaks are KEPT: Enter and a pasted paragraph put them there,
+    // and a patch breaks its lines at them (layoutRuns).
+    const text = (node.textContent ?? '').replace(/\r\n?/g, '\n')
     runs.push({ ...style, text })
   }
   return mergeRuns(runs)

@@ -68,13 +68,13 @@ describe('PageOverlay', () => {
     const s = useEditsStore()
     s.applyOp({ type: 'addObject', object: obj('a', 'p1', 1) }, 'add')
     const w = mount(PageOverlay, { props: { page, zoom: 1 } })
-    const groups = w.findAll('svg > g')
+    const groups = w.findAll('svg > g:not([data-patch-underlay])')
     expect(groups).toHaveLength(1)
     expect(groups[0]!.attributes('transform')).toContain('scale(1 -1)')
   })
 
   it('renders no group at all for a page with nothing on it', () => {
-    expect(mount(PageOverlay, { props: { page, zoom: 1 } }).findAll('svg > g')).toHaveLength(0)
+    expect(mount(PageOverlay, { props: { page, zoom: 1 } }).findAll('svg > g:not([data-patch-underlay])')).toHaveLength(0)
   })
 
   it('renders only the objects belonging to this page', () => {

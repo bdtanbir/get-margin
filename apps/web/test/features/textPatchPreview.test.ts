@@ -33,7 +33,7 @@ const mountIt = (props: Record<string, unknown> = {}) => mount(TextPatchObjectVi
 
 beforeEach(() => {
   renderWithoutLines.mockReset()
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ putImageData: vi.fn() } as never)
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ putImageData: vi.fn(), measureText: () => ({ width: 10 }) } as never)
   vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb) { cb(new Blob(['x'])) })
   globalThis.URL.createObjectURL = vi.fn(() => 'blob:without')
   globalThis.URL.revokeObjectURL = vi.fn()
@@ -52,6 +52,36 @@ describe('a text patch on screen', () => {
     expect(renderWithoutLines).toHaveBeenCalledWith('src-0', 4, [2, 7], expect.any(Object), expect.any(Number))
     expect(w.find('[data-patch-without]').attributes('href')).toBe('blob:without')
     expect(w.find('rect').exists()).toBe(false)
+  })
+
+  /**
+   * Reported: a paragraph made longer ran into the edited paragraph below
+   * it, and on screen its last lines were cut off -- the lower patch's
+   * picture of the page was painted over them. The download was right.
+   * The picture is the PAGE, so it goes under every patch's text.
+   */
+  it('puts the picture in the page overlay\'s bottom layer, under all text', async () => {
+    renderWithoutLines.mockResolvedValue(picture([2, 7]))
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    const underlay = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    svg.appendChild(underlay)
+    document.body.appendChild(svg)
+    const w = mountIt({ underlay })
+    await flushPromises()
+    expect(underlay.querySelector('[data-patch-without]')?.getAttribute('href')).toBe('blob:without')
+    expect(w.find('[data-patch-without]').exists()).toBe(false)
+    w.unmount()
+    svg.remove()
+  })
+
+  it('removes every line of a paragraph patch, or covers it', async () => {
+    renderWithoutLines.mockResolvedValue(picture([2]))
+    const para = { ...patch, paragraph: { lines: [{ lineIndex: 3, originalHash: 'x', originalText: 'y' }], width: 200, leading: 1.2, indent: 0 } }
+    const w = mountIt({ object: para, lines: [2, 3] })
+    await flushPromises()
+    // Line 3 was not removed, so the export covers the paragraph: so does the screen.
+    expect(w.find('[data-patch-without]').exists()).toBe(false)
+    expect(w.find('rect').exists()).toBe(true)
   })
 
   it('keeps the box when the line could not be removed, as the export does', async () => {

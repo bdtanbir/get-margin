@@ -82,6 +82,12 @@ export type LineRun = {
    * changes, because one face embedded as three subsets is still one face.
    */
   spans?: LineSpan[]
+  /**
+   * Which MuPDF text block the line came from, counted from 0 down the
+   * page. Lines of one paragraph share a block; the editor groups by it
+   * before it looks at geometry (paragraphs.ts).
+   */
+  block?: number
 }
 
 /** One single-style piece of a `LineRun`. */
@@ -202,7 +208,9 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
     /** Which U+FFFD characters draw nothing. See invisible.ts. */
     const invisible = invisibleCharTest(page)
 
+    let block = -1
     text.walk({
+      beginTextBlock() { block++ },
       beginLine(lineBox, _wmode, direction) {
         const dx = direction?.[0] ?? 1
         const dy = direction?.[1] ?? 0
@@ -302,6 +310,7 @@ export function buildQuadIndex(doc: PdfDocument, pageIndex: number): PageQuadInd
             baseline,
             chars,
             spans,
+            block: Math.max(0, block),
           })
         }
         bbox = undefined
