@@ -1,11 +1,104 @@
-# Get Margin
+# Get Margin — Free Online PDF Editor That Runs in Your Browser
 
-**[Try it live →](https://get-margin-seven.vercel.app/)**
+**[Try the live demo → pdf.tanbirahmod.com](https://pdf.tanbirahmod.com)**
 
-A PDF editor that runs entirely in a browser tab. Annotate, sign, reorder,
-redact, fill forms and export — the file never leaves your device.
+Get Margin is a free, private **online PDF editor** that runs
+entirely in your browser. Edit PDF text, annotate, highlight, sign, fill PDF
+forms, redact, reorder pages, compress and export — with **no upload, no
+sign-up and no watermark**. Your PDF is opened from disk into memory and never
+leaves your device.
 
-## Requirements
+It works on desktop, tablet and phone, and installs as an app (PWA) that keeps
+working offline.
+
+## Features
+
+### Edit PDF text and images
+- Edit existing text in a PDF: change a line or a whole paragraph, with
+  wrapping and new lines
+- Font matching with bundled fonts, so edited text looks like the original
+- Add new text boxes, images and links
+- Whiteout to cover content
+
+### Annotate and mark up PDFs
+- Highlight, underline and strikeout text
+- Freehand drawing (ink), lines, arrows, rectangles and ellipses
+- Add watermarks, page numbers, headers, footers and Bates numbering
+
+### Sign and fill PDF forms
+- Add a signature to a PDF — draw, type or upload it
+- Fill in PDF form fields and edit the tab order
+
+### Organize pages
+- Reorder pages by drag and drop
+- Rotate, delete, crop and split pages
+- Merge PDFs by adding pages from other files
+
+### Secure and optimize
+- **Redact** sensitive content — the text is removed, not just covered
+- Password-protect a PDF
+- Compress a PDF to reduce file size
+- Edit document metadata (title, author, subject, keywords)
+- Find text across the whole document
+
+### Export
+- Download the edited PDF
+- Export pages as images
+
+## Privacy: your PDF never leaves your device
+
+Editing, annotation, redaction, signing, form filling and image export all
+happen inside your browser tab, powered by [MuPDF](https://mupdf.com/)
+compiled to WebAssembly. There is no account and no server-side storage of
+your documents.
+
+The one exception is file conversion. Converting a file needs a server, so
+the app asks first: a consent screen names the file, its size and when it
+will be deleted. Nothing is uploaded until you agree.
+
+## Why Get Margin?
+
+| | Get Margin |
+|---|---|
+| Price | Free |
+| Account needed | No |
+| Watermark on export | No |
+| File upload for editing | No — processed in the browser |
+| Works offline | Yes, after the first visit (installable PWA) |
+| Devices | Desktop, tablet and mobile |
+
+## Tech stack
+
+- **Frontend:** Vue 3, Vite, Tailwind CSS, TypeScript
+- **PDF engine:** MuPDF.js (WebAssembly) in a Web Worker
+- **Offline / install:** `vite-plugin-pwa` service worker and web app manifest
+- **Testing:** Vitest (including golden-file PDF rendering tests) and Playwright
+- **Monorepo:** pnpm workspaces (`apps/web`, `packages/pdf-core`, and more)
+
+## FAQ
+
+**Is Get Margin free?**
+Yes. The editor at [pdf.tanbirahmod.com](https://pdf.tanbirahmod.com) is free
+to use, with no sign-up and no watermark.
+
+**Are my PDF files uploaded to a server?**
+No. Files are processed locally in your browser. Only file conversion uses a
+server, and only after you agree on a consent screen.
+
+**Can I edit the existing text in a PDF?**
+Yes. Click a line or paragraph to edit it in place. The app matches the
+original font where it can.
+
+**Does it work offline?**
+Yes. Install it as an app, and after the first visit it opens and edits PDFs
+without an internet connection.
+
+**Does it work on mobile?**
+Yes. The layout adapts down to phone screens.
+
+## Getting started
+
+### Requirements
 
 - Node.js `>=22`
 - pnpm `9.15.0`
@@ -16,7 +109,7 @@ This repo is a pnpm workspace. Install dependencies from the repository root:
 pnpm install
 ```
 
-## Development
+### Run the development server
 
 Run the web app development server:
 
@@ -33,7 +126,7 @@ pnpm dev
 
 Vite will print the local URL in the terminal, usually `http://localhost:5173/`.
 
-## Available Commands
+## Available commands
 
 Run these from the repository root unless noted otherwise.
 
@@ -64,7 +157,7 @@ pnpm --filter @margin/web icons:make
 pnpm --filter @margin/pdf-core fixtures
 ```
 
-## Progressive Web App
+## Progressive Web App (install and use offline)
 
 The web app installs. `vite-plugin-pwa` generates a manifest and a service
 worker at build time, so the editor can be added to a dock, launcher or home
@@ -141,7 +234,7 @@ Check with:
 curl -sSI https://<your-deployment>/assets/index-<hash>.js | grep -i cache-control
 ```
 
-## Common Test Flow
+## Common test flow
 
 ```bash
 pnpm typecheck
